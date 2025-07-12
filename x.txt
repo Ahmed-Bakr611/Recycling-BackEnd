@@ -1,0 +1,39 @@
+/backend/
+│
+├── /src/
+│   ├── /config/                # DB config, constants, env
+│   │   └── db.ts
+│   │
+│   ├── /middlewares/           # Express middlewares (auth, error handling)
+│   │   └── auth.middleware.ts
+│   │
+│   ├── /utils/                 # Reusable helper functions
+│   │   └── token.util.ts
+│   │
+│   ├── /types/                 # Custom TS interfaces/types
+│   │   └── express.d.ts        # e.g. request.user typing
+│   │
+│   ├── /modules/               # Feature-based structure
+│   │   ├── /auth/
+│   │   │   ├── auth.controller.ts
+│   │   │   ├── auth.routes.ts
+│   │   │   ├── auth.service.ts
+│   │   │   ├── auth.model.ts
+│   │   │   └── auth.types.ts
+│   │   │
+│   │   ├── /product/
+│   │   │   ├── product.controller.ts
+│   │   │   ├── product.routes.ts
+│   │   │   ├── product.service.ts
+│   │   │   ├── product.model.ts
+│   │   │   └── product.types.ts
+│   │   │
+│   │   └── index.ts            # Combines and exports all routes
+│   │
+│   ├── app.ts                  # App initialization (middlewares, routes)
+│   └── server.ts               # Server start + DB connect
+│
+├── .env
+├── tsconfig.json
+├── package.json
+└── README.md
