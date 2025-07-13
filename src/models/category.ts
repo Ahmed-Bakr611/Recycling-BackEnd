@@ -1,10 +1,5 @@
 import { Schema, model, Types, Document } from "mongoose";
 
-/**
- * ──────────────
- * Interfaces
- * ──────────────
- */
 export interface ISubcategory {
   _id?: Types.ObjectId;
   name: string;
@@ -16,16 +11,12 @@ export interface ISubcategory {
 export interface ICategory extends Document {
   _id: Types.ObjectId;
   name: string;
+  image: string; 
   subcategories: ISubcategory[];
   createdAt: Date;
   updatedAt: Date;
 }
 
-/**
- * ──────────────
- * Subcategory Schema
- * ──────────────
- */
 const subCategorySchema = new Schema<ISubcategory>(
   {
     name: { type: String, required: true },
@@ -36,23 +27,14 @@ const subCategorySchema = new Schema<ISubcategory>(
   { _id: false }
 );
 
-/**
- * ──────────────
- * Category Schema
- * ──────────────
- */
 const categorySchema = new Schema<ICategory>(
   {
     name: { type: String, required: true, unique: true },
+    image: { type: String, required: true }, 
     subcategories: [subCategorySchema],
   },
   { timestamps: true }
 );
 
-/**
- * ──────────────
- * Model
- * ──────────────
- */
 const Category = model<ICategory>("Category", categorySchema);
 export default Category;
