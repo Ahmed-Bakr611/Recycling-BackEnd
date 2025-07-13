@@ -10,12 +10,20 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET!,
 });
 
-const storage = new CloudinaryStorage({
+const categoryStorage = new CloudinaryStorage({
   cloudinary,
-  params: async (req, file) => ({
+  params: async () => ({
+    folder: 'recycling/categories/image',
+    allowed_formats: ['jpg', 'png', 'jpeg'],
+  }),
+});
+
+const subcategoryStorage = new CloudinaryStorage({
+  cloudinary,
+  params: async () => ({
     folder: 'recycling/subcategories/image',
     allowed_formats: ['jpg', 'png', 'jpeg'],
   }),
 });
 
-export { cloudinary, storage };
+export { cloudinary, categoryStorage, subcategoryStorage };
