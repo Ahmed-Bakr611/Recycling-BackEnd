@@ -4,8 +4,8 @@ import {
   createCategory,
   getAllCategories,
   createCategoryWithImage,
-  addSubcategory,
-  getSubcategories,
+  addItem,
+  getItems,
 } from "../controllers/categoryController";
 import { categoryStorage, subcategoryStorage } from "../utils/cloudinary";
 
@@ -17,7 +17,7 @@ const uploadSubcategory = multer({ storage: subcategoryStorage });
 router.post("/", uploadCategory.single("image"), createCategory);
 router.get("/", getAllCategories);
 router.post("/with-image", uploadCategory.single("image"), createCategoryWithImage);
-router.post("/subcategory/:categoryName", uploadSubcategory.single("image"), addSubcategory);
-router.get("/:categoryName/subcategories", getSubcategories);
+router.post("/add-item/:categoryName", uploadSubcategory.single("image"), addItem);
+router.get("/get-items/:categoryName", getItems);
 
 export default router;

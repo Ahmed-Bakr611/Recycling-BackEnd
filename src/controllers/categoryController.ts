@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { Types } from "mongoose";
-import Category, { ICategory, ISubcategory } from "../models/category";
+import Category, { ICategory, IItem } from "../models/category";
 
 interface MulterRequest extends Request {
   file: Express.Multer.File;
@@ -8,10 +8,10 @@ interface MulterRequest extends Request {
 
 export const createCategory = async (req: MulterRequest, res: Response): Promise<void> => {
   try {
-    const { name } = req.body;
+    const { name,description } = req.body;
     const image = req.file?.path ?? "";
 
-    const category = new Category({ name, image, subcategories: [] });
+    const category = new Category({ name, description ,image, items: [] });
     await category.save();
 
     res.status(201).json(category);
@@ -33,17 +33,19 @@ export const getAllCategories = async (_req: Request, res: Response): Promise<vo
 
 export const createCategoryWithImage = async (req: MulterRequest, res: Response): Promise<void> => {
   try {
-    const { name, subName, points, unit } = req.body;
+    const { name, description, itemName, points, price, measurement_unit } = req.body;
 
     const newCategory = new Category({
       name,
-      image: req.file?.path ?? "", // صورة الكاتيجوري
-      subcategories: [
+      description,
+      image: req.file?.path ?? "", 
+      items: [
         {
-          name: subName,
-          image: req.file?.path ?? "", // صورة الساب كاتيجوري (نفس الصورة مؤقتًا)
+          name: itemName,
+          image: req.file?.path ?? "", 
           points: Number(points),
-          unit,
+          price:Number(price),
+          measurement_unit,
         },
       ],
     });
@@ -55,31 +57,32 @@ export const createCategoryWithImage = async (req: MulterRequest, res: Response)
   }
 };
 
-export const addSubcategory = async (req: MulterRequest, res: Response): Promise<void> => {
+export const addItem = async (req: MulterRequest, res: Response): Promise<void> => {
   try {
     const { categoryName } = req.params;
-    const { subName, points, unit } = req.body;
+    const { itemName, points,price , measurement_unit } = req.body;
 
     if (!req.file) {
-      res.status(400).json({ message: "الصورة مطلوبة" });
+      res.status(400).json({ message:"required image" });
       return;
     }
 
-    const sub: ISubcategory = {
-      name: subName,
+    const item = {
+      name: itemName,
       image: req.file.path,
       points: Number(points),
-      unit,
+      price: Number(price),
+      measurement_unit,
     };
 
     const updatedCategory = await Category.findOneAndUpdate(
       { name: categoryName },
-      { $push: { subcategories: sub } },
+      { $push: { items: item } },
       { new: true }
     );
 
     if (!updatedCategory) {
-      res.status(404).json({ message: "لم يتم العثور على الكاتيجوري" });
+      res.status(404).json({ message: "Item Not Found" });
       return;
     }
 
@@ -90,17 +93,17 @@ export const addSubcategory = async (req: MulterRequest, res: Response): Promise
 };
 
 
-export const getSubcategories = async (req: Request, res: Response): Promise<void> => {
+export const getItems = async (req: Request, res: Response): Promise<void> => {
   try {
     const { categoryName } = req.params;
     const category = await Category.findOne({ name: categoryName });
 
     if (!category) {
-      res.status(404).json({ message: "الفئة غير موجودة" });
+      res.status(404).json({ message: "Items Not Found" });
       return;
     }
 
-    res.status(200).json(category.subcategories);
+    res.status(200).json(category.items);
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }
