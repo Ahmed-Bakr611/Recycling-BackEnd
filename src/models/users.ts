@@ -3,11 +3,19 @@ import bcrypt from "bcryptjs";
 
 // 1. Interface representing a User document
 export interface IUser extends Document {
-  imgUrl?: string;
+  id: string;
   name: string;
   email: string;
-  password?: string;
+  password: string;
+  phoneNumber: string;
   provider: "google" | "facebook" | "none";
+  refreshToken: String; // optional for token revocation
+
+  imgUrl?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+
+  // Instance method to compare passwords
   comparePassword(candidate: string): Promise<boolean>;
 }
 
@@ -23,6 +31,9 @@ const userSchema = new Schema<IUser>(
       enum: ["google", "facebook", "none"],
       default: "none",
     },
+    phoneNumber: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );
