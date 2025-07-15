@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en" class="bg-green-100">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recycle Auth</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+  <!-- Flowbite -->
+  <script src="https://unpkg.com/flowbite@2.3.0/dist/flowbite.min.js"></script>
+</head>
+
+<body>
+  <div class="min-h-screen flex items-center justify-center px-4">
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md relative">
+      <!-- Floating Buttons with Labels -->
+      <div class="absolute bottom-4 left-4 space-y-2">
+        <div class="flex items-center space-x-2">
+          <div class="bg-green-100 text-green-700 p-2 rounded-full shadow-md">
+            <i class="fas fa-recycle"></i>
+          </div>
+          <span class="text-sm text-green-600">Recycle</span>
+        </div>
+        <div class="flex items-center space-x-2">
+          <div class="bg-green-100 text-green-700 p-2 rounded-full shadow-md">
+            <i class="fas fa-leaf"></i>
+          </div>
+          <span class="text-sm text-green-600">Eco-friendly</span>
+        </div>
+        <div class="flex items-center space-x-2">
+          <div class="bg-green-100 text-green-700 p-2 rounded-full shadow-md">
+            <i class="fas fa-trash-alt"></i>
+          </div>
+          <span class="text-sm text-green-600">Waste-free</span>
+        </div>
+      </div>
+
+      <h2 class="text-2xl font-bold text-center text-green-800">
+        Let’s get started
+      </h2>
+      <p class="text-center text-gray-600 mb-4">
+        Sign up to swap and recycle for free!
+      </p>
+
+      <!-- Tabs -->
+      <div id="authTabs">
+        <ul class="flex flex-wrap text-sm font-medium text-center mb-4 justify-center" role="tablist">
+          <li class="me-2" role="presentation">
+            <button class="inline-block p-2 border-b-2 rounded-t-lg hover:text-green-600 hover:border-green-600"
+              id="login-tab" data-tabs-target="#login" type="button" role="tab" aria-controls="login"
+              aria-selected="false">
+              Log in
+            </button>
+          </li>
+          <li class="me-2" role="presentation">
+            <button class="inline-block p-2 border-b-2 border-green-600 text-green-700 rounded-t-lg" id="signup-tab"
+              data-tabs-target="#signup" type="button" role="tab" aria-controls="signup" aria-selected="true">
+              Sign up
+            </button>
+          </li>
+        </ul>
+        <div id="authTabsContent">
+          <!-- Login -->
+          <div class="hidden" id="login" role="tabpanel" aria-labelledby="login-tab">
+            <form class="space-y-4">
+              <input type="tel" placeholder="Phone number"
+                class="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-300" />
+              <input type="password" placeholder="Password"
+                class="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-300" />
+              <button type="submit"
+                class="w-full bg-green-700 hover:bg-green-800 text-white py-3 rounded-lg font-semibold transition">
+                Log in
+              </button>
+            </form>
+          </div>
+
+          <!-- Sign Up -->
+          <div class="" id="signup" role="tabpanel" aria-labelledby="signup-tab">
+            <form class="space-y-4">
+              <input type="text" placeholder="Full name"
+                class="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-300" />
+              <input type="tel" placeholder="Phone number"
+                class="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-300" />
+              <input type="email" placeholder="Email (optional)"
+                class="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-300" />
+              <input type="password" placeholder="Password"
+                class="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-300" />
+              <input type="password" placeholder="Confirm password"
+                class="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-300" />
+              <button type="submit"
+                class="w-full bg-green-700 hover:bg-green-800 text-white py-3 rounded-lg font-semibold transition">
+                Sign up to get started
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-center text-sm text-gray-500 mt-4">
+        Don’t worry, your information is 100% secure.
+      </p>
+    </div>
+  </div>
+</body>
+
+</html>
