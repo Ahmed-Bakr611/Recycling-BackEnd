@@ -7,13 +7,11 @@ const app = express();
 app.use(
   cors({
     credentials: true,
-    origin: "http://localhost:3000", // حددي origin لو محتاجة
+    origin: "http://localhost:3000",
   })
 );
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// ✅ إضافة الراوتر
-app.use("/api/categories", categoryRoutes);
+app.use("/categories", categoryRoutes);
 
 export default app;
