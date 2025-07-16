@@ -1,14 +1,23 @@
 import mongoose from 'mongoose';
 
 const AddressSchema = new mongoose.Schema({
-  city: String,
+  city: { type: String, required: true },
   area: String,
   street: String,
-  buildingNumber: String,
-  floorNumber: String,
-  apartmentNumber: String,
-  landmark: String
+  building: String,
+  floor: String,
+  apartment: String,
+  landmark: String,
+  isDefault: { type: Boolean, default: false },
 });
+const UserSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    addresses: [AddressSchema],
+
+  phoneNumber: { type: String, required: true },
+  userName: { type: String, required: true },
+}, { _id: false });
+
 
 const ItemSchema = new mongoose.Schema({
   name: String,
@@ -19,11 +28,16 @@ const ItemSchema = new mongoose.Schema({
 });
 
 const OrderSchema = new mongoose.Schema({
-  userId: String,
-  address: AddressSchema,
+  user: {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    phoneNumber: String,
+    userName: String,
+  },
+  address: AddressSchema, 
   items: [ItemSchema],
-  status: { type: String, default: 'Pending' },
-  createdAt: { type: Date, default: Date.now }
+  status: { type: String, default: "Pending" },
+  createdAt: { type: Date, default: Date.now },
 });
+
 
 export default mongoose.model('Order', OrderSchema);
