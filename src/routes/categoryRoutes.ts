@@ -16,8 +16,16 @@ const uploadSubcategory = multer({ storage: subcategoryStorage });
 
 router.post("/", uploadCategory.single("image"), createCategory);
 router.get("/", getAllCategories);
-router.post("/with-image", uploadCategory.single("image"), createCategoryWithImage);
-router.post("/subcategory/:categoryName", uploadSubcategory.single("image"), addSubcategory);
+router.post(
+  "/with-image",
+  uploadCategory.single("image"),
+  createCategoryWithImage
+);
+router.post(
+  "/subcategory/:categoryName",
+  uploadSubcategory.single("image"),
+  addSubcategory
+);
 router.get("/:categoryName/subcategories", getSubcategories);
 
 export default router;

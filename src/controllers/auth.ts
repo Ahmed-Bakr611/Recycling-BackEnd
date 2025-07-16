@@ -95,7 +95,7 @@ export const login = async (req: Request, res: Response) => {
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       })
       .header("Authorization", `Bearer ${accessToken}`)
-      .json({ accessToken, user });
+      .json({ token: accessToken, user });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: "Login failed" });
