@@ -1,10 +1,11 @@
 import express from "express";
 import authentication from "./auth";
-import categoryRoutes from "./categoryRoutes"; // Ensure this path is correct
+import orderRoute from './pickupRoutes'
 const router = express.Router();
 
 export default (): express.Router => {
   authentication(router);
-  // categoryRoutes(router);
+  orderRoute(router)
+  
   return router;
 };
