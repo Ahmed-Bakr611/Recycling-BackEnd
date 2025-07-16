@@ -8,7 +8,7 @@ dotenv.config();
 const startServer = async () => {
   try {
     await connectDB(); // ✅ connect to MongoDB
-    app.use("/", router()); // ✅ mount routes
+    app.use("/api", router()); // ✅ mount routes
 
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => {

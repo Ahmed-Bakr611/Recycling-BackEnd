@@ -31,7 +31,6 @@ const itemSchema = new Schema<IItem>(
   },
   { _id: false }
 );
-
 const categorySchema = new Schema<ICategory>(
   {
     name: { type: String, required: true, unique: true },
