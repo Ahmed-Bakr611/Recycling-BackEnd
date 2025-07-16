@@ -57,7 +57,7 @@ export const verifyOtpAndRegister = async (req: Request, res: Response) => {
       .json({ accessToken, user });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ message: "Signup failed" });
+    return res.status(500).json({  message: err.message || "Signup failed"  });
   }
 };
 

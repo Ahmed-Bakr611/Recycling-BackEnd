@@ -4,8 +4,12 @@ import {
   createCategory,
   getAllCategories,
   createCategoryWithImage,
-  addSubcategory,
-  getSubcategories,
+  addItem,
+  getItems,
+  deleteCategory,
+  updateItem,
+  updatedCategory,
+  deleteItem,
 } from "../controllers/categoryController";
 import { categoryStorage, subcategoryStorage } from "../utils/cloudinary";
 
@@ -14,18 +18,15 @@ const router = express.Router();
 const uploadCategory = multer({ storage: categoryStorage });
 const uploadSubcategory = multer({ storage: subcategoryStorage });
 
+
 router.post("/", uploadCategory.single("image"), createCategory);
 router.get("/", getAllCategories);
-router.post(
-  "/with-image",
-  uploadCategory.single("image"),
-  createCategoryWithImage
-);
-router.post(
-  "/subcategory/:categoryName",
-  uploadSubcategory.single("image"),
-  addSubcategory
-);
-router.get("/:categoryName/subcategories", getSubcategories);
+router.post("/with-image", uploadCategory.single("image"), createCategoryWithImage);
+router.post("/add-item/:categoryName", uploadSubcategory.single("image"), addItem);
+router.get("/get-items/:categoryName", getItems);
+router.put("/:categoryName", uploadCategory.single("image"), updatedCategory);
+router.delete("/:categoryName", deleteCategory);
+router.put("/item/:categoryName/:itemId", uploadSubcategory.single("image"), updateItem);
+router.delete("/item/:categoryName/:itemId", deleteItem);
 
 export default router;
