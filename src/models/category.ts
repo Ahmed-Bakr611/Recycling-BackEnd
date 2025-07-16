@@ -25,7 +25,7 @@ const itemSchema = new Schema<IItem>(
   {
     name: { type: String, required: true },
     points: { type: Number, required: true },
-    price: { type: Number, required: true 
+    price: { type: Number, required: true },
     measurement_unit: { type: Number, enum: [1,2], required: true },
     image: { type: String, required: true },
   },
