@@ -1,8 +1,7 @@
 import { Schema, model, Types, Document } from "mongoose";
 
-
 export interface IItem {
-  _id?: Types.ObjectId;
+  _id: Types.ObjectId;
   name: string;
   points: number;
   price: number;
@@ -10,27 +9,24 @@ export interface IItem {
   image: string;
 }
 
+const itemSchema = new Schema<IItem>({
+  name: { type: String, required: true },
+  points: { type: Number, required: true },
+  price: { type: Number, required: true },
+  measurement_unit: { type: Number, enum: [1, 2], required: true },
+  image: { type: String, required: true },
+});
+
 export interface ICategory extends Document {
   _id: Types.ObjectId;
   name: string;
   description: string;
   image: string;
-  items: IItem[];
+  items: Types.DocumentArray<IItem>;
   createdAt: Date;
   updatedAt: Date;
 }
 
-
-const itemSchema = new Schema<IItem>(
-  {
-    name: { type: String, required: true },
-    points: { type: Number, required: true },
-    price: { type: Number, required: true },
-    measurement_unit: { type: Number, enum: [1,2], required: true },
-    image: { type: String, required: true },
-  },
-  { _id: false }
-);
 const categorySchema = new Schema<ICategory>(
   {
     name: { type: String, required: true, unique: true },
@@ -41,6 +37,5 @@ const categorySchema = new Schema<ICategory>(
   { timestamps: true }
 );
 
-
-const Category = model<ICategory>("Category", categorySchema);
-export default Category;
+const Category = model<ICategory>("Category", categorySchema); 
+export default Category; 
