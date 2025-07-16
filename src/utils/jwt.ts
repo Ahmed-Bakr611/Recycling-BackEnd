@@ -12,7 +12,7 @@ export const generateAccessToken = (userId: string): string => {
   const payload: TokenPayload = { userId };
 
   return jwt.sign(payload, accessSecret, {
-    expiresIn: "15m", // Can also use: process.env.ACCESS_TOKEN_EXPIRES || "15m"
+    expiresIn: "1m", // Can also use: process.env.ACCESS_TOKEN_EXPIRES || "15m"
   });
 };
 
