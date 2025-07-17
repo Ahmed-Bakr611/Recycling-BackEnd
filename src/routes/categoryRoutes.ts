@@ -10,6 +10,7 @@ import {
   updateItem,
   updatedCategory,
   deleteItem,
+  getAllItems,
 } from "../controllers/categoryController";
 import { categoryStorage, subcategoryStorage } from "../utils/cloudinary";
 
@@ -24,6 +25,7 @@ router.get("/", getAllCategories);
 router.post("/with-image", uploadCategory.single("image"), createCategoryWithImage);
 router.post("/add-item/:categoryName", uploadSubcategory.single("image"), addItem);
 router.get("/get-items/:categoryName", getItems);
+router.get("/get-items", getAllItems);
 router.put("/:categoryName", uploadCategory.single("image"), updatedCategory);
 router.delete("/:categoryName", deleteCategory);
 router.put("/item/:categoryName/:itemId", uploadSubcategory.single("image"), updateItem);
