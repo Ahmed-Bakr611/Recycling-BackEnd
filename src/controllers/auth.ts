@@ -2,7 +2,8 @@ import { Request, Response } from "express";
 import User from "../models/users";
 import Otp from "../models/otp";
 import { generateToken, createAndSendOtp, verifyOtp } from "../utils/helper";
-import { generateAccessToken, generateRefreshToken } from "../utils/jwt";
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../utils/jwt";
+import jwt from "jsonwebtoken"; 
 
 ////////////////////////////////////////////////
 // Sign Up logic
@@ -24,6 +25,7 @@ export const initiateSignup = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Failed to send OTP" });
   }
 };
+
 export const verifyOtpAndRegister = async (req: Request, res: Response) => {
   try {
     console.log("Verifying OTP and registering user");
@@ -39,9 +41,11 @@ export const verifyOtpAndRegister = async (req: Request, res: Response) => {
       provider: provider || "none",
       phoneNumber,
     });
+    
     const accessToken = generateAccessToken(user._id.toString());
     const refreshToken = generateRefreshToken(user._id.toString());
-    // Optional: Save refreshToken in DB
+    
+    // Save refreshToken in DB
     user.refreshToken = refreshToken;
     await user.save();
 
@@ -49,15 +53,16 @@ export const verifyOtpAndRegister = async (req: Request, res: Response) => {
       .status(201)
       .cookie("refreshToken", refreshToken, {
         httpOnly: true,
-        secure: true,
-        sameSite: "strict",
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/',
       })
       .header("Authorization", `Bearer ${accessToken}`)
       .json({ accessToken, user });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({  message: err.message || "Signup failed"  });
+    return res.status(500).json({ message: err.message || "Signup failed" });
   }
 };
 
@@ -81,7 +86,7 @@ export const login = async (req: Request, res: Response) => {
     const accessToken = generateAccessToken(user._id.toString());
     const refreshToken = generateRefreshToken(user._id.toString());
 
-    // Store refresh token in DB (optional but good practice)
+    // Store refresh token in DB
     user.refreshToken = refreshToken;
     await user.save();
 
@@ -90,9 +95,10 @@ export const login = async (req: Request, res: Response) => {
       .status(200)
       .cookie("refreshToken", refreshToken, {
         httpOnly: true,
-        secure: true,
-        sameSite: "strict",
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/',
       })
       .header("Authorization", `Bearer ${accessToken}`)
       .json({ accessToken, user });
@@ -115,7 +121,7 @@ export const forgotPassword = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    await createAndSendOtp(email); // ✅ uses helper method
+    await createAndSendOtp(email);
 
     res.status(200).json({ message: "OTP sent to your email" });
   } catch (err) {
@@ -123,6 +129,7 @@ export const forgotPassword = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Failed to send OTP" });
   }
 };
+
 export const resetPassword = async (req: Request, res: Response) => {
   try {
     console.log("Resetting password");
@@ -137,7 +144,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     }
 
     user.password = newPassword;
-    user.refreshToken = ""; // ✅ optional: log out from all devices
+    user.refreshToken = ""; // optional: log out from all devices
     await user.save();
 
     res.status(200).json({ message: "Password updated successfully" });
@@ -148,15 +155,140 @@ export const resetPassword = async (req: Request, res: Response) => {
 };
 
 export const logout = async (req: Request, res: Response) => {
-  const token = req.cookies.refreshToken;
-  if (!token) return res.sendStatus(204);
+  try {
+    const token = req.cookies.refreshToken;
+    if (!token) {
+      return res.sendStatus(204);
+    }
 
-  const user = await User.findOne({ refreshToken: token });
-  if (user) {
-    user.refreshToken = "";
-    await user.save();
+    // Find user and clear refresh token
+    const user = await User.findOne({ refreshToken: token });
+    if (user) {
+      user.refreshToken = "";
+      await user.save();
+    }
+
+    // Clear the cookie with same settings as when it was set
+    res.clearCookie("refreshToken", { 
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      path: '/',
+    });
+    
+    res.sendStatus(204);
+  } catch (err) {
+    console.error('Logout error:', err);
+    res.status(500).json({ message: "Logout failed" });
   }
+};
 
-  res.clearCookie("refreshToken", { httpOnly: true });
-  res.sendStatus(204);
+export const refreshToken = async (req: Request, res: Response) => {
+  try {
+    console.log('🔍 === REFRESH TOKEN DEBUG START ===');
+    console.log('📋 All cookies received:', req.cookies);
+    console.log('📋 Cookie header raw:', req.headers.cookie);
+    console.log('📋 Request method:', req.method);
+    console.log('📋 Request URL:', req.url);
+    console.log('🌍 NODE_ENV:', process.env.NODE_ENV);
+    
+    const token = req.cookies.refreshToken;
+    console.log('🎫 Refresh token from cookie:', token ? `EXISTS (length: ${token.length})` : 'MISSING');
+    
+    if (!token) {
+      console.log('❌ No refresh token provided');
+      return res.status(401).json({ message: "No refresh token provided" });
+    }
+
+    // Log the token (first and last 10 chars for security)
+    console.log('🎫 Token preview:', `${token.substring(0, 10)}...${token.substring(token.length - 10)}`);
+
+    // Check environment variables
+    console.log('🔑 JWT_REFRESH_SECRET exists:', !!process.env.JWT_REFRESH_SECRET);
+    console.log('🔑 JWT_ACCESS_SECRET exists:', !!process.env.JWT_ACCESS_SECRET);
+
+    // Verify the refresh token
+    console.log('🔐 Verifying refresh token...');
+    const decoded = verifyRefreshToken(token);
+    console.log('🔓 Decoded token result:', decoded);
+    
+    if (!decoded) {
+      console.log('❌ Token verification failed');
+      // Try to decode without verification to see what's in the token
+      try {
+        const unverifiedDecoded = jwt.decode(token);
+        console.log('🔍 Unverified token content:', unverifiedDecoded);
+      } catch (decodeErr) {
+        console.log('❌ Token is not even valid JWT:', decodeErr.message);
+      }
+      return res.status(401).json({ message: "Invalid refresh token" });
+    }
+
+    // Find user with this refresh token
+    console.log('👤 Looking for user with ID:', decoded.userId);
+    
+    // First, check if user exists
+    const userById = await User.findById(decoded.userId);
+    console.log('👤 User found by ID:', userById ? 'YES' : 'NO');
+    
+    if (userById) {
+      console.log('👤 User email:', userById.email);
+      console.log('🔄 Stored refresh token in DB exists:', !!userById.refreshToken);
+      console.log('🔄 Stored token preview:', userById.refreshToken ? 
+        `${userById.refreshToken.substring(0, 10)}...${userById.refreshToken.substring(userById.refreshToken.length - 10)}` : 
+        'NONE');
+      console.log('🔄 Token matches exactly:', userById.refreshToken === token);
+      
+      // Check if they're similar but not exact
+      if (userById.refreshToken && userById.refreshToken !== token) {
+        console.log('🔄 Token lengths - DB:', userById.refreshToken.length, 'Request:', token.length);
+        console.log('🔄 First 50 chars match:', userById.refreshToken.substring(0, 50) === token.substring(0, 50));
+      }
+    }
+    
+    // Now try the actual query
+    const user = await User.findOne({ 
+      _id: decoded.userId, 
+      refreshToken: token 
+    });
+    
+    console.log('👤 User found with matching token:', user ? 'YES' : 'NO');
+    
+    if (!user) {
+      console.log('❌ User not found or token mismatch');
+      return res.status(401).json({ message: "Invalid refresh token" });
+    }
+
+    // Generate new access token
+    console.log('✅ Generating new access token...');
+    const accessToken = generateAccessToken(user._id.toString());
+    console.log('✅ New access token generated');
+    
+    // Optional: Generate new refresh token for rotation
+    const newRefreshToken = generateRefreshToken(user._id.toString());
+    user.refreshToken = newRefreshToken;
+    await user.save();
+    
+    // Update the refresh token cookie
+    res.cookie("refreshToken", newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+    
+    console.log('✅ Success! Returning new access token');
+    console.log('🔍 === REFRESH TOKEN DEBUG END ===');
+    
+    res.status(200).json({ 
+      accessToken,
+      message: "Token refreshed successfully" 
+    });
+      
+  } catch (err) {
+    console.error('💥 Refresh token error:', err);
+    console.error('💥 Error stack:', err.stack);
+    res.status(401).json({ message: "Invalid refresh token" });
+  }
 };

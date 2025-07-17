@@ -37,7 +37,6 @@ app.use((req, res, next) => {
   next();
 });
 
-
 app.use("/categories", categoryRoutes);
 app.use('/api/cart', cartRoutes);
 

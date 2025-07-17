@@ -12,7 +12,7 @@ export const generateAccessToken = (userId: string): string => {
   const payload: TokenPayload = { userId };
 
   return jwt.sign(payload, accessSecret, {
-    expiresIn: "15m", // Can also use: process.env.ACCESS_TOKEN_EXPIRES || "15m"
+    expiresIn: "15m",
   });
 };
 
@@ -22,4 +22,24 @@ export const generateRefreshToken = (userId: string): string => {
   return jwt.sign(payload, refreshSecret, {
     expiresIn: "7d", // Can also use: process.env.REFRESH_TOKEN_EXPIRES || "7d"
   });
+};
+export const verifyAccessToken = (token: string) => {
+  try {
+    return jwt.verify(token, accessSecret) as TokenPayload;
+  } catch (err) {
+    return null;
+  }
+};
+
+export const verifyRefreshToken = (token: string) => {
+  try {
+    return jwt.verify(token, refreshSecret) as TokenPayload;
+  } catch (err) {
+    console.error('JWT verification error:', err.message);
+    console.error('Error name:', err.name);
+    if (err.name === 'TokenExpiredError') {
+      console.error('Token expired at:', err.expiredAt);
+    }
+    return null;
+  }
 };
