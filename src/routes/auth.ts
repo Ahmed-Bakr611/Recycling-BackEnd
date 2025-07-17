@@ -6,6 +6,7 @@ import {
   forgotPassword,
   resetPassword,
   logout,
+  refreshToken,
 } from "../controllers/auth";
 import { refreshAccessToken } from "../controllers/token";
 
@@ -17,6 +18,7 @@ export default (router: express.Router) => {
   router.post("/auth/resetPassword", resetPassword);
   router.post("/auth/refresh", refreshAccessToken);
   router.post("/auth/logout", logout);
+  router.post("/auth/refreshToken", refreshToken);
 
   return router;
 };
