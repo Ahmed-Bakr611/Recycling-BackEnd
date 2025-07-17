@@ -20,12 +20,15 @@ const UserSchema = new mongoose.Schema({
 
 
 const ItemSchema = new mongoose.Schema({
-  name: String,
-  quantity: Number,
-  totalPoints: Number,
-  TotalMoney: Number
-
+  categoryId: { type: mongoose.Schema.Types.ObjectId, ref: "Category", required: true }, // or String if you store as string
+  image: { type: String, required: true },
+  itemName: { type: String, required: true },
+  measurement_unit: { type: Number, enum: [1, 2], required: true },
+  points: { type: Number, required: true },
+  price: { type: Number, required: true },
+  quantity: { type: Number, required: true },
 });
+
 
 const OrderSchema = new mongoose.Schema({
   user: {

@@ -20,10 +20,13 @@ interface IUser {
 }
 
 interface IItem {
-  name?: string;
-  quantity?: number;
-  totalPoints?: number;
-  TotalMoney?: number;
+  categoryId: mongoose.Types.ObjectId;
+  image: string;
+  itemName: string;
+  measurement_unit: 1 | 2;
+  points: number;
+  price: number;
+  quantity: number;
 }
 
 interface IOrder extends Document {
@@ -53,11 +56,15 @@ const AddressSchema = new Schema<IAddress>({
   isDefault: { type: Boolean, default: false },
 });
 
+
 const ItemSchema = new Schema<IItem>({
-  name: String,
+  categoryId: { type: Schema.Types.ObjectId, ref: "Category" },
+  image: String,
+  itemName: String,
+  measurement_unit: { type: Number, enum: [1, 2] },
+  points: Number,
+  price: Number,
   quantity: Number,
-  totalPoints: Number,
-  TotalMoney: Number
 });
 
 const OrderSchema = new Schema<IOrder>({
