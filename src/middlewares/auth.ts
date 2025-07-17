@@ -52,7 +52,7 @@ export const authenticate = async (
           expiresIn: "15m",
         };
 
-        const newAccessToken = jwt.sign(payload, secret, options);
+const newAccessToken = jwt.sign(load, secret, options);
         res.setHeader("x-access-token", newAccessToken);
         req.user = { userId: user._id.toString() };
 
