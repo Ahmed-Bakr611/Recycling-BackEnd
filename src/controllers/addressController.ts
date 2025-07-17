@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import Address from "../models/address";
+import Address from "../models/Address";
 interface AuthenticatedRequest extends Request {
   user: {
     userId: string;

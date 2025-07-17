@@ -86,7 +86,7 @@ export const removeCartItem = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
-    const { categoryId } = req.params;
+    const categoryId = req.params.categoryId?.trim();
 
     if (!categoryId) {
       return res.status(400).json({ message: "categoryId is required" });
@@ -96,7 +96,7 @@ export const removeCartItem = async (req: Request, res: Response) => {
 
     if (!cart) return res.status(404).json({ message: "Cart not found" });
 
-    cart.items = cart.items.filter((item) => item.categoryId !== categoryId);
+    cart.items = cart.items.filter(item => item.categoryId.toString().trim() !== categoryId);
 
     await cart.save();
     return res.status(200).json(cart);
