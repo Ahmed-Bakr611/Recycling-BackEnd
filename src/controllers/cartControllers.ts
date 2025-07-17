@@ -5,53 +5,72 @@ export const getCart = async (req: Request, res: Response) => {
   const userId = req.user?.userId;
   const sessionId = req.sessionId;
 
-  if (!userId && !sessionId) return res.status(400).json({ message: 'Missing user or session' });
+  if (!userId && !sessionId) {
+    return res.status(400).json({ message: 'Missing user or session' });
+  }
 
-  const cart = await Cart.findOne(userId ? { userId } : { sessionId });
-  if (!cart) return res.status(404).json({ message: 'Cart not found' });
+  let cart = null;
 
-  return res.json(cart);
+  // Priority: if user is logged in, prefer their cart
+  if (userId) {
+    cart = await Cart.findOne({ userId });
+  }
+
+  // If no cart found for user, try session
+  if (!cart && sessionId) {
+    cart = await Cart.findOne({ sessionId });
+  }
+
+  if (!cart) {
+    return res.status(404).json({ message: 'Cart not found' });
+  }
+
+  return res.status(200).json(cart);
 };
+
 
 export const addItemToCart = async (req: Request, res: Response) => {
   const userId = req.user?.userId;
   const sessionId = req.sessionId;
-  console.log("Request body:", req.body);
-  const { categoryName, quantity } = req.body;
+  const newItem = req.body;
 
-  if (!userId && !sessionId) return res.status(400).json({ message: 'Missing user or session' });
+  if (!userId && !sessionId) {
+    return res.status(400).json({ message: 'Missing user or session' });
+  }
 
   let cart = await Cart.findOne(userId ? { userId } : { sessionId });
   if (!cart) {
     cart = new Cart({ ...(userId ? { userId } : { sessionId }), items: [] });
   }
 
-  const existingItem = cart.items.find(item => item.categoryName === categoryName);
+  const existingItem = cart.items.find(item => item.categoryId === newItem.categoryId);
+
   if (existingItem) {
-    existingItem.quantity += quantity;
+    existingItem.quantity += newItem.quantity;
   } else {
-    cart.items.push({ categoryName, quantity });
+    cart.items.push(newItem);
   }
-  console.log("Saving cart:", cart);
+
   await cart.save();
   return res.json(cart);
 };
+
 
 export const updateCartItem = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
-    const { categoryName, quantity } = req.body;
+    const { categoryId, quantity } = req.body;
 
-    if (!categoryName || typeof quantity !== "number" || quantity < 1) {
-      return res.status(400).json({ message: "Valid categoryName and quantity are required" });
+    if (!categoryId || typeof quantity !== "number" || quantity < 1) {
+      return res.status(400).json({ message: "Valid categoryId and quantity are required" });
     }
 
     const cart = await Cart.findOne(userId ? { userId } : { sessionId });
 
     if (!cart) return res.status(404).json({ message: "Cart not found" });
 
-    const item = cart.items.find((i) => i.categoryName === categoryName);
+    const item = cart.items.find((i) => i.categoryId === categoryId);
     if (!item) return res.status(404).json({ message: "Item not found in cart" });
 
     item.quantity = quantity;
@@ -67,17 +86,17 @@ export const removeCartItem = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
-    const { categoryName } = req.params;
+    const { categoryId } = req.params;
 
-    if (!categoryName) {
-      return res.status(400).json({ message: "categoryName is required" });
+    if (!categoryId) {
+      return res.status(400).json({ message: "categoryId is required" });
     }
 
     const cart = await Cart.findOne(userId ? { userId } : { sessionId });
 
     if (!cart) return res.status(404).json({ message: "Cart not found" });
 
-    cart.items = cart.items.filter((item) => item.categoryName !== categoryName);
+    cart.items = cart.items.filter((item) => item.categoryId !== categoryId);
 
     await cart.save();
     return res.status(200).json(cart);
