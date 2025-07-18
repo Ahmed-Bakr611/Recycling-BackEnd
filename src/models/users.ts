@@ -19,8 +19,21 @@ export interface IUser extends Document {
 
   // Instance method to compare passwords
   comparePassword(candidate: string): Promise<boolean>;
+  toSafeObject(): SafeUser; // ✅ add this line
 }
 
+export interface SafeUser {
+  id: string;
+  name: string;
+  email: string;
+  phoneNumber: string;
+  provider: string;
+  role: string;
+  isGuest: boolean;
+  imgUrl?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
 // 2. Create schema
 const userSchema = new Schema<IUser>(
   {
