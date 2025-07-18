@@ -121,12 +121,13 @@ export const getItems = async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({ message: (err as Error).message });
   }
 };
-
 export const updatedCategory = async (req: MulterRequest, res: Response): Promise<void> => {
   try {
     const { categoryName } = req.params;
-    const { name, description } = req.body;
-    const image = req.file?.path;
+    const { name, description, image: imageFromBody } = req.body;
+    const imageFromFile = req.file?.path;
+
+    const image = imageFromBody || imageFromFile;
 
     const updateData: Partial<ICategory> = {
       ...(name && { name }),
@@ -150,6 +151,25 @@ export const updatedCategory = async (req: MulterRequest, res: Response): Promis
     res.status(500).json({ message: (err as Error).message });
   }
 };
+
+
+export const getCategoryByName = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { categoryName } = req.params;
+
+    const category = await Category.findOne({ name: categoryName });
+
+    if (!category) {
+      res.status(404).json({ message: "Category not found" });
+      return;
+    }
+
+    res.status(200).json(category);
+  } catch (err) {
+    res.status(500).json({ message: (err as Error).message });
+  }
+};
+
 
 export const deleteCategory = async (req: Request, res: Response): Promise<void> => {
   try {
