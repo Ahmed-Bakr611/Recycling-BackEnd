@@ -11,6 +11,8 @@ interface JwtPayload {
 }
 
 export const refreshAccessToken = async (req: Request, res: Response) => {
+  console.log("generate access token");
+  console.log(req);
   const token = req.cookies.refreshToken;
   if (!token) return res.status(401).json({ message: "No refresh token" });
 

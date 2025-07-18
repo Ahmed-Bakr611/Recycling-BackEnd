@@ -5,7 +5,7 @@ import {
   updateAddress,
   deleteAddress,
 } from "../controllers/addressController";
-import { authenticate } from "../middlewares/auth";
+import { authenticate } from "../middlewares/authenticate";
 
 export default (router: express.Router) => {
   router.get("/addresses", authenticate, getAddresses);

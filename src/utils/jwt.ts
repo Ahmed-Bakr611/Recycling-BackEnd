@@ -12,11 +12,13 @@ export const generateAccessToken = (userId: string): string => {
   const payload: TokenPayload = { userId };
 
   return jwt.sign(payload, accessSecret, {
-    expiresIn: "15m",
+    expiresIn: "1m",
   });
 };
 
 export const generateRefreshToken = (userId: string): string => {
+  console.log("gernerating Refresh Tokenn ..............");
+  console.log(userId);
   const payload: TokenPayload = { userId };
 
   return jwt.sign(payload, refreshSecret, {
