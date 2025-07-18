@@ -9,7 +9,9 @@ export interface IUser extends Document {
   password: string;
   phoneNumber: string;
   provider: "google" | "facebook" | "none";
-  refreshToken: String; // optional for token revocation
+  refreshToken?: string; // Now optional and lowercase
+  role: "admin" | "customer" | "buyer" | "delivery";
+  isGuest: boolean;
 
   imgUrl?: string;
   createdAt?: Date;
@@ -17,8 +19,21 @@ export interface IUser extends Document {
 
   // Instance method to compare passwords
   comparePassword(candidate: string): Promise<boolean>;
+  toSafeObject(): SafeUser; // ✅ add this line
 }
 
+export interface SafeUser {
+  id: string;
+  name: string;
+  email: string;
+  phoneNumber: string;
+  provider: string;
+  role: string;
+  isGuest: boolean;
+  imgUrl?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
 // 2. Create schema
 const userSchema = new Schema<IUser>(
   {
@@ -26,17 +41,39 @@ const userSchema = new Schema<IUser>(
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String }, // optional for OAuth users
+    phoneNumber: { type: String, required: true },
     provider: {
       type: String,
       enum: ["google", "facebook", "none"],
       default: "none",
     },
-    phoneNumber: { type: String, required: true },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now },
+    refreshToken: { type: String }, // optional for token revocation
+    role: {
+      type: String,
+      enum: ["admin", "customer", "buyer", "delivery"],
+      default: "customer",
+    },
+    isGuest: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );
+userSchema.methods.toSafeObject = function () {
+  return {
+    id: this._id.toString(),
+    name: this.name,
+    email: this.email,
+    phoneNumber: this.phoneNumber,
+    provider: this.provider,
+    role: this.role,
+    isGuest: this.isGuest,
+    imgUrl: this.imgUrl,
+    createdAt: this.createdAt,
+    updatedAt: this.updatedAt,
+  };
+};
 
 // 3. Pre-save hook: hash password if modified
 userSchema.pre("save", async function (next) {

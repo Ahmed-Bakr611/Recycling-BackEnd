@@ -1,12 +1,23 @@
+// routes/orderRoute.ts
+
+// export default (router: Router) => {
+//   router.post(
+//     "/orders",
+//     authenticate,
+//     authorize(["customer", "admin"]),
+//     createOrder
+//   );
+//   router.get("/orders", authenticate, authorize(["admin"]), getAllOrders);
+// };
 import express from "express";
-import { 
-  createOrder, 
-  deleteAllOrders, 
-  deleteOrderById, 
+import {
+  createOrder,
+  deleteAllOrders,
+  deleteOrderById,
   getAllOrders,
   getOrderById,
   getOrdersByStatus,
-  updateOrderStatus
+  updateOrderStatus,
 } from "../controllers/pickupController";
 import { authenticate } from "../middlewares/auth"; // Import your existing middleware
 

@@ -1,6 +1,6 @@
-import { v2 as cloudinary } from 'cloudinary';
-import { CloudinaryStorage } from 'multer-storage-cloudinary';
-import dotenv from 'dotenv';
+import { v2 as cloudinary } from "cloudinary";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
+import dotenv from "dotenv";
 
 dotenv.config();
 
@@ -13,17 +13,26 @@ cloudinary.config({
 const categoryStorage = new CloudinaryStorage({
   cloudinary,
   params: async () => ({
-    folder: 'recycling/categories/image',
-    allowed_formats: ['jpg', 'png', 'jpeg'],
+    folder: "recycling/categories/image",
+    allowed_formats: ["jpg", "png", "jpeg"],
   }),
 });
 
 const subcategoryStorage = new CloudinaryStorage({
   cloudinary,
   params: async () => ({
-    folder: 'recycling/subcategories/image',
-    allowed_formats: ['jpg', 'png', 'jpeg'],
+    folder: "recycling/subcategories/image",
+    allowed_formats: ["jpg", "png", "jpeg"],
   }),
 });
 
-export { cloudinary, categoryStorage, subcategoryStorage };
+const userStorage = new CloudinaryStorage({
+  cloudinary,
+  params: async () => ({
+    folder: "recycling/users/avatar",
+    allowed_formats: ["jpg", "png", "jpeg"],
+    transformation: [{ width: 500, height: 500, crop: "limit" }],
+  }),
+});
+
+export { cloudinary, categoryStorage, subcategoryStorage, userStorage };
