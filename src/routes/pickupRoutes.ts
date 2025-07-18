@@ -8,7 +8,7 @@
 //     createOrder
 //   );
 //   router.get("/orders", authenticate, authorize(["admin"]), getAllOrders);
-// };
+// };'
 import express from "express";
 import {
   cancelOrder,

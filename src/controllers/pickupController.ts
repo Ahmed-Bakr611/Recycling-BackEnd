@@ -17,6 +17,7 @@ interface IUser {
   userId: mongoose.Types.ObjectId;
   phoneNumber: string;
   userName: string;
+  email:string
 }
 interface IAuthenticatedRequest extends express.Request {
   user: {
@@ -73,6 +74,7 @@ const OrderSchema = new Schema<IOrder>({
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     phoneNumber: String,
     userName: String,
+    email:String,
   },
   address: AddressSchema, 
   items: [ItemSchema],
@@ -91,13 +93,12 @@ const Order: Model<IOrder> = mongoose.model<IOrder>('Order', OrderSchema);
 export const createOrder = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
   try {
     const userId = req.user.userId;
-    const { address, items, phoneNumber, userName } = req.body;
-    
-    // Validate required fields
-    if (!address || !items || !phoneNumber || !userName) {
+    const { address, items, phoneNumber, userName, email } = req.body;
+
+    if (!address || !items || !phoneNumber || !userName || !email) {
       res.status(400).json({
         success: false,
-        message: "Missing required fields: address, items, phoneNumber, userName"
+        message: "Missing required fields: address, items, phoneNumber, userName, email"
       });
       return;
     }
@@ -106,15 +107,16 @@ export const createOrder = async (req: IAuthenticatedRequest, res: express.Respo
       user: {
         userId,
         phoneNumber,
-        userName
+        userName,
+        email, // ✅ Now it will be saved!
       },
       address,
       items,
       status: 'Pending'
     });
-    
+
     const savedOrder = await newOrder.save();
-    
+
     res.status(201).json({
       success: true,
       message: "Order created successfully",
@@ -355,7 +357,7 @@ export const cancelOrder = async (req: IAuthenticatedRequest, res: express.Respo
       return;
     }
 
-    order.status = 'Cancelled';
+    order.status = 'cancelled';
     await order.save();
 
     res.json({
