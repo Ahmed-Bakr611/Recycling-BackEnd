@@ -1,7 +1,9 @@
+// middleware/authenticate.ts
+
 import jwt from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
 
-interface TokenPayload {
+export interface TokenPayload {
   userId: string;
   role: string;
 }
@@ -23,8 +25,9 @@ export const authenticate = (
       accessToken,
       process.env.JWT_ACCESS_SECRET as string
     ) as TokenPayload;
+console.log("Decoded token in authenticate middleware:", decoded);
 
-    req.user = decoded as TokenPayload; // 👈 add userId + role
+    req.user = decoded; // ✅ Now req.user = { userId, role }
     next();
   } catch (err: any) {
     if (err.name === "TokenExpiredError") {
