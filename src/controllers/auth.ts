@@ -34,7 +34,7 @@ export const verifyOtpAndRegister = async (req: Request, res: Response) => {
   try {
     console.log("Verifying OTP and registering user");
     console.log("Request body:", req.body);
-    const { name, email, password, provider, phoneNumber, otpCode } = req.body;
+    const { name, email, password, provider, phoneNumber, otpCode, role } = req.body;
 
     await verifyOtp(email, otpCode);
     const user = await User.create({
@@ -43,10 +43,19 @@ export const verifyOtpAndRegister = async (req: Request, res: Response) => {
       password,
       provider: provider || "none",
       phoneNumber: phoneNumber.padStart(11, "0"),
+<<<<<<< HEAD
     });
 
     const accessToken = generateAccessToken(user._id.toString());
     const refreshToken = generateRefreshToken(user._id.toString());
+=======
+      role: role || "customer", // set default role if you want
+    });
+
+    // Pass role when generating tokens
+    const accessToken = generateAccessToken(user._id.toString(), user.role);
+    const refreshToken = generateRefreshToken(user._id.toString(), user.role);
+>>>>>>> 8026a2744288f9d21c8952eca048d8542ddd70a7
 
     // Save refreshToken in DB
     user.refreshToken = refreshToken;
@@ -86,8 +95,9 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    const accessToken = generateAccessToken(user._id.toString());
-    const refreshToken = generateRefreshToken(user._id.toString());
+    // Pass user.role to token generation
+    const accessToken = generateAccessToken(user._id.toString(), user.role);
+    const refreshToken = generateRefreshToken(user._id.toString(), user.role);
 
     // Store refresh token in DB
     user.refreshToken = refreshToken;
@@ -206,13 +216,19 @@ export const refreshToken = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "No refresh token provided" });
     }
 
+<<<<<<< HEAD
     // Log the token (first and last 10 chars for security)
+=======
+>>>>>>> 8026a2744288f9d21c8952eca048d8542ddd70a7
     console.log(
       "🎫 Token preview:",
       `${token.substring(0, 10)}...${token.substring(token.length - 10)}`
     );
 
+<<<<<<< HEAD
     // Check environment variables
+=======
+>>>>>>> 8026a2744288f9d21c8952eca048d8542ddd70a7
     console.log(
       "🔑 JWT_REFRESH_SECRET exists:",
       !!process.env.JWT_REFRESH_SECRET
@@ -222,14 +238,20 @@ export const refreshToken = async (req: Request, res: Response) => {
       !!process.env.JWT_ACCESS_SECRET
     );
 
+<<<<<<< HEAD
     // Verify the refresh token
     console.log("🔐 Verifying refresh token...");
+=======
+>>>>>>> 8026a2744288f9d21c8952eca048d8542ddd70a7
     const decoded = verifyRefreshToken(token);
     console.log("🔓 Decoded token result:", decoded);
 
     if (!decoded) {
       console.log("❌ Token verification failed");
+<<<<<<< HEAD
       // Try to decode without verification to see what's in the token
+=======
+>>>>>>> 8026a2744288f9d21c8952eca048d8542ddd70a7
       try {
         const unverifiedDecoded = jwt.decode(token);
         console.log("🔍 Unverified token content:", unverifiedDecoded);
@@ -239,10 +261,13 @@ export const refreshToken = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Invalid refresh token" });
     }
 
+<<<<<<< HEAD
     // Find user with this refresh token
     console.log("👤 Looking for user with ID:", decoded.userId);
 
     // First, check if user exists
+=======
+>>>>>>> 8026a2744288f9d21c8952eca048d8542ddd70a7
     const userById = await User.findById(decoded.userId);
     console.log("👤 User found by ID:", userById ? "YES" : "NO");
 
@@ -265,7 +290,10 @@ export const refreshToken = async (req: Request, res: Response) => {
       );
       console.log("🔄 Token matches exactly:", userById.refreshToken === token);
 
+<<<<<<< HEAD
       // Check if they're similar but not exact
+=======
+>>>>>>> 8026a2744288f9d21c8952eca048d8542ddd70a7
       if (userById.refreshToken && userById.refreshToken !== token) {
         console.log(
           "🔄 Token lengths - DB:",
@@ -280,7 +308,10 @@ export const refreshToken = async (req: Request, res: Response) => {
       }
     }
 
+<<<<<<< HEAD
     // Now try the actual query
+=======
+>>>>>>> 8026a2744288f9d21c8952eca048d8542ddd70a7
     const user = await User.findOne({
       _id: decoded.userId,
       refreshToken: token,
@@ -293,6 +324,7 @@ export const refreshToken = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Invalid refresh token" });
     }
 
+<<<<<<< HEAD
     // Generate new access token
     console.log("✅ Generating new access token...");
     const accessToken = generateAccessToken(user._id.toString());
@@ -304,6 +336,15 @@ export const refreshToken = async (req: Request, res: Response) => {
     await user.save();
 
     // Update the refresh token cookie
+=======
+    // Generate new tokens with role
+    const accessToken = generateAccessToken(user._id.toString(), user.role);
+    const newRefreshToken = generateRefreshToken(user._id.toString(), user.role);
+
+    user.refreshToken = newRefreshToken;
+    await user.save();
+
+>>>>>>> 8026a2744288f9d21c8952eca048d8542ddd70a7
     res.cookie("refreshToken", newRefreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

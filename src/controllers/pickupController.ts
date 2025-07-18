@@ -18,6 +18,12 @@ interface IUser {
   phoneNumber: string;
   userName: string;
 }
+interface IAuthenticatedRequest extends express.Request {
+  user: {
+    userId: string;
+    role: string;
+  };
+}
 
 interface IItem {
   categoryId: mongoose.Types.ObjectId;
@@ -37,12 +43,7 @@ interface IOrder extends Document {
   createdAt: Date;
 }
 
-// Authenticated user interface for request - matches your middleware
-interface IAuthenticatedRequest extends express.Request {
-  user: {
-    userId: string;
-  };
-}
+
 
 // Your existing schemas (keeping them here for completeness)
 const AddressSchema = new Schema<IAddress>({
@@ -307,6 +308,103 @@ export const updateOrderStatus = async (req: IAuthenticatedRequest, res: express
     res.status(500).json({
       success: false,
       message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+export const getAllOrdersForAdmin = async (_req: express.Request, res: express.Response): Promise<void> => {
+  try {
+    const orders = await Order.find({}).sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      count: orders.length,
+      data: orders,
+    });
+  } catch (error) {
+    console.error("Admin - Error fetching all orders:", error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+export const cancelOrder = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
+  try {
+    const userId = req.user.userId;
+    const orderId = req.params.id;
+
+    const order = await Order.findOne({
+      _id: orderId,
+      'user.userId': userId
+    });
+
+    if (!order) {
+      res.status(404).json({
+        success: false,
+        message: "Order not found or access denied"
+      });
+      return;
+    }
+
+    if (order.status === 'InProgress') {
+      res.status(400).json({
+        success: false,
+        message: "Cannot cancel an order that is already in progress"
+      });
+      return;
+    }
+
+    order.status = 'Cancelled';
+    await order.save();
+
+    res.json({
+      success: true,
+      message: "Order canceled successfully",
+      data: order
+    });
+  } catch (error) {
+    console.error("Error canceling order:", error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+export const updateOrderStatusByAdmin = async (req: express.Request, res: express.Response): Promise<void> => {
+  try {
+    const orderId = req.params.id;
+    const { status } = req.body;
+
+    if (!status) {
+      res.status(400).json({
+        success: false,
+        message: "Status is required",
+      });
+      return;
+    }
+
+    const updatedOrder = await Order.findByIdAndUpdate(orderId, { status }, { new: true });
+
+    if (!updatedOrder) {
+      res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: "Order status updated successfully",
+      data: updatedOrder,
+    });
+  } catch (error) {
+    console.error("Admin - Error updating order status:", error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };

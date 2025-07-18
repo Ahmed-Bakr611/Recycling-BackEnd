@@ -11,6 +11,7 @@ import {
   updatedCategory,
   deleteItem,
   getAllItems,
+  getCategoryByName,
 } from "../controllers/categoryController";
 import { categoryStorage, subcategoryStorage } from "../utils/cloudinary";
 import { authenticate } from "../middlewares/authenticate";
@@ -23,6 +24,7 @@ const uploadSubcategory = multer({ storage: subcategoryStorage });
 
 router.post("/", uploadCategory.single("image"), createCategory);
 router.get("/", getAllCategories);
+router.get("/:categoryName", getCategoryByName);
 router.post(
   "/with-image",
   authenticate,
