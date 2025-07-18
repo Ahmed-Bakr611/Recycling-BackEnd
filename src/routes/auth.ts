@@ -18,7 +18,7 @@ export default (router: express.Router) => {
   router.post("/auth/resetPassword", resetPassword);
   router.post("/auth/refresh", refreshToken);
   router.post("/auth/logout", logout);
-  router.post("/auth/refreshToken", refreshToken);
+  // router.post("/auth/refreshToken", refreshToken);
 
   return router;
 };

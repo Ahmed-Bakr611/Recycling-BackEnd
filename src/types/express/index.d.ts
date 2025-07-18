@@ -6,6 +6,8 @@ declare global {
       sessionId?: string;
       user?: {
         userId?: string;
+                role?: string; // ✅ add this line
+
       };
     }
   }
