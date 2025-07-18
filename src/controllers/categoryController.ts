@@ -6,6 +6,22 @@ interface MulterRequest extends Request {
   file: Express.Multer.File;
 }
 
+export const getAllItems = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const categories = await Category.find();
+    const items = categories.flatMap((cat) =>
+      cat.items.map((item) => ({
+        ...item.toObject(),
+        categoryName: cat.name,
+        categoryId: cat._id,
+      }))
+    );
+    res.status(200).json({ items });
+  } catch (err) {
+    res.status(500).json({ message: (err as Error).message });
+  }
+};
+
 export const createCategory = async (req: MulterRequest, res: Response): Promise<void> => {
   try {
     const { name, description } = req.body;
