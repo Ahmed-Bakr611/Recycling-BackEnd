@@ -6,20 +6,29 @@ interface AuthenticatedRequest extends Request {
   };
 }
 
-export const getAddresses = async (req: AuthenticatedRequest, res: Response) => {
+export const getAddresses = async (
+  req: AuthenticatedRequest,
+  res: Response
+) => {
   const userId = req.user.userId;
   const addresses = await Address.find({ userId });
   res.json(addresses);
 };
 
-export const createAddress = async (req: AuthenticatedRequest, res: Response) => {
+export const createAddress = async (
+  req: AuthenticatedRequest,
+  res: Response
+) => {
   const userId = req.user.userId;
   const newAddress = new Address({ ...req.body, userId });
   await newAddress.save();
   res.status(201).json(newAddress);
 };
 
-export const updateAddress = async (req: AuthenticatedRequest, res: Response) => {
+export const updateAddress = async (
+  req: AuthenticatedRequest,
+  res: Response
+) => {
   const userId = req.user.userId;
   const updated = await Address.findOneAndUpdate(
     { _id: req.params.id, userId },
@@ -32,7 +41,10 @@ export const updateAddress = async (req: AuthenticatedRequest, res: Response) =>
   res.json(updated);
 };
 
-export const deleteAddress = async (req: AuthenticatedRequest, res: Response) => {
+export const deleteAddress = async (
+  req: AuthenticatedRequest,
+  res: Response
+) => {
   const userId = req.user.userId;
   await Address.deleteOne({ _id: req.params.id, userId });
   res.status(204).end();

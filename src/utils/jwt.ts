@@ -12,11 +12,13 @@ export const generateAccessToken = (userId: string): string => {
   const payload: TokenPayload = { userId };
 
   return jwt.sign(payload, accessSecret, {
-    expiresIn: "15m",
+    expiresIn: "1m",
   });
 };
 
 export const generateRefreshToken = (userId: string): string => {
+  console.log("gernerating Refresh Tokenn ..............");
+  console.log(userId);
   const payload: TokenPayload = { userId };
 
   return jwt.sign(payload, refreshSecret, {
@@ -35,10 +37,10 @@ export const verifyRefreshToken = (token: string) => {
   try {
     return jwt.verify(token, refreshSecret) as TokenPayload;
   } catch (err) {
-    console.error('JWT verification error:', err.message);
-    console.error('Error name:', err.name);
-    if (err.name === 'TokenExpiredError') {
-      console.error('Token expired at:', err.expiredAt);
+    console.error("JWT verification error:", err.message);
+    console.error("Error name:", err.name);
+    if (err.name === "TokenExpiredError") {
+      console.error("Token expired at:", err.expiredAt);
     }
     return null;
   }

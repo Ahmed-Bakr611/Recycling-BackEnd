@@ -39,6 +39,10 @@ export const createAndSendOtp = async (email: string): Promise<string> => {
 export const verifyOtp = async (email: string, code: string): Promise<void> => {
   const otp = await Otp.findOne({ email, code });
 
+  console.log("Validating OTP:", { email, code, otp });
+  console.log("Current time:", new Date());
+  console.log("OTP expires at:", otp?.expiresAt);
+
   if (!otp || otp.expiresAt < new Date()) {
     throw new Error("Invalid or expired OTP");
   }
@@ -60,7 +64,7 @@ const transporter = nodemailer.createTransport({
 export const sendOtpEmail = async (to: string, code: string) => {
   console.log("Sending OTP email to:", to);
   console.log("OTP code:", code);
-  const emailHtml =`
+  const emailHtml = `
   <div style="font-family: sans-serif;">
     <h2>OTP Verification</h2>
     <p>Your verification code is:</p>
@@ -70,11 +74,11 @@ export const sendOtpEmail = async (to: string, code: string) => {
     <p style="margin-top: 16px;">This code is valid for 5 minutes.</p>
     <p style="font-size: 12px; color: #888;">Tip: You can copy this code and paste it in the app.</p>
   </div>
-`
+`;
   await transporter.sendMail({
     from: `"Recycle App" <${process.env.MAIL_USER}>`, // Sender address
     to,
     subject: "Your OTP Code",
-    html:emailHtml,
+    html: emailHtml,
   });
 };
