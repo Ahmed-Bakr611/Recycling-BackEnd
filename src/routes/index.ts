@@ -3,6 +3,7 @@ import authentication from "./auth";
 import orderRoute from "./pickupRoutes";
 import addressRoute from "./address";
 import profile from "./profile";
+import users from "./usersRoute";
 const router = express.Router();
 
 export default (): express.Router => {
@@ -10,5 +11,7 @@ export default (): express.Router => {
   orderRoute(router);
   addressRoute(router);
   profile(router);
+  users(router);
+
   return router;
 };

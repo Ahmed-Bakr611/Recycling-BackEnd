@@ -22,10 +22,5 @@ export default (appRouter: express.Router) => {
     updateProfile
   );
 
-  appRouter.delete(
-    "/profile",
-    authenticate,
-    authorize(["admin", "customer"]),
-    deleteProfile
-  );
+  appRouter.delete("/profile", authenticate, deleteProfile);
 };
