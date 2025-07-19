@@ -2,9 +2,8 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import categoryRoutes from "./routes/categoryRoutes";
-import cartRoutes from './routes/cartRoutes';
-import { v4 as uuidv4 } from 'uuid';
-
+import cartRoutes from "./routes/cartRoutes";
+import { v4 as uuidv4 } from "uuid";
 
 const app = express();
 
@@ -26,7 +25,7 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   if (!req.cookies.sessionId) {
     const sessionId = uuidv4();
-    res.cookie('sessionId', sessionId, {
+    res.cookie("sessionId", sessionId, {
       httpOnly: true,
       maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
     });
@@ -37,8 +36,8 @@ app.use((req, res, next) => {
   next();
 });
 
+// app.use("/api/categories", categoryRoutes);
 app.use("/categories", categoryRoutes);
-app.use('/api/cart', cartRoutes);
-
+app.use("/api/cart", cartRoutes);
 
 export default app;
