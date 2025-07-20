@@ -34,7 +34,8 @@ export const verifyOtpAndRegister = async (req: Request, res: Response) => {
   try {
     console.log("Verifying OTP and registering user");
     console.log("Request body:", req.body);
-    const { name, email, password, provider, phoneNumber, otpCode, role } = req.body;
+    const { name, email, password, provider, phoneNumber, otpCode, role } =
+      req.body;
 
     await verifyOtp(email, otpCode);
     const user = await User.create({
@@ -287,7 +288,10 @@ export const refreshToken = async (req: Request, res: Response) => {
 
     // Generate new tokens with role
     const accessToken = generateAccessToken(user._id.toString(), user.role);
-    const newRefreshToken = generateRefreshToken(user._id.toString(), user.role);
+    const newRefreshToken = generateRefreshToken(
+      user._id.toString(),
+      user.role
+    );
 
     user.refreshToken = newRefreshToken;
     await user.save();
