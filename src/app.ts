@@ -36,8 +36,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// app.use("/api/categories", categoryRoutes);
-app.use("/categories", categoryRoutes);
-app.use("/api/cart", cartRoutes);
+
+app.use("/api/categories", categoryRoutes);
+app.use('/api/cart', cartRoutes);
+
+
 
 export default app;
