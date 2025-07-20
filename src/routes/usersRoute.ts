@@ -12,6 +12,8 @@ import { authorize } from "../middlewares/authorize";
 
 export default (appRouter: express.Router) => {
   appRouter.get("/users", authenticate, authorize(["admin"]), getAllUsers);
+  appRouter.get("/users/:id", authenticate, authorize(["admin"]), getUserById);
+
   appRouter.delete(
     "/users/:id",
     authenticate,

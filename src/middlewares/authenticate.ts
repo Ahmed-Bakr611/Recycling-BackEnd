@@ -2,6 +2,7 @@
 
 import jwt from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
+import User from "../models/users";
 
 export interface TokenPayload {
   userId: string;
@@ -25,9 +26,14 @@ export const authenticate = (
       accessToken,
       process.env.JWT_ACCESS_SECRET as string
     ) as TokenPayload;
-console.log("Decoded token in authenticate middleware:", decoded);
+    console.log("Decoded token in authenticate middleware:", decoded);
 
     req.user = decoded; // ✅ Now req.user = { userId, role }
+
+    User.findByIdAndUpdate(decoded.userId, {
+      lastActiveAt: new Date(),
+    }).catch((err) => console.error("Failed to update lastActiveAt", err));
+
     next();
   } catch (err: any) {
     if (err.name === "TokenExpiredError") {

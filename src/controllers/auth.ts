@@ -183,6 +183,13 @@ export const logout = async (req: Request, res: Response) => {
       path: "/",
     });
 
+    res.clearCookie("sessionId", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      path: "/",
+    });
+
     res.sendStatus(204);
   } catch (err) {
     console.error("Logout error:", err);
@@ -316,4 +323,10 @@ export const refreshToken = async (req: Request, res: Response) => {
     console.error("💥 Error stack:", err.stack);
     res.status(401).json({ message: "Invalid refresh token" });
   }
+};
+export const validateToken = async (req: Request, res: Response) => {
+  res.status(200).json({
+    message: "Access token is valid",
+    user: req.user, // includes userId and role
+  });
 };
