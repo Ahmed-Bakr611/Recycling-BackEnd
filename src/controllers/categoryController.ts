@@ -254,26 +254,31 @@ export const updateItem = async (
   }
 };
 
-export const deleteItem = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+
+export const deleteItem = async (req: Request, res: Response): Promise<void> => {
+
+
   try {
     const { categoryName, itemId } = req.params;
-    const category = await Category.findOne({ name: categoryName });
 
+    const category = await Category.findOne({ name: categoryName });
     if (!category) {
       res.status(404).json({ message: "Category not found" });
       return;
     }
 
-    const item = category.items.id(itemId);
-    if (!item) {
+    const itemIndex = category.items.findIndex(
+      (item) => item._id.toString() === itemId
+    );
+
+    if (itemIndex === -1) {
       res.status(404).json({ message: "Item not found" });
       return;
     }
 
-    category.items.pull(itemId);
+ 
+    category.items.splice(itemIndex, 1);
+
     await category.save();
 
     res.status(200).json({
@@ -281,6 +286,8 @@ export const deleteItem = async (
       updatedCategory: category,
     });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: (err as Error).message });
   }
 };
+
