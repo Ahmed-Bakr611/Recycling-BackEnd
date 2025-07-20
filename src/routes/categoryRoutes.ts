@@ -18,34 +18,19 @@ import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
 
 const router = express.Router();
-
 const uploadCategory = multer({ storage: categoryStorage });
 const uploadSubcategory = multer({ storage: subcategoryStorage });
 
-router.post("/", uploadCategory.single("image"), createCategory);
+router.post("/", authenticate,authorize(["admin"]),uploadCategory.single("image"), createCategory);
 router.get("/", getAllCategories);
 router.get("/:categoryName", getCategoryByName);
-router.post(
-  "/with-image",
-  authenticate,
-  authorize(["admin"]),
-  uploadCategory.single("image"),
-  createCategoryWithImage
-);
-router.post(
-  "/add-item/:categoryName",
-  uploadSubcategory.single("image"),
-  addItem
-);
+router.post("/with-image",authenticate,authorize(["admin"]),uploadCategory.single("image"),createCategoryWithImage);
+router.post("/add-item/:categoryName",authenticate,authorize(["admin"]),uploadSubcategory.single("image"),addItem);
 router.get("/get-items/:categoryName", getItems);
 router.get("/get-items", getAllItems);
-router.put("/:categoryName", uploadCategory.single("image"), updatedCategory);
-router.delete("/:categoryName", deleteCategory);
-router.put(
-  "/item/:categoryName/:itemId",
-  uploadSubcategory.single("image"),
-  updateItem
-);
+router.put("/:categoryName",authenticate,authorize(["admin"]), uploadCategory.single("image"), updatedCategory);
+router.delete("/:categoryName",authenticate,authorize(["admin"]), deleteCategory);
+router.put("/item/:categoryName/:itemId",authenticate,authorize(["admin"]),uploadSubcategory.single("image"),updateItem);
 router.delete("/item/:categoryName/:itemId", deleteItem);
 
 export default router;
