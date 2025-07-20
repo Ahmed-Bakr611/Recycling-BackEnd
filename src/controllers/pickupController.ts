@@ -17,6 +17,8 @@ interface IUser {
   userId: mongoose.Types.ObjectId;
   phoneNumber: string;
   userName: string;
+  imageUrl?: string; // ✅ add this
+
 }
 interface IAuthenticatedRequest extends express.Request {
   user: {
@@ -73,12 +75,15 @@ const OrderSchema = new Schema<IOrder>({
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     phoneNumber: String,
     userName: String,
+    imageUrl: String,
+    email: String      
   },
-  address: AddressSchema, 
+  address: AddressSchema,
   items: [ItemSchema],
   status: { type: String, default: "Pending" },
   createdAt: { type: Date, default: Date.now },
 });
+
 
 // Add index for better query performance
 OrderSchema.index({ 'user.userId': 1, createdAt: -1 });
@@ -91,10 +96,12 @@ const Order: Model<IOrder> = mongoose.model<IOrder>('Order', OrderSchema);
 export const createOrder = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
   try {
     const userId = req.user.userId;
-    const { address, items, phoneNumber, userName } = req.body;
+    const { address, items, phoneNumber, userName,imageUrl,email } = req.body;
+    console.log("🔍 Incoming order request:", req.body);
+
     
     // Validate required fields
-    if (!address || !items || !phoneNumber || !userName) {
+    if (!address || !items || !phoneNumber || !userName || !imageUrl) {
       res.status(400).json({
         success: false,
         message: "Missing required fields: address, items, phoneNumber, userName"
@@ -106,7 +113,9 @@ export const createOrder = async (req: IAuthenticatedRequest, res: express.Respo
       user: {
         userId,
         phoneNumber,
-        userName
+        userName,
+        imageUrl,
+        email
       },
       address,
       items,
@@ -152,33 +161,83 @@ export const getAllOrders = async (req: IAuthenticatedRequest, res: express.Resp
   }
 };
 
-// Delete order by ID - ONLY if it belongs to the authenticated user
 export const deleteOrderById = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
   try {
     const userId = req.user.userId;
+    const userRole = req.user.role;
     const orderId = req.params.id;
-    
-    // Only delete if the order belongs to the authenticated user
-    const deletedOrder = await Order.findOneAndDelete({
-      _id: orderId,
-      'user.userId': userId
-    });
-    
-    if (!deletedOrder) {
-      res.status(404).json({
+
+    console.log("🔍 Incoming Delete Request");
+    console.log("🧑 User ID:", userId);
+    console.log("🔐 User Role:", userRole);
+    console.log("📦 Order ID:", orderId);
+
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      console.warn("❌ Invalid Order ID format:", orderId);
+      res.status(400).json({
         success: false,
-        message: "Order not found or you don't have permission to delete it"
+        message: "Invalid order ID format"
       });
       return;
     }
-    
+
+    let deletedOrder;
+
+    if (userRole === "admin") {
+      console.log("🛡️ Admin attempting to delete order...");
+      deletedOrder = await Order.findByIdAndDelete(orderId);
+    } else {
+      console.log("👤 Customer attempting to delete their own order...");
+      
+      const existingOrder = await Order.findOne({
+        _id: orderId
+      });
+
+      if (!existingOrder) {
+        console.warn("❌ Order not found:", orderId);
+        res.status(404).json({
+          success: false,
+          message: "Order not found"
+        });
+        return;
+      }
+
+      const ownerId = existingOrder.user?.userId?.toString();
+      console.log("👤 Order Owner ID:", ownerId);
+
+      if (ownerId !== userId) {
+        console.warn("🚫 Permission denied. User does not own the order.");
+        res.status(403).json({
+          success: false,
+          message: "You do not have permission to delete this order"
+        });
+        return;
+      }
+
+      deletedOrder = await Order.findOneAndDelete({
+        _id: orderId,
+        'user.userId': userId
+      });
+    }
+
+    if (!deletedOrder) {
+      console.warn("❌ Order not found or already deleted:", orderId);
+      res.status(404).json({
+        success: false,
+        message: "Order not found or already deleted"
+      });
+      return;
+    }
+
+    console.log("✅ Order deleted successfully:", deletedOrder._id);
     res.json({
       success: true,
       message: "Order deleted successfully",
       data: deletedOrder
     });
+
   } catch (error) {
-    console.error("Error deleting order:", error);
+    console.error("🔥 Error deleting order:", error);
     res.status(500).json({
       success: false,
       message: error instanceof Error ? error.message : 'Unknown error'
