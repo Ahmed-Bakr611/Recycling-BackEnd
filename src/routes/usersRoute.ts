@@ -4,6 +4,7 @@ import {
   deleteUser,
   getAllUsers,
   getUserById,
+  getUserStats,
   searchUsers,
   updateUserByAdmin,
 } from "../controllers/userController";
@@ -11,6 +12,8 @@ import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
 
 export default (appRouter: express.Router) => {
+  appRouter.get("/stats", getUserStats);
+
   appRouter.get("/users", authenticate, authorize(["admin"]), getAllUsers);
   appRouter.delete(
     "/users/:id",

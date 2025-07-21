@@ -1,6 +1,6 @@
+
 import { Request, Response } from "express";
 import Category, { ICategory } from "../models/category";
-
 interface MulterRequest extends Request {
   file: Express.Multer.File;
 }
@@ -72,7 +72,6 @@ export const createCategoryWithImage = async (
           points: Number(points),
           price: Number(price),
           measurement_unit,
-          categoryName: name.toLowerCase()
         },
       ],
     });
@@ -97,24 +96,13 @@ export const addItem = async (
       return;
     }
 
-    const category = await Category.findOne({
-  name: { $regex: `^${categoryName}$`, $options: "i" },
-});
-
-if (!category) {
-  res.status(404).json({ message: "Category not found" });
-  return;
-}
-
-const item = {
-  name: itemName,
-  image: req.file.path,
-  points: Number(points),
-  price: Number(price),
-  measurement_unit,
-  categoryName: category.name, // ✅ ensure consistent value
-};
-
+    const item = {
+      name: itemName,
+      image: req.file.path,
+      points: Number(points),
+      price: Number(price),
+      measurement_unit,
+    };
 
     const updatedCategory = await Category.findOneAndUpdate(
       { name: categoryName },
