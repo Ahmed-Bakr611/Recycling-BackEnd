@@ -12,6 +12,7 @@ import {
   deleteItem,
   getAllItems,
   getCategoryByName,
+  getAllCategoryNames,
 } from "../controllers/categoryController";
 import { categoryStorage, subcategoryStorage } from "../utils/cloudinary";
 import { authenticate } from "../middlewares/authenticate";
@@ -22,6 +23,7 @@ const uploadCategory = multer({ storage: categoryStorage });
 const uploadSubcategory = multer({ storage: subcategoryStorage });
 
 router.post("/", authenticate,authorize(["admin"]),uploadCategory.single("image"), createCategory);
+router.get("/category-names", getAllCategoryNames);
 router.get("/", getAllCategories);
 router.get("/:categoryName", getCategoryByName);
 router.post("/with-image",authenticate,authorize(["admin"]),uploadCategory.single("image"),createCategoryWithImage);
