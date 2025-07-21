@@ -10,6 +10,7 @@ import {
   getOrderAnalytics,
   getOrderById,
   getOrdersByStatus,
+  getTopCitiesByOrders,
   getTopMaterialsRecycled,
   getTopUsersByPoints,
   updateOrderStatus,
@@ -19,6 +20,8 @@ import { authorize } from "../middlewares/authorize";
 import { authenticate } from "../middlewares/authenticate";
 
 export default (router: express.Router) => {
+  router.get("/orders/analytics/top-cities", getTopCitiesByOrders);
+
   router.get('/top-materials-recycled', getTopMaterialsRecycled);
   router.get('/top-users-points', getTopUsersByPoints);
 

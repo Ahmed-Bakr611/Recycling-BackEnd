@@ -486,29 +486,35 @@ export const getOrderAnalytics = async (_req: express.Request, res: express.Resp
     const statusCounts = await Order.aggregate([
       { $group: { _id: "$status", count: { $sum: 1 } } }
     ]);
-    const dailyOrders = await Order.aggregate([
-      {
-        $group: {
-          _id: {
-            day: { $dayOfWeek: "$createdAt" },
-          },
-          count: { $sum: 1 },
-        }
+const dailyOrdersRaw = await Order.aggregate([
+  {
+    $group: {
+      _id: {
+        day: { $dayOfWeek: { date: "$createdAt", timezone: "Africa/Cairo" } }
       },
-      { $sort: { "_id.day": 1 } }
-    ]);
+      count: { $sum: 1 },
+    }
+  }
+]);
 
-    res.json({
-      success: true,
-      data: {
-        totalOrders,
-        statusCounts: statusCounts.reduce((acc, s) => {
-          acc[s._id] = s.count;
-          return acc;
-        }, {} as Record<string, number>),
-        dailyOrders: dailyOrders.map(d => d.count),
-      }
-    });
+const dailyOrders = Array(7).fill(0);
+for (const item of dailyOrdersRaw) {
+  const dayIndex = item._id.day - 1; // To make Sunday = 0
+  dailyOrders[dayIndex] = item.count;
+}
+
+res.json({
+  success: true,
+  data: {
+    totalOrders,
+    statusCounts: statusCounts.reduce((acc, s) => {
+      acc[s._id] = s.count;
+      return acc;
+    }, {} as Record<string, number>),
+    dailyOrders,
+  }
+});
+
   } catch (error) {
     console.error("Error getting order analytics:", error);
     res.status(500).json({
@@ -595,3 +601,33 @@ export const getTopMaterialsRecycled = async (req: Request, res: Response): Prom
     });
   }
 }; 
+
+
+export const getTopCitiesByOrders = async (_req: express.Request, res: express.Response): Promise<void> => {
+  try {
+    const topCities = await Order.aggregate([
+      {
+        $group: {
+          _id: "$address.city",
+          totalOrders: { $sum: 1 }
+        }
+      },
+      { $sort: { totalOrders: -1 } },
+      { $limit: 10 } // adjust as needed
+    ]);
+
+    res.json({
+      success: true,
+      data: topCities.map(city => ({
+        city: city._id,
+        totalOrders: city.totalOrders
+      }))
+    });
+  } catch (error) {
+    console.error("Error getting top cities by orders:", error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+};
