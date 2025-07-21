@@ -7,6 +7,8 @@ export interface IItem {
   price: number;
   measurement_unit: 1 | 2;
   image: string;
+    categoryName?: string; 
+
 }
 
 const itemSchema = new Schema<IItem>({
@@ -15,6 +17,7 @@ const itemSchema = new Schema<IItem>({
   price: { type: Number, required: true },
   measurement_unit: { type: Number, enum: [1, 2], required: true },
   image: { type: String, required: true },
+    categoryName: { type: String }, 
 });
 
 export interface ICategory extends Document {
