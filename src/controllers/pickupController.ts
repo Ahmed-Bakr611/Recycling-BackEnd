@@ -1,6 +1,6 @@
 import express from "express";
 import mongoose, { Document, Schema, Model } from 'mongoose';
-
+import Category from '../models/category'
 // Type definitions
 interface IAddress {
   city: string;
@@ -109,18 +109,30 @@ export const createOrder = async (req: IAuthenticatedRequest, res: express.Respo
       return;
     }
 
-    const newOrder = new Order({
-      user: {
-        userId,
-        phoneNumber,
-        userName,
-        imageUrl,
-        email
-      },
-      address,
-      items,
-      status: 'Pending'
-    });
+const enrichedItems = await Promise.all(
+  items.map(async (item: IItem) => {
+    // Find the category by its ID
+    const category = await Category.findById(item.categoryId);
+    return {
+      ...item,
+      categoryName: category ? category.name : null,
+    };
+  })
+);
+
+// Then use enrichedItems in your new order:
+const newOrder = new Order({
+  user: {
+    userId,
+    phoneNumber,
+    userName,
+    imageUrl,
+    email
+  },
+  address,
+  items: enrichedItems,  // <--- Use the enriched items here!
+  status: 'Pending'
+});;
     
     const savedOrder = await newOrder.save();
     
@@ -464,6 +476,158 @@ export const updateOrderStatusByAdmin = async (req: express.Request, res: expres
     res.status(500).json({
       success: false,
       message: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+export const getOrderAnalytics = async (_req: express.Request, res: express.Response): Promise<void> => {
+  try {
+    const totalOrders = await Order.countDocuments();
+    const statusCounts = await Order.aggregate([
+      { $group: { _id: "$status", count: { $sum: 1 } } }
+    ]);
+const dailyOrdersRaw = await Order.aggregate([
+  {
+    $group: {
+      _id: {
+        day: { $dayOfWeek: { date: "$createdAt", timezone: "Africa/Cairo" } }
+      },
+      count: { $sum: 1 },
+    }
+  }
+]);
+
+const dailyOrders = Array(7).fill(0);
+for (const item of dailyOrdersRaw) {
+  const dayIndex = item._id.day - 1; // To make Sunday = 0
+  dailyOrders[dayIndex] = item.count;
+}
+
+res.json({
+  success: true,
+  data: {
+    totalOrders,
+    statusCounts: statusCounts.reduce((acc, s) => {
+      acc[s._id] = s.count;
+      return acc;
+    }, {} as Record<string, number>),
+    dailyOrders,
+  }
+});
+
+  } catch (error) {
+    console.error("Error getting order analytics:", error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+};
+import { Request, Response } from "express";
+
+export const getTopUsersByPoints = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    // Only completed orders count
+    const topUsers = await Order.aggregate([
+      { $match: { status: "completed" } },                  // <-- Only completed orders
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: "$user.userId",
+          userName: { $first: "$user.userName" },
+          imageUrl: { $first: "$user.imageUrl" },
+          phoneNumber: { $first: "$user.phoneNumber" },
+          email: { $first: "$user.email" },
+          totalPoints: { $sum: "$items.points" }
+        }
+      },
+      { $sort: { totalPoints: -1 } },
+      { $limit: 10 }
+    ]);
+
+    res.json({
+      success: true,
+      data: topUsers
+    });
+  } catch (error) {
+    console.error("Error getting top users by points:", error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+};
+export const getTopMaterialsRecycled = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const category = req.query.category as string | undefined;
+
+    // Build match stage if category is provided
+    const matchStage = category ? { "items.categoryName": category } : {};
+
+    const pipeline: any[] = [
+      { $unwind: "$items" },
+    ];
+
+    // Only filter if category specified
+    if (category) {
+      pipeline.push({ $match: { "items.categoryName": category } });
+    }
+
+    pipeline.push(
+      {
+        $group: {
+          _id: { itemName: "$items.itemName", categoryName: "$items.categoryName" },
+          totalQuantity: { $sum: "$items.quantity" },
+          totalPoints: { $sum: "$items.points" },
+          image: { $first: "$items.image" },
+          categoryName: { $first: "$items.categoryName" },
+        }
+      },
+      { $sort: { totalQuantity: -1 } },
+      { $limit: 4 }
+    );
+
+    const materials = await Order.aggregate(pipeline);
+
+    res.json({
+      success: true,
+      data: materials
+    });
+  } catch (error) {
+    console.error("Error getting top materials recycled:", error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+}; 
+
+
+export const getTopCitiesByOrders = async (_req: express.Request, res: express.Response): Promise<void> => {
+  try {
+    const topCities = await Order.aggregate([
+      {
+        $group: {
+          _id: "$address.city",
+          totalOrders: { $sum: 1 }
+        }
+      },
+      { $sort: { totalOrders: -1 } },
+      { $limit: 10 } // adjust as needed
+    ]);
+
+    res.json({
+      success: true,
+      data: topCities.map(city => ({
+        city: city._id,
+        totalOrders: city.totalOrders
+      }))
+    });
+  } catch (error) {
+    console.error("Error getting top cities by orders:", error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : "Unknown error"
     });
   }
 };

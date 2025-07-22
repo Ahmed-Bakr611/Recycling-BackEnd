@@ -65,3 +65,49 @@ export const searchUsers = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Search failed" });
   }
 };
+
+
+export const getUserStats = async (req: Request, res: Response) => {
+  try {
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    const stats = await User.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: oneYearAgo },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            month: { $month: "$createdAt" },
+            year: { $year: "$createdAt" },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $sort: {
+          "_id.year": 1,
+          "_id.month": 1,
+        },
+      },
+    ]);
+
+    const monthsMap = [
+      "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ];
+
+    const formatted = stats.map((item) => ({
+      label: `${monthsMap[item._id.month]} ${item._id.year}`,
+      count: item.count,
+    }));
+
+return res.status(200).json({ success: true, data: formatted });
+  } catch (error) {
+    console.error("Error getting user stats:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
