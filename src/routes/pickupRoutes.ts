@@ -7,8 +7,12 @@ import {
   deleteOrderById,
   getAllOrders,
   getAllOrdersForAdmin,
+  getOrderAnalytics,
   getOrderById,
   getOrdersByStatus,
+  getTopCitiesByOrders,
+  getTopMaterialsRecycled,
+  getTopUsersByPoints,
   updateOrderStatus,
   updateOrderStatusByAdmin,
 } from "../controllers/pickupController";
@@ -16,9 +20,15 @@ import { authorize } from "../middlewares/authorize";
 import { authenticate } from "../middlewares/authenticate";
 
 export default (router: express.Router) => {
-  // All routes now require authentication using your existing middleware
+  router.get("/orders/analytics/top-cities", getTopCitiesByOrders);
+
+  router.get('/top-materials-recycled', getTopMaterialsRecycled);
+  router.get('/top-users-points', getTopUsersByPoints);
+
 router.get("/orders", authenticate, authorize(["customer", "admin"]), getAllOrders);
 router.post("/orders", authenticate,  createOrder);
+router.get('/orders/analytics', getOrderAnalytics);
+
 router.get("/orders/:id", authenticate, authorize(["customer", "admin"]), getOrderById);
 router.delete("/orders/:id", authenticate, authorize(["customer", "admin"]), deleteOrderById);
 router.delete("/orders", authenticate, authorize(["customer", "admin"]), deleteAllOrders);

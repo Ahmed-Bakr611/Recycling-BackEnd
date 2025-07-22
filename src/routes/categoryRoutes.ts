@@ -12,20 +12,33 @@ import {
   deleteItem,
   getAllItems,
   getCategoryByName,
+  getAllCategoryNames,
 } from "../controllers/categoryController";
 import { categoryStorage, subcategoryStorage } from "../utils/cloudinary";
 import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
+import { imageFileFilter } from "../utils/mutlerFilter";
 
 const router = express.Router();
-const uploadCategory = multer({ storage: categoryStorage });
-const uploadSubcategory = multer({ storage: subcategoryStorage });
-
+const uploadCategory = multer({
+  storage: categoryStorage,
+  fileFilter: imageFileFilter,
+});
+const uploadSubcategory = multer({
+  storage: subcategoryStorage,
+  fileFilter: imageFileFilter,
+});
 router.post("/", authenticate,authorize(["admin"]),uploadCategory.single("image"), createCategory);
+router.get("/category-names", getAllCategoryNames);
 router.get("/", getAllCategories);
 router.get("/:categoryName", getCategoryByName);
-router.post("/with-image",authenticate,authorize(["admin"]),uploadCategory.single("image"),createCategoryWithImage);
-router.post("/add-item/:categoryName",authenticate,authorize(["admin"]),uploadSubcategory.single("image"),addItem);
+router.post(
+  "/with-image",
+  authenticate,
+  authorize(["admin"]),
+  uploadCategory.single("image"),
+  createCategoryWithImage
+);router.post("/add-item/:categoryName",authenticate,authorize(["admin"]),uploadSubcategory.single("image"),addItem);
 router.get("/get-items/:categoryName", getItems);
 router.get("/get-items", getAllItems);
 router.put("/:categoryName",authenticate,authorize(["admin"]), uploadCategory.single("image"), updatedCategory);
