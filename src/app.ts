@@ -6,7 +6,10 @@ import cartRoutes from "./routes/cartRoutes";
 import { v4 as uuidv4 } from "uuid";
 
 const app = express();
-
+app.use((req, _res, next) => {
+  console.log(`🔥 Request received: ${req.method} ${req.originalUrl}`);
+  next();
+});
 app.use(
   cors({
     credentials: true,
@@ -36,8 +39,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// app.use("/api/categories", categoryRoutes);
-app.use("/categories", categoryRoutes);
-app.use("/api/cart", cartRoutes);
+
+app.use("/api/categories", categoryRoutes);
+app.use('/api/cart', cartRoutes);
+
+
 
 export default app;

@@ -30,9 +30,18 @@ export const authenticate = (
 
     req.user = decoded; // ✅ Now req.user = { userId, role }
 
+    console.log("start authenticate middleware");
+    console.log("user Id", decoded.userId);
     User.findByIdAndUpdate(decoded.userId, {
       lastActiveAt: new Date(),
-    }).catch((err) => console.error("Failed to update lastActiveAt", err));
+    })
+      .then((res) => {
+        if (!res) console.log("User not found!");
+        else console.log("User updated:", res._id);
+      })
+      .catch((err) => console.error("Failed to update lastActiveAt", err));
+
+    console.log("end authenticate Middleware");
 
     next();
   } catch (err: any) {

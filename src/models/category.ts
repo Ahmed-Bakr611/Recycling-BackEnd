@@ -29,7 +29,7 @@ export interface ICategory extends Document {
 
 const categorySchema = new Schema<ICategory>(
   {
-    name: { type: String, required: true, unique: true },
+    name: { type: String, required: true, unique: true, lowercase:true },
     description: { type: String, required: true },
     image: { type: String, required: true },
     items: [itemSchema],

@@ -12,6 +12,5 @@ export default (): express.Router => {
   addressRoute(router);
   profile(router);
   users(router);
-
   return router;
 };
