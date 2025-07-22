@@ -29,9 +29,18 @@ export const createCategory = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { name, description } = req.body;
+    const { description } = req.body;
     const image = req.file?.path ?? "";
+    const name = req.body.name?.trim().toLowerCase();
 
+    const existing = await Category.findOne({
+      name: { $regex: `^${name}$`, $options: "i" },
+    });
+
+    if (existing) {
+      res.status(400).json({ message: "Category already exists" });
+      return;
+    }
     const category = new Category({ name, description, image, items: [] });
     await category.save();
 
@@ -60,7 +69,14 @@ export const createCategoryWithImage = async (
   try {
     const { name, description, itemName, points, price, measurement_unit } =
       req.body;
+    const existing = await Category.findOne({
+      name: { $regex: `^${name}$`, $options: "i" },
+    });
 
+    if (existing) {
+      res.status(400).json({ message: "Category already exists" });
+      return;
+    }
     const newCategory = new Category({
       name,
       description,
@@ -105,7 +121,7 @@ export const addItem = async (
     };
 
     const updatedCategory = await Category.findOneAndUpdate(
-      { name: categoryName },
+      { name: { $regex: `^${categoryName}$`, $options: "i" } },
       { $push: { items: item } },
       { new: true }
     );
@@ -124,7 +140,10 @@ export const addItem = async (
 export const getItems = async (req: Request, res: Response): Promise<void> => {
   try {
     const { categoryName } = req.params;
-    const category = await Category.findOne({ name: categoryName });
+
+    const category = await Category.findOne({
+      name: { $regex: `^${categoryName}$`, $options: "i" },
+    });
 
     if (!category) {
       res.status(404).json({ message: "Category not found" });
@@ -136,6 +155,7 @@ export const getItems = async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({ message: (err as Error).message });
   }
 };
+
 export const updatedCategory = async (
   req: MulterRequest,
   res: Response
@@ -154,7 +174,7 @@ export const updatedCategory = async (
     };
 
     const updated = await Category.findOneAndUpdate(
-      { name: categoryName },
+      { name: { $regex: `^${categoryName}$`, $options: "i" } },
       { $set: updateData },
       { new: true }
     );
@@ -177,7 +197,9 @@ export const getCategoryByName = async (
   try {
     const { categoryName } = req.params;
 
-    const category = await Category.findOne({ name: categoryName });
+    const category = await Category.findOne({
+      name: { $regex: `^${categoryName}$`, $options: "i" },
+    });
 
     if (!category) {
       res.status(404).json({ message: "Category not found" });
@@ -196,7 +218,9 @@ export const deleteCategory = async (
 ): Promise<void> => {
   try {
     const { categoryName } = req.params;
-    const deleted = await Category.findOneAndDelete({ name: categoryName });
+    const deleted = await Category.findOneAndDelete({
+      name: { $regex: `^${categoryName}$`, $options: "i" },
+    });
 
     if (!deleted) {
       res.status(404).json({ message: "Category not found" });
@@ -218,7 +242,9 @@ export const updateItem = async (
     const { name, points, price, measurement_unit } = req.body;
     const image = req.file?.path;
 
-    const category = await Category.findOne({ name: categoryName });
+    const category = await Category.findOne({
+      name: { $regex: `^${categoryName}$`, $options: "i" },
+    });
 
     if (!category) {
       res.status(404).json({ message: "Category not found" });
@@ -254,26 +280,29 @@ export const updateItem = async (
   }
 };
 
-export const deleteItem = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+export const deleteItem = async (req: Request, res: Response): Promise<void> => {
   try {
     const { categoryName, itemId } = req.params;
-    const category = await Category.findOne({ name: categoryName });
 
+    const category = await Category.findOne({
+      name: { $regex: `^${categoryName}$`, $options: "i" },
+    });
     if (!category) {
       res.status(404).json({ message: "Category not found" });
       return;
     }
 
-    const item = category.items.id(itemId);
-    if (!item) {
+    const itemIndex = category.items.findIndex(
+      (item) => item._id.toString() === itemId
+    );
+
+    if (itemIndex === -1) {
       res.status(404).json({ message: "Item not found" });
       return;
     }
 
-    category.items.pull(itemId);
+    category.items.splice(itemIndex, 1);
+
     await category.save();
 
     res.status(200).json({
@@ -281,6 +310,7 @@ export const deleteItem = async (
       updatedCategory: category,
     });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: (err as Error).message });
   }
 };

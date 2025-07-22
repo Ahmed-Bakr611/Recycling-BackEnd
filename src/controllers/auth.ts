@@ -183,13 +183,6 @@ export const logout = async (req: Request, res: Response) => {
       path: "/",
     });
 
-    res.clearCookie("sessionId", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-      path: "/",
-    });
-
     res.sendStatus(204);
   } catch (err) {
     console.error("Logout error:", err);
