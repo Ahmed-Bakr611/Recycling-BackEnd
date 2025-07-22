@@ -10,21 +10,19 @@ export const getCart = async (req: Request, res: Response) => {
   }
 
   let cart = null;
-
-  // Priority: if user is logged in, prefer their cart
   if (userId) {
     cart = await Cart.findOne({ userId });
-  }
-
-  // If no cart found for user, try session
-  if (!cart && sessionId) {
+    if (!cart) {
+      cart = new Cart({ userId, items: [] });
+      await cart.save();
+    }
+  } else if (sessionId) {
     cart = await Cart.findOne({ sessionId });
+    if (!cart) {
+      cart = new Cart({ sessionId, items: [] });
+      await cart.save();
+    }
   }
-
-  if (!cart) {
-    return res.status(404).json({ message: 'Cart not found' });
-  }
-
   return res.status(200).json(cart);
 };
 
@@ -40,17 +38,17 @@ export const addItemToCart = async (req: Request, res: Response) => {
 
   let cart = await Cart.findOne(userId ? { userId } : { sessionId });
   if (!cart) {
-    cart = new Cart({ ...(userId ? { userId } : { sessionId }), items: [] });
+    cart = new Cart({ ...(userId ? { userId } : { sessionId }), items: [newItem] });
+    await cart.save();
+    return res.json(cart);
   }
-
-  const existingItem = cart.items.find(item => item.categoryId === newItem.categoryId);
-
+  // Compare categoryId as string for robustness
+  const existingItem = cart.items.find(item => item.categoryId.toString() === newItem.categoryId.toString());
   if (existingItem) {
     existingItem.quantity += newItem.quantity;
   } else {
     cart.items.push(newItem);
   }
-
   await cart.save();
   return res.json(cart);
 };
@@ -66,15 +64,14 @@ export const updateCartItem = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Valid categoryId and quantity are required" });
     }
 
-    const cart = await Cart.findOne(userId ? { userId } : { sessionId });
-
-    if (!cart) return res.status(404).json({ message: "Cart not found" });
-
+    let cart = await Cart.findOne(userId ? { userId } : { sessionId });
+    if (!cart) {
+      cart = new Cart({ ...(userId ? { userId } : { sessionId }), items: [] });
+      await cart.save();
+    }
     const item = cart.items.find((i) => i.categoryId === categoryId);
     if (!item) return res.status(404).json({ message: "Item not found in cart" });
-
     item.quantity = quantity;
-
     await cart.save();
     return res.status(200).json(cart);
   } catch (error) {
@@ -92,12 +89,12 @@ export const removeCartItem = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "categoryId is required" });
     }
 
-    const cart = await Cart.findOne(userId ? { userId } : { sessionId });
-
-    if (!cart) return res.status(404).json({ message: "Cart not found" });
-
+    let cart = await Cart.findOne(userId ? { userId } : { sessionId });
+    if (!cart) {
+      cart = new Cart({ ...(userId ? { userId } : { sessionId }), items: [] });
+      await cart.save();
+    }
     cart.items = cart.items.filter(item => item.categoryId.toString().trim() !== categoryId);
-
     await cart.save();
     return res.status(200).json(cart);
   } catch (error) {
@@ -114,16 +111,13 @@ export const clearCart = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "User or session ID is required" });
     }
 
-    const cart = await Cart.findOneAndUpdate(
-      userId ? { userId } : { sessionId },
-      { items: [] },
-      { new: true }
-    );
-
+    let cart = await Cart.findOne(userId ? { userId } : { sessionId });
     if (!cart) {
-      return res.status(404).json({ message: "Cart not found" });
+      cart = new Cart({ ...(userId ? { userId } : { sessionId }), items: [] });
+      await cart.save();
     }
-
+    cart.items = [];
+    await cart.save();
     return res.json({ message: "Cart cleared", cart });
   } catch (error) {
     return res.status(500).json({ message: "Failed to clear cart", error });
