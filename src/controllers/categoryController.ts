@@ -1,14 +1,12 @@
-
 import { Request, Response } from "express";
 import Category, { ICategory } from "../models/category";
+
+
 interface MulterRequest extends Request {
   file: Express.Multer.File;
 }
 
-export const getAllItems = async (
-  _req: Request,
-  res: Response
-): Promise<void> => {
+export const getAllItems = async (_req: Request, res: Response): Promise<void> => {
   try {
     const categories = await Category.find();
     const items = categories.flatMap((cat) =>
@@ -24,10 +22,7 @@ export const getAllItems = async (
   }
 };
 
-export const createCategory = async (
-  req: MulterRequest,
-  res: Response
-): Promise<void> => {
+export const createCategory = async (req: MulterRequest, res: Response): Promise<void> => {
   try {
     const { name, description } = req.body;
     const image = req.file?.path ?? "";
@@ -41,10 +36,7 @@ export const createCategory = async (
   }
 };
 
-export const getAllCategories = async (
-  _req: Request,
-  res: Response
-): Promise<void> => {
+export const getAllCategories = async (_req: Request, res: Response): Promise<void> => {
   try {
     const categories = await Category.find();
     res.json(categories);
@@ -53,13 +45,9 @@ export const getAllCategories = async (
   }
 };
 
-export const createCategoryWithImage = async (
-  req: MulterRequest,
-  res: Response
-): Promise<void> => {
+export const createCategoryWithImage = async (req: MulterRequest, res: Response): Promise<void> => {
   try {
-    const { name, description, itemName, points, price, measurement_unit } =
-      req.body;
+    const { name, description, itemName, points, price, measurement_unit } = req.body;
 
     const newCategory = new Category({
       name,
@@ -83,10 +71,7 @@ export const createCategoryWithImage = async (
   }
 };
 
-export const addItem = async (
-  req: MulterRequest,
-  res: Response
-): Promise<void> => {
+export const addItem = async (req: MulterRequest, res: Response): Promise<void> => {
   try {
     const { categoryName } = req.params;
     const { itemName, points, price, measurement_unit } = req.body;
@@ -136,16 +121,12 @@ export const getItems = async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({ message: (err as Error).message });
   }
 };
-export const updatedCategory = async (
-  req: MulterRequest,
-  res: Response
-): Promise<void> => {
+
+export const updatedCategory = async (req: MulterRequest, res: Response): Promise<void> => {
   try {
     const { categoryName } = req.params;
-    const { name, description, image: imageFromBody } = req.body;
-    const imageFromFile = req.file?.path;
-
-    const image = imageFromBody || imageFromFile;
+    const { name, description } = req.body;
+    const image = req.file?.path;
 
     const updateData: Partial<ICategory> = {
       ...(name && { name }),
@@ -170,30 +151,7 @@ export const updatedCategory = async (
   }
 };
 
-export const getCategoryByName = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const { categoryName } = req.params;
-
-    const category = await Category.findOne({ name: categoryName });
-
-    if (!category) {
-      res.status(404).json({ message: "Category not found" });
-      return;
-    }
-
-    res.status(200).json(category);
-  } catch (err) {
-    res.status(500).json({ message: (err as Error).message });
-  }
-};
-
-export const deleteCategory = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+export const deleteCategory = async (req: Request, res: Response): Promise<void> => {
   try {
     const { categoryName } = req.params;
     const deleted = await Category.findOneAndDelete({ name: categoryName });
@@ -209,10 +167,7 @@ export const deleteCategory = async (
   }
 };
 
-export const updateItem = async (
-  req: MulterRequest,
-  res: Response
-): Promise<void> => {
+export const updateItem = async (req: MulterRequest, res: Response): Promise<void> => {
   try {
     const { categoryName, itemId } = req.params;
     const { name, points, price, measurement_unit } = req.body;
@@ -255,46 +210,28 @@ export const updateItem = async (
 };
 
 
+
 export const deleteItem = async (req: Request, res: Response): Promise<void> => {
-
-
   try {
     const { categoryName, itemId } = req.params;
-
     const category = await Category.findOne({ name: categoryName });
+
     if (!category) {
       res.status(404).json({ message: "Category not found" });
       return;
     }
 
-    const itemIndex = category.items.findIndex(
-      (item) => item._id.toString() === itemId
-    );
-
-    if (itemIndex === -1) {
+    const item = category.items.id(itemId);
+    if (!item) {
       res.status(404).json({ message: "Item not found" });
       return;
     }
 
- 
-    category.items.splice(itemIndex, 1);
-
+    category.items.pull(itemId);
     await category.save();
 
-    res.status(200).json({
-      message: "Item deleted successfully",
-      updatedCategory: category,
-    });
+    res.status(200).json({ message: "Item deleted successfully", updatedCategory: category });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: (err as Error).message });
   }
 };
-export const getAllCategoryNames = async (_req: Request, res: Response) => {
-  try {
-    const categories = await Category.find({}, { name: 1, _id: 0 }); // Only get name
-    const categoryNames = categories.map(cat => cat.name);
-    res.status(200).json({ success: true, data: categoryNames });
-  } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
-  }}
