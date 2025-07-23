@@ -51,7 +51,7 @@ export const getCart = async (req: Request, res: Response) => {
 export const addItemToCart = async (req: Request, res: Response) => {
   const userId = req.user?.userId;
   const sessionId = req.sessionId;
-  const { categoryId, itemName, image, points, price, measurement_unit, quantity } = req.body;
+  const { categoryId, categoryName, itemName, image, points, price, measurement_unit, quantity } = req.body;
 
   if (!userId && !sessionId) {
     return res.status(400).json({ message: 'Missing user or session' });
@@ -85,7 +85,7 @@ export const addItemToCart = async (req: Request, res: Response) => {
     if (price) existingItem.price = price;
     if (measurement_unit) existingItem.measurement_unit = measurement_unit;
   } else {
-    cart.items.push({ categoryId, itemName, image, points, price, measurement_unit, quantity });
+   cart.items.push({ categoryId,categoryName, itemName, image, points, price, measurement_unit, quantity });
   }
 
   await cart.save();
