@@ -41,10 +41,9 @@ app.use((req, res, next) => {
   next();
 });
 
-
 app.use("/api/categories", categoryRoutes);
-app.use('/api/cart', cartRoutes);
-
+app.use("/api/cart", cartRoutes);
+console.log("BAKKKKKKKKKKKKKKKKKKKKKKKKKKKKKR");
 
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof multer.MulterError) {
