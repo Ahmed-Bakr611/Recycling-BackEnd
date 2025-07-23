@@ -6,12 +6,15 @@ import cartRoutes from "./routes/cartRoutes";
 import { v4 as uuidv4 } from "uuid";
 import multer from "multer";
 import { Request, Response, NextFunction } from "express";
+import setupSwagger from "./config/swagger"; // ✅ use only this
 
 const app = express();
+
 app.use((req, _res, next) => {
   console.log(`🔥 Request received: ${req.method} ${req.originalUrl}`);
   next();
 });
+
 app.use(
   cors({
     credentials: true,
@@ -21,11 +24,6 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-
-app.use((req, res, next) => {
-  console.log(`[${req.method}] ${req.originalUrl}`);
-  next();
-});
 
 app.use((req, res, next) => {
   if (!req.cookies.sessionId) {
@@ -41,17 +39,18 @@ app.use((req, res, next) => {
   next();
 });
 
+// ✅ Swagger docs at /api-docs
+setupSwagger(app);
 
-app.use("/api/categories", categoryRoutes);
-app.use('/api/cart', cartRoutes);
+// app.use("/api/categories", categoryRoutes);
+// app.use("/api/cart", cartRoutes);
 
-
+// Global error handler
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof multer.MulterError) {
     return res.status(400).json({ message: err.message });
   }
 
-  // Custom error from fileFilter
   if (err.message === "Only JPEG and PNG images are allowed") {
     return res.status(400).json({ message: err.message });
   }
@@ -59,4 +58,5 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   console.error("Global error:", err);
   res.status(500).json({ message: "Something went wrong" });
 });
+
 export default app;

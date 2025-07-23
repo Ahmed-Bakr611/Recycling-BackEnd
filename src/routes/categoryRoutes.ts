@@ -1,34 +1,40 @@
+import { authenticate } from "./../middlewares/authenticate";
+import { authorize } from "./../middlewares/authorize";
+
 import express from "express";
 import multer from "multer";
 import {
   createCategory,
   getAllCategories,
-  createCategoryWithImage,
-  addItem,
-  getItems,
+  updateCategory,
   deleteCategory,
-  updateItem,
-  updatedCategory,
-  deleteItem,
-  getAllItems,
 } from "../controllers/categoryController";
-import { categoryStorage, subcategoryStorage } from "../utils/cloudinary";
-
-const router = express.Router();
-
+import { categoryStorage } from "../utils/cloudinary";
 const uploadCategory = multer({ storage: categoryStorage });
-const uploadSubcategory = multer({ storage: subcategoryStorage });
 
+export default (router: express.Router) => {
+  router.get("/categories", getAllCategories);
 
-router.post("/", uploadCategory.single("image"), createCategory);
-router.get("/", getAllCategories);
-router.post("/with-image", uploadCategory.single("image"), createCategoryWithImage);
-router.post("/add-item/:categoryName", uploadSubcategory.single("image"), addItem);
-router.get("/get-items/:categoryName", getItems);
-router.get("/get-items", getAllItems);
-router.put("/:categoryName", uploadCategory.single("image"), updatedCategory);
-router.delete("/:categoryName", deleteCategory);
-router.put("/item/:categoryName/:itemId", uploadSubcategory.single("image"), updateItem);
-router.delete("/item/:categoryName/:itemId", deleteItem);
+  router.post(
+    "/categories",
+    authenticate,
+    authorize(["admin"]),
+    uploadCategory.single("image"),
+    createCategory
+  );
 
-export default router;
+  router.put(
+    "/categories/:categoryId",
+    uploadCategory.single("image"),
+    authenticate,
+    authorize(["admin"]),
+    updateCategory
+  );
+
+  router.delete(
+    "/categories/:categoryId",
+    authenticate,
+    authorize(["admin"]),
+    deleteCategory
+  );
+};
