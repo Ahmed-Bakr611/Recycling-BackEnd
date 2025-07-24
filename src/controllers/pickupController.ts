@@ -480,7 +480,7 @@ export const cancelOrder = async (req: IAuthenticatedRequest, res: express.Respo
       return;
     }
 
-    order.status = 'Cancelled';
+    order.status = 'cancelled';
     await order.save();
 
     res.json({
