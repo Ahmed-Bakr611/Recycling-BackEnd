@@ -6,6 +6,7 @@ import {
   createCategoryWithImage,
   deleteCategory,
   updatedCategory,
+  getCategoryByName,
 } from "../controllers/categoryController";
 import {
   addItem,
@@ -32,6 +33,8 @@ export default (router: express.Router) => {
     uploadSubcategory.single("image"),
     addItem
   );
+  router.get("/get-items/:categoryName", getCategoryByName);
+
   router.get("/categories/get-items/:categoryName", getItems);
 
   router.get("/categories/get-items", getAllItems);

@@ -92,7 +92,6 @@ const Order: Model<IOrder> = mongoose.model<IOrder>('Order', OrderSchema);
 const calculateOrderPoints = (items: IItem[]): number => {
   return items.reduce((total, item) => total + (item.points * item.quantity), 0);
 };
-// Create order - automatically assigns to authenticated user
 export const createOrder = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
   try {
     const userId = req.user.userId;
