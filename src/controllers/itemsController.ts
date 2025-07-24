@@ -9,6 +9,7 @@ export const getAllItems = async (
   _req: Request,
   res: Response
 ): Promise<void> => {
+  console.log("HITTTTTTTTTTTT");
   try {
     const categories = await Category.find();
     const items = categories.flatMap((cat) =>
