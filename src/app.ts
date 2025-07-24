@@ -58,5 +58,4 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   console.error("Global error:", err);
   res.status(500).json({ message: "Something went wrong" });
 });
-
 export default app;

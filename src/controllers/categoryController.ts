@@ -1,69 +1,117 @@
 import { Request, Response } from "express";
-import Category from "../models/category";
-import Item from "../models/item";
+import Category, { ICategory } from "../models/category";
 
 interface MulterRequest extends Request {
   file: Express.Multer.File;
 }
 
-// ======================== CATEGORY ========================
-export const getAllCategories = async (_req: Request, res: Response) => {
-  console.log("HIT ME CATEGORIES");
-  try {
-    const categories = await Category.find();
-    res.status(200).json(categories);
-  } catch (err) {
-    res.status(500).json({ message: (err as Error).message });
-  }
-};
-
-export const createCategory = async (req: MulterRequest, res: Response) => {
+export const createCategory = async (
+  req: MulterRequest,
+  res: Response
+): Promise<void> => {
   try {
     const { name, description } = req.body;
     const image = req.file?.path ?? "";
-    const category = new Category({ name, description, image });
+
+    const category = new Category({ name, description, image, items: [] });
     await category.save();
+
     res.status(201).json(category);
   } catch (err) {
     res.status(400).json({ message: (err as Error).message });
   }
 };
 
-export const updateCategory = async (req: MulterRequest, res: Response) => {
+export const getAllCategories = async (
+  _req: Request,
+  res: Response
+): Promise<void> => {
   try {
-    const { categoryId } = req.params;
-    const { name, description } = req.body;
-    const image = req.file?.path;
-
-    const updateData: any = {
-      ...(name && { name }),
-      ...(description && { description }),
-      ...(image && { image }),
-    };
-    const updated = await Category.findByIdAndUpdate(categoryId, updateData, {
-      new: true,
-    });
-
-    if (!updated)
-      return res.status(404).json({ message: "Category not found" });
-    res.status(200).json(updated);
+    const categories = await Category.find();
+    res.json(categories);
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }
 };
 
-export const deleteCategory = async (req: Request, res: Response) => {
+export const createCategoryWithImage = async (
+  req: MulterRequest,
+  res: Response
+): Promise<void> => {
   try {
-    const { categoryId } = req.params;
-    const deleted = await Category.findByIdAndDelete(categoryId);
+    const { name, description, itemName, points, price, measurement_unit } =
+      req.body;
 
-    if (!deleted)
-      return res.status(404).json({ message: "Category not found" });
+    const newCategory = new Category({
+      name,
+      description,
+      image: req.file?.path ?? "",
+      items: [
+        {
+          name: itemName,
+          image: req.file?.path ?? "",
+          points: Number(points),
+          price: Number(price),
+          measurement_unit,
+        },
+      ],
+    });
 
-    // Optionally delete items that belong to this category
-    await Item.deleteMany({ categoryId });
+    await newCategory.save();
+    res.status(201).json(newCategory);
+  } catch (err) {
+    res.status(400).json({ message: (err as Error).message });
+  }
+};
+export const updatedCategory = async (
+  req: MulterRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { categoryName } = req.params;
+    const { name, description } = req.body;
+    const image = req.file?.path;
 
-    res.status(200).json({ message: "Category and its items deleted" });
+    const category = await Category.findOne({ name: categoryName });
+    if (!category) {
+      res.status(404).json({ message: "Category not found" });
+      return;
+    }
+
+    // Only update if fields exist
+    if (name) {
+      category.name = name.toLowerCase(); // keep lowercase convention
+
+      // Also update categoryName in each item
+      category.items.forEach((item) => {
+        item.categoryName = name.toLowerCase();
+      });
+    }
+
+    if (description) category.description = description;
+    if (image) category.image = image;
+
+    const updated = await category.save();
+
+    res.status(200).json(updated);
+  } catch (err) {
+    res.status(500).json({ message: (err as Error).message });
+  }
+};
+export const deleteCategory = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { categoryName } = req.params;
+    const deleted = await Category.findOneAndDelete({ name: categoryName });
+
+    if (!deleted) {
+      res.status(404).json({ message: "Category not found" });
+      return;
+    }
+
+    res.status(200).json({ message: "Category deleted successfully" });
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }
