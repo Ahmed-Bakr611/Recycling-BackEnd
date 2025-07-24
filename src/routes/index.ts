@@ -6,6 +6,7 @@ import profile from "./profile";
 import users from "./usersRoute";
 import categoryRoutes from "./categoryRoutes";
 import cartRoutes from "./cartRoutes";
+import courierRoutes from './courierRoutes'
 const router = express.Router();
 
 export default (): express.Router => {
@@ -16,5 +17,6 @@ export default (): express.Router => {
   users(router);
   categoryRoutes(router);
   cartRoutes(router);
+  courierRoutes(router)
   return router;
 };
