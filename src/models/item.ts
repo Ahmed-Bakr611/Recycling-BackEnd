@@ -8,7 +8,7 @@ export interface IItem {
   quantity: number; // <-- Added here
   measurement_unit: 1 | 2;
   image: string;
-  categoryName?: string;
+  categoryName: string;
 }
 
 export const itemSchema = new Schema<IItem>({

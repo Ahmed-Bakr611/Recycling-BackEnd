@@ -16,6 +16,30 @@ tags:
 
 paths:
   /categories:
+    post:
+      summary: Create a new category
+      tags: [Categories]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, description, image]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                image:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Category created
+        "400":
+          description: Invalid input
+
     get:
       summary: Get all categories
       tags: [Categories]
@@ -29,11 +53,10 @@ paths:
                 items:
                   $ref: "#/components/schemas/Category"
 
+  /categories/with-image:
     post:
-      summary: Create a new category (admin only)
+      summary: Create a category with one item and image
       tags: [Categories]
-      security:
-        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -42,33 +65,42 @@ paths:
               type: object
               required:
                 - name
+                - description
+                - itemName
+                - points
+                - price
+                - measurement_unit
+                - image
               properties:
                 name:
                   type: string
                 description:
                   type: string
+                itemName:
+                  type: string
+                points:
+                  type: number
+                price:
+                  type: number
+                measurement_unit:
+                  type: number
+                  enum: [1, 2]
                 image:
                   type: string
                   format: binary
       responses:
         "201":
-          description: Category created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Category"
+          description: Category with item created
         "400":
           description: Invalid input
 
-  /categories/{categoryId}:
+  /categories/{categoryName}:
     put:
-      summary: Update category (admin only)
+      summary: Update a category
       tags: [Categories]
-      security:
-        - bearerAuth: []
       parameters:
         - in: path
-          name: categoryId
+          name: categoryName
           required: true
           schema:
             type: string
@@ -89,60 +121,54 @@ paths:
       responses:
         "200":
           description: Category updated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Category"
         "404":
           description: Category not found
 
     delete:
-      summary: Delete category and its items (admin only)
+      summary: Delete a category and its items
       tags: [Categories]
-      security:
-        - bearerAuth: []
       parameters:
         - in: path
-          name: categoryId
+          name: categoryName
           required: true
           schema:
             type: string
       responses:
         "200":
-          description: Category and related items deleted
+          description: Category deleted
         "404":
           description: Category not found
 
-  /items:
+  /categories/get-items:
     get:
-      summary: Get all items
-      tags:
-        - Items
+      summary: Get all items from all categories
+      tags: [Items]
       responses:
         "200":
           description: List of all items
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Item"
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Item"
 
-  /items/category/{categoryId}:
+  /categories/get-items/{categoryName}:
     get:
-      summary: Get items by category ID
-      tags:
-        - Items
+      summary: Get items by category name
+      tags: [Items]
       parameters:
-        - name: categoryId
-          in: path
+        - in: path
+          name: categoryName
           required: true
           schema:
             type: string
-          description: Category ID to filter items
       responses:
         "200":
-          description: Items in specified category
+          description: Items in the specified category
           content:
             application/json:
               schema:
@@ -150,38 +176,13 @@ paths:
                 items:
                   $ref: "#/components/schemas/Item"
 
-  /items/search/{itemName}:
-    get:
-      summary: Search items by name
-      tags:
-        - Items
-      parameters:
-        - name: itemName
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Exact item name to search
-      responses:
-        "200":
-          description: Items with matching name
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Item"
-
-  /items/{categoryId}:
+  /categories/add-item/{categoryName}:
     post:
-      summary: Create a new item under a category
-      tags:
-        - Items
-      security:
-        - bearerAuth: []
+      summary: Add an item to a category
+      tags: [Items]
       parameters:
-        - name: categoryId
-          in: path
+        - in: path
+          name: categoryName
           required: true
           schema:
             type: string
@@ -191,8 +192,15 @@ paths:
           multipart/form-data:
             schema:
               type: object
+              required:
+                - itemName
+                - points
+                - price
+                - quantity
+                - measurement_unit
+                - image
               properties:
-                name:
+                itemName:
                   type: string
                 points:
                   type: number
@@ -207,23 +215,23 @@ paths:
                   type: string
                   format: binary
       responses:
-        "201":
-          description: Item created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Item"
+        "200":
+          description: Item added
         "400":
           description: Invalid input
+        "404":
+          description: Category not found
 
-  /items/{itemId}:
+  /categories/item/{categoryName}/{itemId}:
     put:
-      summary: Update an item by ID
-      tags:
-        - Items
-      security:
-        - bearerAuth: []
+      summary: Update an item in a category
+      tags: [Items]
       parameters:
+        - name: categoryName
+          in: path
+          required: true
+          schema:
+            type: string
         - name: itemId
           in: path
           required: true
@@ -253,20 +261,18 @@ paths:
       responses:
         "200":
           description: Item updated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Item"
         "404":
-          description: Item not found
+          description: Item or category not found
 
     delete:
-      summary: Delete an item by ID
-      tags:
-        - Items
-      security:
-        - bearerAuth: []
+      summary: Delete an item from a category
+      tags: [Items]
       parameters:
+        - name: categoryName
+          in: path
+          required: true
+          schema:
+            type: string
         - name: itemId
           in: path
           required: true
@@ -274,9 +280,9 @@ paths:
             type: string
       responses:
         "200":
-          description: Item deleted successfully
+          description: Item deleted
         "404":
-          description: Item not found
+          description: Item or category not found
 
   /auth/initiateSignup:
     post:
@@ -775,6 +781,41 @@ components:
         description:
           type: string
         image:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Item"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Item:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        points:
+          type: number
+        price:
+          type: number
+        quantity:
+          type: number
+        measurement_unit:
+          type: integer
+          enum: [1, 2]
+          description: |
+            Unit of measurement:
+            - 1: Kilogram (kg)
+            - 2: Piece (unit)
+        image:
+          type: string
+        categoryName:
           type: string
     Address:
       type: object
