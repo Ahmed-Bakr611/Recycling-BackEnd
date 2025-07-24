@@ -6,21 +6,20 @@ const refreshSecret = process.env.JWT_REFRESH_SECRET as string;
 
 interface TokenPayload {
   userId: string;
-    role: string; // ✅ Add this
-
+  role: string; // ✅ Add this
 }
 
 export const generateAccessToken = (userId: string, role: string): string => {
   const payload: TokenPayload = { userId, role };
 
   return jwt.sign(payload, accessSecret, {
-    expiresIn: "1m",
+    expiresIn: "20m",
   });
 };
-export const generateRefreshToken = (userId: string,role:string): string => {
+export const generateRefreshToken = (userId: string, role: string): string => {
   console.log("gernerating Refresh Tokenn ..............");
   console.log(userId);
-  const payload: TokenPayload = { userId ,role};
+  const payload: TokenPayload = { userId, role };
 
   return jwt.sign(payload, refreshSecret, {
     expiresIn: "7d", // Can also use: process.env.REFRESH_TOKEN_EXPIRES || "7d"
