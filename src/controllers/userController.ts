@@ -1,12 +1,76 @@
 // controllers/userController.ts
 import { Request, Response } from "express";
 import User from "../models/users";
+
 export const getAllUsers = async (req: Request, res: Response) => {
   try {
-    const users = await User.find().select("-password -refreshToken");
-    res.status(200).json(users);
+    const { 
+      role, 
+      search, 
+      page = 1, 
+      limit = 10,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    const filter: any = {};
+    
+    if (role) {
+      filter.role = role;
+    }
+
+    if (search) {
+      const searchRegex = new RegExp(search as string, 'i');
+      filter.$or = [
+        { name: searchRegex },
+        { email: searchRegex }
+      ];
+    }
+
+    // Calculate pagination
+    const skip = (Number(page) - 1) * Number(limit);
+
+    // Build sort object
+    const sort: any = {};
+    sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
+
+    // Execute queries
+    const [users, totalUsers] = await Promise.all([
+      User.find(filter)
+        .select("-password -refreshToken")
+        .sort(sort)
+        .skip(skip)
+        .limit(Number(limit)),
+      User.countDocuments(filter)
+    ]);
+
+    // Calculate pagination info
+    const totalPages = Math.ceil(totalUsers / Number(limit));
+    const hasNextPage = Number(page) < totalPages;
+    const hasPrevPage = Number(page) > 1;
+
+    res.status(200).json({
+      success: true,
+      data: users,
+      pagination: {
+        currentPage: Number(page),
+        totalPages,
+        totalUsers,
+        hasNextPage,
+        hasPrevPage,
+        limit: Number(limit)
+      },
+      filters: {
+        role: role || null,
+        search: search || null
+      }
+    });
   } catch (err) {
-    res.status(500).json({ message: "Server Error" });
+    console.error("Error fetching users:", err);
+    res.status(500).json({ 
+      success: false, 
+      message: "Server Error" 
+    });
   }
 };
 export const getUserById = async (req: Request, res: Response) => {
