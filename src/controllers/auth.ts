@@ -317,3 +317,9 @@ export const refreshToken = async (req: Request, res: Response) => {
     res.status(401).json({ message: "Invalid refresh token" });
   }
 };
+export const validateToken = async (req: Request, res: Response) => {
+  res.status(200).json({
+    message: "Access token is valid",
+    user: req.user, // includes userId and role
+  });
+};

@@ -15,6 +15,24 @@ export const getAddresses = async (
   res.json(addresses);
 };
 
+export const getAddressByUserId = async (
+  req: AuthenticatedRequest,
+  res: Response
+) => {
+  const userId = req.params.id;
+  const addresses = await Address.find({ userId });
+  res.json(addresses);
+};
+
+export const getAllAddresses = async (req: Request, res: Response) => {
+  try {
+    const addresses = await Address.find(); // Optional: populate user info
+    res.json(addresses);
+  } catch (error) {
+    console.error("Failed to get addresses:", error);
+    res.status(500).json({ message: "Failed to retrieve addresses" });
+  }
+};
 export const createAddress = async (
   req: AuthenticatedRequest,
   res: Response

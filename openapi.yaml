@@ -1,0 +1,1157 @@
+openapi: 3.0.3
+info:
+  title: Recycling API
+  version: 1.0.0
+  description: API documentation for categories and items
+servers:
+  - url: http://localhost:5000/api
+
+tags:
+  - name: Auth
+    description: Authentication and authorization
+  - name: Categories
+    description: Category management
+  - name: Items
+    description: Item (subcategory) management
+
+paths:
+  /categories:
+    post:
+      summary: Create a new category
+      tags: [Categories]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, description, image]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                image:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Category created
+        "400":
+          description: Invalid input
+
+    get:
+      summary: Get all categories
+      tags: [Categories]
+      responses:
+        "200":
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+
+  /categories/with-image:
+    post:
+      summary: Create a category with one item and image
+      tags: [Categories]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - name
+                - description
+                - itemName
+                - points
+                - price
+                - measurement_unit
+                - image
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                itemName:
+                  type: string
+                points:
+                  type: number
+                price:
+                  type: number
+                measurement_unit:
+                  type: number
+                  enum: [1, 2]
+                image:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Category with item created
+        "400":
+          description: Invalid input
+
+  /categories/{categoryName}:
+    put:
+      summary: Update a category
+      tags: [Categories]
+      parameters:
+        - in: path
+          name: categoryName
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                image:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Category updated
+        "404":
+          description: Category not found
+
+    delete:
+      summary: Delete a category and its items
+      tags: [Categories]
+      parameters:
+        - in: path
+          name: categoryName
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Category deleted
+        "404":
+          description: Category not found
+
+  /categories/get-items:
+    get:
+      summary: Get all items from all categories
+      tags: [Items]
+      responses:
+        "200":
+          description: List of all items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Item"
+
+  /categories/get-items/{categoryName}:
+    get:
+      summary: Get items by category name
+      tags: [Items]
+      parameters:
+        - in: path
+          name: categoryName
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Items in the specified category
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Item"
+
+  /categories/add-item/{categoryName}:
+    post:
+      summary: Add an item to a category
+      tags: [Items]
+      parameters:
+        - in: path
+          name: categoryName
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - itemName
+                - points
+                - price
+                - quantity
+                - measurement_unit
+                - image
+              properties:
+                itemName:
+                  type: string
+                points:
+                  type: number
+                price:
+                  type: number
+                quantity:
+                  type: number
+                measurement_unit:
+                  type: number
+                  enum: [1, 2]
+                image:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Item added
+        "400":
+          description: Invalid input
+        "404":
+          description: Category not found
+
+  /categories/item/{categoryName}/{itemId}:
+    put:
+      summary: Update an item in a category
+      tags: [Items]
+      parameters:
+        - name: categoryName
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                points:
+                  type: number
+                price:
+                  type: number
+                quantity:
+                  type: number
+                measurement_unit:
+                  type: number
+                  enum: [1, 2]
+                image:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Item updated
+        "404":
+          description: Item or category not found
+
+    delete:
+      summary: Delete an item from a category
+      tags: [Items]
+      parameters:
+        - name: categoryName
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Item deleted
+        "404":
+          description: Item or category not found
+
+  /auth/initiateSignup:
+    post:
+      summary: Start signup and send OTP
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+      responses:
+        "200":
+          description: OTP sent
+
+  /auth/verifyRegisterToken:
+    post:
+      summary: Verify OTP and complete registration
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - password
+                - otpCode
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                password:
+                  type: string
+                phoneNumber:
+                  type: string
+                otpCode:
+                  type: string
+                provider:
+                  type: string
+                role:
+                  type: string
+      responses:
+        "201":
+          description: User registered and tokens returned
+
+  /auth/login:
+    post:
+      summary: Log in with email and password
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Tokens and user returned
+
+  /auth/forgotPassword:
+    post:
+      summary: Send OTP to reset password
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+      responses:
+        "200":
+          description: OTP sent
+
+  /auth/resetPassword:
+    post:
+      summary: Reset password using OTP
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - otpCode
+                - newPassword
+              properties:
+                email:
+                  type: string
+                otpCode:
+                  type: string
+                newPassword:
+                  type: string
+      responses:
+        "200":
+          description: Password reset successful
+
+  /auth/refresh:
+    post:
+      summary: Refresh access token using cookie
+      tags: [Auth]
+      responses:
+        "200":
+          description: New access token returned
+
+  /auth/logout:
+    post:
+      summary: Logout and clear token
+      tags: [Auth]
+      responses:
+        "204":
+          description: Logout successful
+
+  /auth/validate:
+    get:
+      summary: Validate access token
+      tags: [Auth]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Token is valid
+
+  /addresses:
+    get:
+      summary: Get addresses for the authenticated user
+      tags: [Addresses]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of user addresses
+    post:
+      summary: Create a new address for the authenticated user
+      tags: [Addresses]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddressInput"
+      responses:
+        "201":
+          description: Address created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Address"
+
+  /addresses/{id}:
+    get:
+      summary: Get addresses by user ID (admin only)
+      tags: [Addresses]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of addresses for the user
+    put:
+      summary: Update an address by ID (only owner)
+      tags: [Addresses]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddressInput"
+      responses:
+        "200":
+          description: Updated address
+    delete:
+      summary: Delete an address by ID (only owner)
+      tags: [Addresses]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Address deleted
+
+  /adminAllAdresses:
+    get:
+      summary: Get all addresses (admin only)
+      tags: [Addresses]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of all addresses
+
+  /cart:
+    get:
+      summary: Get cart for the current user or session
+      tags: [Cart]
+      responses:
+        200:
+          description: User's or session's cart
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+
+    post:
+      summary: Add item to cart
+      tags: [Cart]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CartItemInput"
+      responses:
+        200:
+          description: Updated cart
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+
+    put:
+      summary: Update item quantity in the cart
+      tags: [Cart]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - categoryId
+                - quantity
+              properties:
+                categoryId:
+                  type: string
+                quantity:
+                  type: number
+      responses:
+        200:
+          description: Updated cart
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+
+    delete:
+      summary: Clear entire cart
+      tags: [Cart]
+      responses:
+        200:
+          description: Cart cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  cart:
+                    $ref: "#/components/schemas/Cart"
+
+  /cart/{categoryId}:
+    delete:
+      summary: Remove a specific item from the cart
+      tags: [Cart]
+      parameters:
+        - in: path
+          name: categoryId
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Cart after item removal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+
+  /profile:
+    get:
+      summary: Get current user profile
+      tags: [Profile]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User profile data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSafe"
+
+    put:
+      summary: Update user profile (name, phoneNumber, image)
+      tags: [Profile]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                phoneNumber:
+                  type: string
+                image:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Updated user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSafe"
+
+    delete:
+      summary: Delete current user account
+      tags: [Profile]
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Account deleted successfully
+        "404":
+          description: User not found
+  /stats:
+    get:
+      summary: Get monthly user registration stats (last 12 months)
+      tags: [Admin - Users]
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        label:
+                          type: string
+                          example: "Jan 2024"
+                        count:
+                          type: integer
+                          example: 5
+
+  /users:
+    get:
+      summary: Get all users
+      tags: [Admin - Users]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  /users/{id}:
+    get:
+      summary: Get user by ID
+      tags: [Admin - Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+    patch:
+      summary: Update user's role
+      tags: [Admin - Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  enum: [admin, customer]
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+    delete:
+      summary: Delete a user by ID
+      tags: [Admin - Users]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+components:
+  schemas:
+    Category:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        image:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Item"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Item:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        points:
+          type: number
+        price:
+          type: number
+        quantity:
+          type: number
+        measurement_unit:
+          type: integer
+          enum: [1, 2]
+          description: |
+            Unit of measurement:
+            - 1: Kilogram (kg)
+            - 2: Piece (unit)
+        image:
+          type: string
+        categoryName:
+          type: string
+    Address:
+      type: object
+      properties:
+        _id:
+          type: string
+        userId:
+          type: string
+        street:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        country:
+          type: string
+        postalCode:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AddressInput:
+      type: object
+      properties:
+        street:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        country:
+          type: string
+        postalCode:
+          type: string
+      required:
+        - street
+        - city
+        - country
+        - postalCode
+    CartItem:
+      type: object
+      properties:
+        categoryId:
+          type: string
+        itemName:
+          type: string
+        image:
+          type: string
+        points:
+          type: number
+        price:
+          type: number
+        quantity:
+          type: number
+        measurement_unit:
+          type: integer
+          enum: [1, 2]
+          description: |
+            1 = Kilogram (kg)
+            2 = Piece (pcs)
+      required:
+        - categoryId
+        - itemName
+        - points
+        - price
+        - quantity
+        - measurement_unit
+
+    Cart:
+      type: object
+      properties:
+        _id:
+          type: string
+        userId:
+          type: string
+          nullable: true
+        sessionId:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CartItem"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+        categoryId:
+          type: string
+        itemName:
+          type: string
+        image:
+          type: string
+        points:
+          type: number
+        price:
+          type: number
+        quantity:
+          type: number
+        measurement_unit:
+          type: integer
+          enum: [1, 2]
+      required:
+        - categoryId
+        - itemName
+        - points
+        - price
+        - quantity
+        - measurement_unit
+
+    UpdateCartItemInput:
+      type: object
+      properties:
+        categoryId:
+          type: string
+        quantity:
+          type: number
+      required:
+        - categoryId
+        - quantity
+
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+          nullable: true
+
+    Item:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        image:
+          type: string
+        points:
+          type: number
+        price:
+          type: number
+        quantity:
+          type: number
+        measurement_unit:
+          type: number
+          enum: [1, 2]
+          description: >
+            Unit of measurement:
+            - `1` = kilograms (kg)
+            - `2` = pieces (individual items)
+        categoryId:
+          type: object
+          properties:
+            _id:
+              type: string
+            name:
+              type: string
+
+    UserInfo:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        userName:
+          type: string
+        phoneNumber:
+          type: string
+        imageUrl:
+          type: string
+        email:
+          type: string
+      required:
+        - userId
+        - userName
+        - phoneNumber
+
+    Order:
+      type: object
+      properties:
+        _id:
+          type: string
+        user:
+          $ref: "#/components/schemas/UserInfo"
+        address:
+          $ref: "#/components/schemas/Address"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Item"
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - user
+        - address
+        - items
+        - status
+        - createdAt
+
+    OrderCreateRequest:
+      type: object
+      properties:
+        address:
+          $ref: "#/components/schemas/Address"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Item"
+        phoneNumber:
+          type: string
+        userName:
+          type: string
+        imageUrl:
+          type: string
+        email:
+          type: string
+      required:
+        - address
+        - items
+        - phoneNumber
+        - userName
+        - imageUrl
+
+    OrderStatusUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    OrderAnalytics:
+      type: object
+      properties:
+        totalOrders:
+          type: integer
+        statusCounts:
+          type: object
+          additionalProperties:
+            type: integer
+        dailyOrders:
+          type: array
+          items:
+            type: integer
+
+    TopUser:
+      type: object
+      properties:
+        _id:
+          type: string
+        userName:
+          type: string
+        phoneNumber:
+          type: string
+        imageUrl:
+          type: string
+        email:
+          type: string
+        totalPoints:
+          type: number
+
+    TopMaterial:
+      type: object
+      properties:
+        itemName:
+          type: string
+        categoryName:
+          type: string
+        totalQuantity:
+          type: number
+        totalPoints:
+          type: number
+        image:
+          type: string
+
+    TopCity:
+      type: object
+      properties:
+        city:
+          type: string
+        totalOrders:
+          type: integer
+
+    UserSafe:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        phoneNumber:
+          type: string
+        imgUrl:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+      required: [_id, name, phoneNumber, email, role]
+    User:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        phoneNumber:
+          type: string
+        role:
+          type: string
+          enum: [admin, customer]
+        imgUrl:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

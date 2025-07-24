@@ -23,6 +23,7 @@ export interface IUser extends Document {
   imgUrl?: string;
   createdAt?: Date;
   updatedAt?: Date;
+  lastActiveAt?: Date;
 
   // Instance method to compare passwords
   comparePassword(candidate: string): Promise<boolean>;
@@ -50,6 +51,7 @@ export interface SafeUser {
   imgUrl?: string;
   createdAt?: Date;
   updatedAt?: Date;
+  lastActiveAt: Date;
 }
 // 2. Create schema
 const userSchema = new Schema<IUser>(
@@ -80,6 +82,7 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    lastActiveAt: { type: Date },
   },
   { timestamps: true },
 
