@@ -1,102 +1,163 @@
 import { Request, Response } from "express";
-import Item from "../models/item";
+import Category from "../models/category";
+
 interface MulterRequest extends Request {
   file: Express.Multer.File;
 }
 // ======================== ITEM ========================
-export const getAllItems = async (_req: Request, res: Response) => {
+export const getAllItems = async (
+  _req: Request,
+  res: Response
+): Promise<void> => {
   try {
-    //get all items properties with select => catergoy {name,image}
-    const items = await Item.find().populate("categoryId", "name image");
-    res.status(200).json(items);
-  } catch (err) {
-    res.status(500).json({ message: (err as Error).message });
-  }
-};
-
-export const getItemsByCategory = async (req: Request, res: Response) => {
-  try {
-    const { categoryId } = req.params;
-    const items = await Item.find({ categoryId }).populate(
-      "categoryId",
-      "name"
+    const categories = await Category.find();
+    const items = categories.flatMap((cat) =>
+      cat.items.map((item) => ({
+        ...item.toObject(),
+        categoryName: cat.name,
+        categoryId: cat._id,
+      }))
     );
-
-    res.status(200).json(items);
-  } catch (err) {
-    res.status(500).json({ message: (err as Error).message });
-  }
-};
-export const getItemsByName = async (req: Request, res: Response) => {
-  try {
-    const { itemName } = req.params;
-
-    const items = await Item.find({
-      name: { $regex: new RegExp(`^${itemName}$`, "i") },
-    }).populate("categoryId", "name");
-
-    res.status(200).json(items);
+    res.status(200).json({ items });
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }
 };
 
-export const createItem = async (req: MulterRequest, res: Response) => {
+export const getItems = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { categoryId } = req.params;
-    const { name, points, price, quantity, measurement_unit } = req.body;
-    const image = req.file?.path ?? "";
+    const { categoryName } = req.params;
+    const category = await Category.findOne({ name: categoryName });
 
-    const item = new Item({
-      name,
+    if (!category) {
+      res.status(404).json({ message: "Category not found" });
+      return;
+    }
+
+    res.status(200).json(category.items);
+  } catch (err) {
+    res.status(500).json({ message: (err as Error).message });
+  }
+};
+
+export const addItem = async (
+  req: MulterRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { categoryName } = req.params;
+    const { itemName, points, price, measurement_unit, quantity } = req.body;
+
+    if (!req.file) {
+      res.status(400).json({ message: "Image is required" });
+      return;
+    }
+
+    if (!quantity || isNaN(quantity)) {
+      res
+        .status(400)
+        .json({ message: "Quantity is required and must be a number" });
+      return;
+    }
+
+    const item = {
+      name: itemName,
+      image: req.file.path,
       points: Number(points),
       price: Number(price),
       quantity: Number(quantity),
       measurement_unit: Number(measurement_unit),
-      image,
-      categoryId,
-    });
-
-    await item.save();
-    res.status(201).json(item);
-  } catch (err) {
-    res.status(400).json({ message: (err as Error).message });
-  }
-};
-
-export const updateItem = async (req: MulterRequest, res: Response) => {
-  try {
-    const { itemId } = req.params;
-    const { name, points, price, quantity, measurement_unit } = req.body;
-    const image = req.file?.path;
-
-    const updateData: any = {
-      ...(name && { name }),
-      ...(points && { points: Number(points) }),
-      ...(price && { price: Number(price) }),
-      ...(quantity && { quantity: Number(quantity) }),
-      ...(measurement_unit && { measurement_unit: Number(measurement_unit) }),
-      ...(image && { image }),
     };
 
-    const updated = await Item.findByIdAndUpdate(itemId, updateData, {
-      new: true,
-    });
-    if (!updated) return res.status(404).json({ message: "Item not found" });
+    const updatedCategory = await Category.findOneAndUpdate(
+      { name: categoryName },
+      { $push: { items: item } },
+      { new: true }
+    );
 
-    res.status(200).json(updated);
+    if (!updatedCategory) {
+      res.status(404).json({ message: "Category not found" });
+      return;
+    }
+
+    res.status(200).json(updatedCategory);
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }
 };
 
-export const deleteItem = async (req: Request, res: Response) => {
+export const updateItem = async (
+  req: MulterRequest,
+  res: Response
+): Promise<void> => {
   try {
-    const { itemId } = req.params;
-    const deleted = await Item.findByIdAndDelete(itemId);
+    const { categoryName, itemId } = req.params;
+    const { name, points, price, measurement_unit, quantity } = req.body;
+    const image = req.file?.path;
 
-    if (!deleted) return res.status(404).json({ message: "Item not found" });
-    res.status(200).json({ message: "Item deleted successfully" });
+    const category = await Category.findOne({ name: categoryName });
+
+    if (!category) {
+      res.status(404).json({ message: "Category not found" });
+      return;
+    }
+
+    const item = category.items.id(itemId);
+    if (!item) {
+      res.status(404).json({ message: "Item not found" });
+      return;
+    }
+
+    if (name) item.name = name;
+    if (points) item.points = Number(points);
+    if (price) item.price = Number(price);
+    if (quantity !== undefined) item.quantity = Number(quantity);
+
+    const unit = Number(measurement_unit);
+    if (unit === 1 || unit === 2) {
+      item.measurement_unit = unit;
+    } else if (measurement_unit !== undefined) {
+      res.status(400).json({ message: "measurement_unit must be 1 or 2" });
+      return;
+    }
+
+    if (image) item.image = image;
+
+    await category.save();
+
+    res.status(200).json({ message: "Item updated successfully", item });
+  } catch (err) {
+    console.error("Update item error:", err);
+    res.status(500).json({ message: (err as Error).message });
+  }
+};
+
+export const deleteItem = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { categoryName, itemId } = req.params;
+    const category = await Category.findOne({ name: categoryName });
+
+    if (!category) {
+      res.status(404).json({ message: "Category not found" });
+      return;
+    }
+
+    const item = category.items.id(itemId);
+    if (!item) {
+      res.status(404).json({ message: "Item not found" });
+      return;
+    }
+
+    category.items.pull(itemId);
+    await category.save();
+
+    res.status(200).json({
+      message: "Item deleted successfully",
+      updatedCategory: category,
+    });
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }
