@@ -590,7 +590,7 @@ const dailyOrdersRaw = await Order.aggregate([
 
 const dailyOrders = Array(7).fill(0);
 for (const item of dailyOrdersRaw) {
-  const dayIndex = item._id.day - 1; // To make Sunday = 0
+const dayIndex = item._id.day === 1 ? 6 : item._id.day - 2;
   dailyOrders[dayIndex] = item.count;
 }
 
