@@ -49,6 +49,8 @@ export const getCart = async (req: Request, res: Response) => {
 
 
 export const addItemToCart = async (req: Request, res: Response) => {
+  console.log('in add to cart');
+  
   const userId = req.user?.userId;
   const sessionId = req.sessionId;
   const { categoryId, categoryName, itemName, image, points, price, measurement_unit, quantity } = req.body;

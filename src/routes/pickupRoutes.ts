@@ -12,7 +12,6 @@ import {
   getOrdersByStatus,
   getTopCitiesByOrders,
   getTopMaterialsRecycled,
-  getTopUsersByPoints,
   updateOrderStatus,
   updateOrderStatusByAdmin,
 } from "../controllers/pickupController";
@@ -23,7 +22,7 @@ export default (router: express.Router) => {
   router.get("/orders/analytics/top-cities", getTopCitiesByOrders);
 
   router.get('/top-materials-recycled', getTopMaterialsRecycled);
-  router.get('/top-users-points', getTopUsersByPoints);
+  // router.get('/top-users-points', getTopUsersByStoredPoints);
 
 router.get("/orders", authenticate, authorize(["customer", "admin"]), getAllOrders);
 router.post("/orders", authenticate,  createOrder);

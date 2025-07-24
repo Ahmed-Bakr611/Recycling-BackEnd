@@ -1,6 +1,12 @@
 import mongoose, { Document, Model, Schema } from "mongoose";
 import bcrypt from "bcryptjs";
-
+interface PointsHistoryEntry {
+  orderId?: string;
+  points: number;
+  type: 'earned' | 'deducted' | 'adjusted';
+  reason: string;
+  timestamp: Date;
+}
 // 1. Interface representing a User document
 export interface IUser extends Document {
   id: string;
@@ -12,7 +18,8 @@ export interface IUser extends Document {
   refreshToken?: string; // Now optional and lowercase
   role: "admin" | "customer" | "buyer" | "delivery";
   isGuest: boolean;
-
+ totalPoints: number;
+  pointsHistory: PointsHistoryEntry[]
   imgUrl?: string;
   createdAt?: Date;
   updatedAt?: Date;
@@ -22,7 +29,17 @@ export interface IUser extends Document {
   comparePassword(candidate: string): Promise<boolean>;
   toSafeObject(): SafeUser; // ✅ add this line
 }
-
+const pointsHistorySchema = new Schema({
+  orderId: { type: String },
+  points: { type: Number, required: true },
+  type: { 
+    type: String, 
+    enum: ['earned', 'deducted', 'adjusted'], 
+    required: true 
+  },
+  reason: { type: String, required: true },
+  timestamp: { type: Date, default: Date.now }
+}, { _id: false });
 export interface SafeUser {
   id: string;
   name: string;
@@ -39,6 +56,12 @@ export interface SafeUser {
 // 2. Create schema
 const userSchema = new Schema<IUser>(
   {
+     totalPoints: { 
+    type: Number, 
+    default: 0,
+    min: 0
+  },  pointsHistory: [pointsHistorySchema],
+
     imgUrl: { type: String },
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
@@ -61,7 +84,8 @@ const userSchema = new Schema<IUser>(
     },
     lastActiveAt: { type: Date },
   },
-  { timestamps: true }
+  { timestamps: true },
+
 );
 userSchema.methods.toSafeObject = function () {
   return {
