@@ -1,0 +1,30 @@
+openapi: "3.0.3"
+info:
+  title: Recycling System API
+  version: 1.0.0
+  description: API for managing recycling points and transactions
+servers:
+  - url: http://localhost:5000/api
+    description: Local development server
+paths:
+  /auth:
+    $ref: "./paths/auth.yml"
+  /users:
+    $ref: "./paths/user.yml"
+  /address:
+    $ref: "./paths/address.yml"
+  /cart:
+    $ref: "./paths/cart.yml"
+  /categories:
+    $ref: "./paths/cart.yml"
+  /profile:
+    $ref: "./paths/profile.yml"
+
+components:
+  schemas:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

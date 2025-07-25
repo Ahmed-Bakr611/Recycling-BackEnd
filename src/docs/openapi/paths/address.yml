@@ -1,0 +1,35 @@
+get:
+  summary: List all recycling points
+  description: Returns a list of available recycling collection points
+  tags:
+    - Recycling Points
+  parameters:
+  responses:
+    200:
+      description: A list of recycling points
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+    401:
+
+post:
+  summary: Create a new recycling point
+  description: Register a new recycling collection location
+  tags:
+    - Recycling Points
+  security:
+    - bearerAuth: []
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+  responses:
+    201:
+      description: Recycling point created
+      content:
+        application/json:
+          schema:
+    400:
