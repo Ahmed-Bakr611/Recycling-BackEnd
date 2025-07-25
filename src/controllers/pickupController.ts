@@ -92,7 +92,6 @@ const Order: Model<IOrder> = mongoose.model<IOrder>('Order', OrderSchema);
 const calculateOrderPoints = (items: IItem[]): number => {
   return items.reduce((total, item) => total + (item.points * item.quantity), 0);
 };
-// Create order - automatically assigns to authenticated user
 export const createOrder = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
   try {
     const userId = req.user.userId;
@@ -590,7 +589,7 @@ const dailyOrdersRaw = await Order.aggregate([
 
 const dailyOrders = Array(7).fill(0);
 for (const item of dailyOrdersRaw) {
-  const dayIndex = item._id.day - 1; // To make Sunday = 0
+const dayIndex = item._id.day === 1 ? 6 : item._id.day - 2;
   dailyOrders[dayIndex] = item.count;
 }
 

@@ -12,5 +12,5 @@ export default (router: express.Router) => {
   router.post("/cart", addItemToCart);
   router.put("/cart", updateCartItem);
   router.delete("/cart/:categoryId", removeCartItem);
-  router.delete("/cart", clearCart);
+  router.delete("/cart/", clearCart);
 };
