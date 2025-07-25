@@ -38,7 +38,30 @@ const StatusHistorySchema = new mongoose.Schema({
   },
   timestamp: { type: Date, default: Date.now },
   updatedBy: String,
-  reason: String
+  reason: String,
+  notes: String
+}, { _id: false });
+
+// NEW: Delivery Proof Schema
+const DeliveryProofSchema = new mongoose.Schema({
+  photoPath: { 
+    type: String, 
+    required: true 
+  },
+  photoUrl: { 
+    type: String, 
+    required: true 
+  },
+  uploadedAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  notes: String,
+  completedBy: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User',
+    required: true 
+  }
 }, { _id: false });
 
 const OrderSchema = new mongoose.Schema({
@@ -52,7 +75,7 @@ const OrderSchema = new mongoose.Schema({
   items: [ItemSchema],
   courier: { 
     type: mongoose.Schema.Types.ObjectId, 
-    ref: "User",
+    ref: 'User',
     default: null 
   },
   status: { 
@@ -60,7 +83,20 @@ const OrderSchema = new mongoose.Schema({
     enum: ['pending', 'assigntocourier', 'completed', 'cancelled'],
     default: "pending" 
   },
-  statusHistory: [StatusHistorySchema],
+  statusHistory: { 
+    type: [StatusHistorySchema], 
+    default: [] 
+  },
+  // NEW: Delivery proof field
+  deliveryProof: {
+    type: DeliveryProofSchema,
+    default: null
+  },
+  // NEW: Completion timestamp
+  completedAt: {
+    type: Date,
+    default: null
+  },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
@@ -68,8 +104,20 @@ const OrderSchema = new mongoose.Schema({
 // Add pre-save middleware to update the updatedAt field
 OrderSchema.pre('save', function(next) {
   this.updatedAt = new Date();
+  
+  // Set completedAt when status changes to completed
+  if (this.isModified('status') && this.status === 'completed' && !this.completedAt) {
+    this.completedAt = new Date();
+  }
+  
   next();
 });
+
+// Add indexes for better query performance
+OrderSchema.index({ courier: 1, status: 1 });
+OrderSchema.index({ 'user.userId': 1 });
+OrderSchema.index({ status: 1 });
+OrderSchema.index({ createdAt: -1 });
 
 // Define TypeScript interfaces
 export interface IAddress {
@@ -99,6 +147,16 @@ export interface IStatusHistory {
   timestamp: Date;
   updatedBy?: string;
   reason?: string;
+  notes?: string;
+}
+
+// NEW: Delivery Proof interface
+export interface IDeliveryProof {
+  photoPath: string;
+  photoUrl: string;
+  uploadedAt: Date;
+  notes?: string;
+  completedBy: mongoose.Types.ObjectId;
 }
 
 export interface IOrderUser {
@@ -115,11 +173,17 @@ export interface IOrder extends Document {
   courier?: mongoose.Types.ObjectId;
   status: 'pending' | 'assigntocourier' | 'completed' | 'cancelled';
   statusHistory: IStatusHistory[];
+  deliveryProof?: IDeliveryProof; // NEW
+  completedAt?: Date; // NEW
   createdAt: Date;
   updatedAt: Date;
 }
 
-// Check if model already exists to prevent OverwriteModelError
-const Order: Model<IOrder> = mongoose.models.Order || mongoose.model<IOrder>('Order', OrderSchema);
+// Clear the model cache and recreate it to ensure schema changes are applied
+if (mongoose.models.Order) {
+  delete mongoose.models.Order;
+}
+
+const Order: Model<IOrder> = mongoose.model<IOrder>('Order', OrderSchema);
 
 export default Order;
