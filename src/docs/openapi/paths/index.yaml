@@ -1,0 +1,43 @@
+# Auth
+/auth/initiateSignup:
+  $ref: "./auth.yaml#/paths/~1auth~1initiateSignup"
+/auth/verifyRegisterToken:
+  $ref: "./auth.yaml#/paths/~1auth~1verifyRegisterToken"
+/auth/login:
+  $ref: "./auth.yaml#/paths/~1auth~1login"
+/auth/forgotPassword:
+  $ref: "./auth.yaml#/paths/~1auth~1forgotPassword"
+/auth/resetPassword:
+  $ref: "./auth.yaml#/paths/~1auth~1resetPassword"
+/auth/refresh:
+  $ref: "./auth.yaml#/paths/~1auth~1refresh"
+/auth/logout:
+  $ref: "./auth.yaml#/paths/~1auth~1logout"
+/auth/validate:
+  $ref: "./auth.yaml#/paths/~1auth~1validate"
+
+# Categories
+/categories:
+  $ref: "./categories.yaml#/paths/~1categories"
+/categories/with-image:
+  $ref: "./categories.yaml#/paths/~1categories~1with-image"
+/categories/add-item/{categoryName}:
+  $ref: "./categories.yaml#/paths/~1categories~1add-item~1{categoryName}"
+/categories/get-items:
+  $ref: "./categories.yaml#/paths/~1categories~1get-items"
+/categories/get-items/{categoryName}:
+  $ref: "./categories.yaml#/paths/~1categories~1get-items~1{categoryName}"
+/categories/{categoryName}:
+  $ref: "./categories.yaml#/paths/~1categories~1{categoryName}"
+/categories/item/{categoryName}/{itemId}:
+  $ref: "./categories.yaml#/paths/~1categories~1item~1{categoryName}~1{itemId}"
+
+# Address Routes
+/addresses:
+  $ref: "./address.yaml#/paths/~1addresses"
+
+/addresses/{id}:
+  $ref: "./address.yaml#/paths/~1addresses~1{id}"
+
+/adminAllAdresses:
+  $ref: "./address.yaml#/paths/~1adminAllAdresses"

@@ -23,17 +23,49 @@ export const createCategory = async (
 };
 
 export const getAllCategories = async (
-  _req: Request,
+  req: Request, // Changed from _req since we need pagination info
   res: Response
 ): Promise<void> => {
   try {
-    const categories = await Category.find();
-    res.json(categories);
+    const { skip, limit } = req.pagination;
+
+    // Get paginated results and total count in parallel
+    const [categories, total] = await Promise.all([
+      Category.find().skip(skip).limit(limit).lean(), // Using lean() for better performance
+      Category.countDocuments(),
+    ]);
+
+    // Use the paginated response method
+    res.paginated(categories, total);
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }
 };
+export const getCategoriesWithPagination = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const [categories, total] = await Promise.all([
+      Category.find().skip(req.pagination.skip).limit(req.pagination.limit),
+      Category.countDocuments(),
+    ]);
 
+    res.json({
+      success: true,
+      data: categories,
+      pagination: {
+        currentPage: req.pagination.page,
+        itemsPerPage: req.pagination.limit,
+        totalItems: total,
+        totalPages: Math.ceil(total / req.pagination.limit),
+        hasNextPage: req.pagination.skip + req.pagination.limit < total,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Server error" });
+  }
+};
 export const createCategoryWithImage = async (
   req: MulterRequest,
   res: Response

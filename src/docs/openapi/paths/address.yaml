@@ -1,0 +1,177 @@
+paths:
+  /addresses:
+    get:
+      tags: [Address]
+      summary: Get all addresses for the authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of user's addresses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Address"
+
+    post:
+      tags: [Address]
+      summary: Create a new address for the authenticated user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAddressDto"
+      responses:
+        "201":
+          description: Address created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Address"
+
+  /addresses/{id}:
+    get:
+      tags: [Address]
+      summary: Get a single address by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Single address object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Address"
+
+    put:
+      tags: [Address]
+      summary: Update an address
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Address"
+      responses:
+        "200":
+          description: Address updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Address"
+
+    delete:
+      tags: [Address]
+      summary: Delete an address
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Address deleted successfully
+
+  /adminAllAdresses:
+    get:
+      tags: [Address]
+      summary: Get all addresses (admin only)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of all addresses in the system
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Address"
+
+components:
+  schemas:
+    Address:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "64c5b6a9eaf9e8ad97e93d1f"
+        userId:
+          type: string
+          example: "64c5b6a9eaf9e8ad97e93d1e"
+        city:
+          type: string
+          example: "Cairo"
+        district:
+          type: string
+          example: "Nasr City"
+        street:
+          type: string
+          example: "El Nasr Road"
+        building:
+          type: string
+          example: "10"
+        floor:
+          type: string
+          example: "5"
+        apartment:
+          type: string
+          example: "502"
+        notes:
+          type: string
+          example: "Leave at the door"
+        isDefault:
+          type: boolean
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateAddressDto:
+      type: object
+      required:
+        - city
+        - district
+        - street
+      properties:
+        city:
+          type: string
+        district:
+          type: string
+        street:
+          type: string
+        building:
+          type: string
+        floor:
+          type: string
+        apartment:
+          type: string
+        notes:
+          type: string
+        isDefault:
+          type: boolean
