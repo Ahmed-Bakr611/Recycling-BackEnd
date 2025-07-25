@@ -790,7 +790,6 @@ export const recalculateUserPointsFromOrders = async (req: express.Request, res:
   }
 };
 
-// Add function to get user's order history with points earned
 export const getUserOrdersWithPoints = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
   try {
     const userId = req.user.userId;
