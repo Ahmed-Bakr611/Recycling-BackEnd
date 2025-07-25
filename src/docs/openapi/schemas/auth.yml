@@ -1,0 +1,79 @@
+InitiateSignupDto:
+  type: object
+  required: [email]
+  properties:
+    email:
+      type: string
+      format: email
+
+VerifyRegisterDto:
+  type: object
+  required: [name, email, password, otpCode]
+  properties:
+    name:
+      type: string
+    email:
+      type: string
+    password:
+      type: string
+      format: password
+    otpCode:
+      type: string
+    phoneNumber:
+      type: string
+    provider:
+      type: string
+    role:
+      type: string
+      enum: [admin, customer]
+
+LoginDto:
+  type: object
+  required: [email, password]
+  properties:
+    email:
+      type: string
+    password:
+      type: string
+
+ForgotPasswordDto:
+  type: object
+  required: [email]
+  properties:
+    email:
+      type: string
+
+ResetPasswordDto:
+  type: object
+  required: [email, otpCode, newPassword]
+  properties:
+    email:
+      type: string
+    otpCode:
+      type: string
+    newPassword:
+      type: string
+
+AuthResponse:
+  type: object
+  properties:
+    accessToken:
+      type: string
+    user:
+      $ref: "../schemas/user.yml#/User"
+
+RefreshResponse:
+  type: object
+  properties:
+    accessToken:
+      type: string
+    message:
+      type: string
+
+ValidateResponse:
+  type: object
+  properties:
+    message:
+      type: string
+    user:
+      $ref: "../schemas/user.yml#/User"
