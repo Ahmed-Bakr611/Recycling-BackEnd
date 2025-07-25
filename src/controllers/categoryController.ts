@@ -69,8 +69,8 @@ export const updatedCategory = async (
 ): Promise<void> => {
   try {
     const { categoryName } = req.params;
-    const { name, description } = req.body;
-    const image = req.file?.path;
+    const { name, description, image: imageFromBody } = req.body;
+    const imageFromFile = req.file?.path;
 
     const category = await Category.findOne({ name: categoryName });
     if (!category) {
@@ -78,26 +78,30 @@ export const updatedCategory = async (
       return;
     }
 
-    // Only update if fields exist
+    // Update name and associated item names
     if (name) {
-      category.name = name.toLowerCase(); // keep lowercase convention
-
-      // Also update categoryName in each item
+      category.name = name.toLowerCase();
       category.items.forEach((item) => {
         item.categoryName = name.toLowerCase();
       });
     }
 
     if (description) category.description = description;
-    if (image) category.image = image;
+
+    // ✅ Accept either uploaded file OR URL
+    if (imageFromFile) {
+      category.image = imageFromFile;
+    } else if (imageFromBody) {
+      category.image = imageFromBody;
+    }
 
     const updated = await category.save();
-
     res.status(200).json(updated);
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }
 };
+
 export const deleteCategory = async (
   req: Request,
   res: Response
@@ -112,6 +116,25 @@ export const deleteCategory = async (
     }
 
     res.status(200).json({ message: "Category deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ message: (err as Error).message });
+  }
+};
+export const getCategoryByName = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { categoryName } = req.params;
+
+    const category = await Category.findOne({ name: categoryName });
+
+    if (!category) {
+      res.status(404).json({ message: "Category not found" });
+      return;
+    }
+
+    res.status(200).json(category);
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }
