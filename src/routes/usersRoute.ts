@@ -10,7 +10,6 @@ import {
   // Add these new imports for points management
   addUserPoints,
   deductUserPoints,
-  adjustUserPoints,
   getUserPoints,
   getPointsLeaderboard,
 } from "../controllers/userController";
@@ -56,12 +55,7 @@ export default (appRouter: express.Router) => {
     authorize(["admin", "customer"]),
     deductUserPoints
   );
-  appRouter.put(
-    "/users/:userId/points/adjust",
-    authenticate,
-    authorize(["admin"]),
-    adjustUserPoints
-  );
+
   appRouter.get("/users/:userId/points", authenticate, getUserPoints); // This is the one your frontend needs
   appRouter.get(
     "/users/points/leaderboard",
