@@ -3,6 +3,12 @@ import mongoose from 'mongoose';
 import Order, { IOrder, IItem, IStatusHistory } from '../models/pickupOrder'; // Use the comprehensive schema
 import Category from '../models/category';
 import User from '../models/users';
+import { 
+  createOrderAssignedNotification, 
+  createOrderCancelledNotification, 
+  createOrderCompletedNotification,
+  createOrderStatusChangeNotification 
+} from '../services/notificationService';
 
 // Use interfaces from pickupOrder.ts
 interface IAuthenticatedRequest extends express.Request {
@@ -494,6 +500,24 @@ export const updateOrderStatusByAdmin = async (req: express.Request, res: expres
 
     currentOrder.statusHistory.push(statusHistoryEntry);
     const updatedOrder = await currentOrder.save();
+
+    // Create notifications based on status change
+    const userId = currentOrder.user.userId.toString();
+    
+    try {
+      if (status === 'assigntocourier' && previousStatus !== 'assigntocourier') {
+        await createOrderAssignedNotification(userId, orderId);
+      } else if (status === 'cancelled' && previousStatus !== 'cancelled') {
+        await createOrderCancelledNotification(userId, orderId, reason || 'No reason provided');
+      } else if (status === 'completed' && previousStatus !== 'completed') {
+        await createOrderCompletedNotification(userId, orderId);
+      } else if (previousStatus !== status) {
+        await createOrderStatusChangeNotification(userId, orderId, previousStatus, status);
+      }
+    } catch (notificationError) {
+      console.error('❌ Error creating notification:', notificationError);
+      // Don't fail the request if notification fails
+    }
 
     // If order is being marked as completed, add points to user
     if (status === 'completed' && previousStatus !== 'completed') {

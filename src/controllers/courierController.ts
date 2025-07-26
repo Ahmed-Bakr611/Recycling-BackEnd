@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs'
 import { v2 as cloudinary } from "cloudinary";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
+import { createOrderAssignedNotification, createOrderCompletedNotification } from '../services/notificationService';
 // Define valid order statuses
 type OrderStatus = 'pending' | 'assigntocourier' | 'completed' | 'cancelled';
 
@@ -103,6 +104,18 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
       status: savedOrder.status,
       courier: savedOrder.courier
     });
+
+    // Create notification if order is assigned to courier
+    if (newStatus === 'assigntocourier') {
+      try {
+        const userId = order.user.userId.toString();
+        await createOrderAssignedNotification(userId, orderId);
+        console.log(`✅ Notification created for user ${userId} - order assigned`);
+      } catch (notificationError) {
+        console.error('❌ Error creating notification:', notificationError);
+        // Don't fail the request if notification fails
+      }
+    }
 
     // 6. Try to populate courier info for response (with error handling)
     let populatedOrder = savedOrder;
@@ -354,6 +367,17 @@ export const completeOrderWithProof = async (req: Request, res: Response) => {
       proofPhoto: proofPhoto.filename,
       completedAt: savedOrder.completedAt
     });
+
+    // Create completion notification
+    try {
+      const userId = order.user.userId.toString();
+      const totalPointsToAward = order.items.reduce((sum, item) => sum + (item.points * item.quantity), 0);
+      await createOrderCompletedNotification(userId, orderId);
+      console.log(`✅ Completion notification created for user ${userId}`);
+    } catch (notificationError) {
+      console.error('❌ Error creating completion notification:', notificationError);
+      // Don't fail the request if notification fails
+    }
 
     // 9. Populate and return response
     const populatedOrder = await Order.findById(savedOrder._id)
