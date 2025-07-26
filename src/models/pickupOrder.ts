@@ -164,6 +164,9 @@ export interface IOrderUser {
   phoneNumber?: string;
   userName?: string;
   email?: string;
+  image?: string;
+
+
 }
 
 export interface IOrder extends Document {
