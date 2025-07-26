@@ -7,10 +7,16 @@ let io: SocketIOServer | null = null;
 export const initializeSocketIO = (server: HTTPServer): SocketIOServer => {
   io = new SocketIOServer(server, {
     cors: {
-      origin: ["http://localhost:3000", "exp://192.168.1.100:8081"], // Add your frontend URLs
+      origin: [
+        "http://localhost:3000", 
+        "exp://192.168.1.100:8081",
+        "exp://localhost:8081",
+        "*" // Allow all origins for Expo Go during development
+      ],
       credentials: true
     },
-    transports: ['websocket', 'polling']
+    transports: ['websocket', 'polling'],
+    allowEIO3: true // Allow Engine.IO v3 clients (for better compatibility)
   });
 
   // Middleware for authentication
@@ -18,17 +24,31 @@ export const initializeSocketIO = (server: HTTPServer): SocketIOServer => {
     const token = socket.handshake.auth.token || socket.handshake.query.token;
     
     if (!token) {
+      console.log('❌ Socket auth failed: No token provided');
       return next(new Error('Authentication error: No token provided'));
     }
 
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
+      // Use the same JWT_ACCESS_SECRET as the main app
+      const accessSecret = process.env.JWT_ACCESS_SECRET as string;
+      if (!accessSecret) {
+        console.error('❌ JWT_ACCESS_SECRET is not defined in environment variables');
+        return next(new Error('Authentication error: Server configuration error'));
+      }
+
+      console.log(`🔍 Socket auth attempt - Token (first 20 chars): ${token.substring(0, 20)}...`);
+      console.log(`🔍 Using JWT_ACCESS_SECRET: ${accessSecret.substring(0, 10)}...`);
+      
+      const decoded = jwt.verify(token, accessSecret) as any;
       socket.userId = decoded.userId;
       socket.userRole = decoded.role;
-      console.log(`🔐 User ${decoded.userId} authenticated via socket`);
+      
+      console.log(`🔐 User ${decoded.userId} authenticated via socket successfully`);
+      console.log(`🔐 User role: ${decoded.role}`);
       next();
     } catch (error) {
-      console.error('Socket authentication error:', error);
+      console.error('❌ Socket authentication error:', error);
+      console.error(`❌ Token that failed: ${token.substring(0, 50)}...`);
       next(new Error('Authentication error: Invalid token'));
     }
   });
