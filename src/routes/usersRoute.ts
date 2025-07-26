@@ -20,6 +20,7 @@ import {
   getUserOrdersWithPoints,
   recalculateUserPointsFromOrders,
 } from "../controllers/pickupController";
+import { createPaymentIntent, createStripeCustomer, getAllPayments, getAllPaymentsForUser } from "../controllers/stripePayment";
 
 export default (appRouter: express.Router) => {
   // User stats
@@ -82,4 +83,29 @@ export default (appRouter: express.Router) => {
     authorize(["admin"]),
     recalculateUserPointsFromOrders
   );
+    appRouter.post(
+    "/users/:id/stripe-customer",
+    authenticate,
+    createStripeCustomer
+  );
+
+  // Route to create payment intent for user
+  appRouter.post(
+    "/users/:id/create-payment-intent",
+    authenticate,
+    createPaymentIntent
+  );
+
+  appRouter.get(
+  "/users/:id/payments",
+  authenticate,
+  getAllPaymentsForUser
+);
+
+appRouter.get(
+  "/payments",
+  authenticate,
+  authorize(['admin']),
+  getAllPayments
+);
 };
