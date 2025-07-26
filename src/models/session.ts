@@ -13,7 +13,7 @@ export interface ISession extends Document {
 }
 
 const sessionSchema = new Schema<ISession>({
-  userId: { type: Types.ObjectId, ref: "User", default: null },
+  userId: { type: Schema.Types.ObjectId, ref: "User", default: null },
   sessionId: { type: String, required: true, unique: true },
   device: { type: String, required: true },
   ipAddress: { type: String },
