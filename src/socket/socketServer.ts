@@ -1,6 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import jwt from 'jsonwebtoken';
+const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET!;
 
 let io: SocketIOServer | null = null;
 
@@ -14,24 +15,25 @@ export const initializeSocketIO = (server: HTTPServer): SocketIOServer => {
   });
 
   // Middleware for authentication
-  io.use((socket, next) => {
-    const token = socket.handshake.auth.token || socket.handshake.query.token;
-    
-    if (!token) {
-      return next(new Error('Authentication error: No token provided'));
-    }
+io.use((socket, next) => {
+const token =
+  socket.handshake.auth?.token ||
+  socket.handshake.auth?.jwt ||
+  socket.handshake.query?.token ||
+  socket.handshake.headers?.authorization?.split(" ")[1];  if (!token) {
+    return next(new Error('Authentication error: No token provided'));
+  }
 
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
-      socket.userId = decoded.userId;
-      socket.userRole = decoded.role;
-      console.log(`🔐 User ${decoded.userId} authenticated via socket`);
-      next();
-    } catch (error) {
-      console.error('Socket authentication error:', error);
-      next(new Error('Authentication error: Invalid token'));
-    }
-  });
+  try {
+    const decoded = jwt.verify(token, JWT_ACCESS_SECRET) as any;
+    socket.userId = decoded.userId;
+    socket.userRole = decoded.role;
+    next();
+  } catch (error) {
+    console.error('Socket authentication error:', error);
+    next(new Error('Authentication error: Invalid token'));
+  }
+});
 
   // Handle socket connections
   io.on('connection', (socket) => {
