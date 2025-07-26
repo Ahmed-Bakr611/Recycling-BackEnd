@@ -1,0 +1,145 @@
+paths:
+  /auth/initiateSignup:
+    post:
+      summary: Start signup and send OTP
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+      responses:
+        "200":
+          description: OTP sent
+
+  /auth/verifyRegisterToken:
+    post:
+      summary: Verify OTP and complete registration
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - password
+                - otpCode
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                password:
+                  type: string
+                phoneNumber:
+                  type: string
+                otpCode:
+                  type: string
+                provider:
+                  type: string
+                role:
+                  type: string
+      responses:
+        "201":
+          description: User registered and tokens returned
+
+  /auth/login:
+    post:
+      summary: Log in with email and password
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Tokens and user returned
+
+  /auth/forgotPassword:
+    post:
+      summary: Send OTP to reset password
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+      responses:
+        "200":
+          description: OTP sent
+
+  /auth/resetPassword:
+    post:
+      summary: Reset password using OTP
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - otpCode
+                - newPassword
+              properties:
+                email:
+                  type: string
+                otpCode:
+                  type: string
+                newPassword:
+                  type: string
+      responses:
+        "200":
+          description: Password reset successful
+
+  /auth/refresh:
+    post:
+      summary: Refresh access token using cookie
+      tags: [Auth]
+      responses:
+        "200":
+          description: New access token returned
+
+  /auth/logout:
+    post:
+      summary: Logout and clear token
+      tags: [Auth]
+      responses:
+        "204":
+          description: Logout successful
+
+  /auth/validate:
+    get:
+      summary: Validate access token
+      tags: [Auth]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Token is valid
