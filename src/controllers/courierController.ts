@@ -9,6 +9,7 @@ import fs from 'fs'
 import { v2 as cloudinary } from "cloudinary";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
 import { createOrderAssignedNotification, createOrderCompletedNotification } from '../services/notificationService';
+
 // Define valid order statuses
 type OrderStatus = 'pending' | 'assigntocourier' | 'completed' | 'cancelled';
 
@@ -121,8 +122,8 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
     let populatedOrder = savedOrder;
     try {
       populatedOrder = await Order.findById(savedOrder._id)
-        .populate('courier', 'userName phoneNumber email')
-        .populate('user.userId', 'userName phoneNumber email');
+        .populate('courier', 'name phoneNumber email imgUrl') // User schema fields
+        .populate('user.userId', 'name phoneNumber email imgUrl'); // User schema fields
       
       console.log('✅ Order populated successfully');
     } catch (populateError) {
@@ -152,7 +153,6 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
   }
 };
 
-
 const cloudinaryStorage = new CloudinaryStorage({
   cloudinary,
   params: async (req, file) => {
@@ -165,6 +165,7 @@ const cloudinaryStorage = new CloudinaryStorage({
     };
   },
 });
+
 const fileFilter = (req: any, file: any, cb: any) => {
   // Accept only image files
   if (file.mimetype.startsWith('image/')) {
@@ -173,6 +174,7 @@ const fileFilter = (req: any, file: any, cb: any) => {
     cb(new Error('Only image files are allowed!'), false);
   }
 };
+
 export const uploadProof = multer({
   storage: cloudinaryStorage,
   fileFilter,
@@ -180,10 +182,6 @@ export const uploadProof = multer({
     fileSize: 5 * 1024 * 1024, // 5MB
   },
 });
-
-
-
-
 
 export const getCourierAssignedOrders = async (req: Request, res: Response) => {
   try {
@@ -212,8 +210,8 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
       courier: courierId,
       status: 'assigntocourier'
     })
-    .populate('user.userId', 'userName phoneNumber email')
-    .populate('courier', 'userName phoneNumber email')
+    .populate('user.userId', 'name phoneNumber email imgUrl') // Populate with User schema fields
+    .populate('courier', 'name phoneNumber email imgUrl') // Populate with User schema fields
     .sort({ createdAt: -1 });
 
     console.log('✅ Found orders for courier:', orders.length);
@@ -227,7 +225,35 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
       });
     }
 
-    res.status(200).json({ orders });
+    // Clean up the response to avoid duplication and match Order schema structure
+    const cleanedOrders = orders.map(order => {
+      const orderObj = order.toObject();
+      
+      // If user.userId is populated, update the user object with populated data
+      if (orderObj.user?.userId && typeof orderObj.user.userId === 'object') {
+        const populatedUser = orderObj.user.userId as any; // Type assertion for populated fields
+        
+        // Debug: Log the populated user data
+        console.log('Populated user data:', populatedUser);
+        console.log('User imgUrl:', populatedUser.imgUrl);
+        
+        // Create a clean user object with only the fields we need (no nested userId)
+        orderObj.user = {
+          userId: populatedUser._id, // Use the _id as a string, not the full object
+          phoneNumber: populatedUser.phoneNumber || orderObj.user.phoneNumber,
+          userName: populatedUser.name || orderObj.user.userName, // Map 'name' to 'userName' 
+          email: populatedUser.email || orderObj.user.email,
+          image: populatedUser.imgUrl || orderObj.user.image || null // Map 'imgUrl' to 'image'
+        };
+        
+        // Debug: Log the final user object
+        console.log('Final user object:', orderObj.user);
+      }
+      
+      return orderObj;
+    });
+
+    res.status(200).json({ orders: cleanedOrders });
   } catch (error) {
     console.error('❌ Get courier orders error:', error);
     res.status(500).json({ 
@@ -236,6 +262,7 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
     });
   }
 };
+
 export const completeOrderWithProof = async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
@@ -381,8 +408,8 @@ export const completeOrderWithProof = async (req: Request, res: Response) => {
 
     // 9. Populate and return response
     const populatedOrder = await Order.findById(savedOrder._id)
-      .populate('courier', 'userName phoneNumber email')
-      .populate('user.userId', 'userName phoneNumber email');
+      .populate('courier', 'name phoneNumber email imgUrl') // User schema fields
+      .populate('user.userId', 'name phoneNumber email imgUrl'); // User schema fields
 
     res.status(200).json({
       message: 'Order completed successfully with delivery proof',
