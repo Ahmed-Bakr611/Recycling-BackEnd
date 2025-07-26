@@ -24,6 +24,8 @@ export interface IUser extends Document {
   createdAt?: Date;
   updatedAt?: Date;
   lastActiveAt?: Date;
+  stripeCustomerId?: string; // Here is the field in the interface
+
 
   // Instance method to compare passwords
   comparePassword(candidate: string): Promise<boolean>;
@@ -61,7 +63,7 @@ const userSchema = new Schema<IUser>(
     default: 0,
     min: 0
   },  pointsHistory: [pointsHistorySchema],
-
+    stripeCustomerId: { type: String, default: null }, 
     imgUrl: { type: String },
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
@@ -84,7 +86,9 @@ const userSchema = new Schema<IUser>(
     },
     lastActiveAt: { type: Date },
   },
+  
   { timestamps: true },
+  
 
 );
 userSchema.methods.toSafeObject = function () {
@@ -99,6 +103,8 @@ userSchema.methods.toSafeObject = function () {
     imgUrl: this.imgUrl,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
+    stripeCustomerId: this.stripeCustomerId, // add this if needed
+
   };
 };
 
