@@ -19,7 +19,7 @@ export const createGuestSession = async (req: Request, res: Response) => {
 
 // List all sessions for authenticated user
 export const getUserSessions = async (req: Request, res: Response) => {
-  const userId = req.user._id;
+  const userId = req.user.userId;
 
   const sessions = await Session.find({ userId }).select("-refreshToken");
   res.status(200).json(sessions);
@@ -36,7 +36,7 @@ export const invalidateSession = async (req: Request, res: Response) => {
 // Optional: upgrade guest session to user session
 export const upgradeGuestSession = async (req: Request, res: Response) => {
   const { sessionId } = req.body;
-  const userId = req.user._id;
+  const userId = req.user.userId;
 
   await Session.updateOne({ sessionId }, { userId });
   res.status(200).json({ message: "Session upgraded to user" });

@@ -8,6 +8,7 @@ import categoryRoutes from "./categoryRoutes";
 import cartRoutes from "./cartRoutes";
 import courierRoutes from './courierRoutes'
 import subscribe from '../routes/subscribe'
+import notificationRoutes from './notificationRoutes';
 const router = express.Router();
 
 export default (): express.Router => {
@@ -20,5 +21,6 @@ export default (): express.Router => {
   cartRoutes(router);
   courierRoutes(router)
   subscribe(router)
+  router.use("/notifications", notificationRoutes);
   return router;
 };

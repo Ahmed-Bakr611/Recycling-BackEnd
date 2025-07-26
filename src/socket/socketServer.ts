@@ -1,0 +1,74 @@
+import { Server as SocketIOServer } from 'socket.io';
+import { Server as HTTPServer } from 'http';
+import jwt from 'jsonwebtoken';
+
+let io: SocketIOServer | null = null;
+
+export const initializeSocketIO = (server: HTTPServer): SocketIOServer => {
+  io = new SocketIOServer(server, {
+    cors: {
+      origin: ["http://localhost:3000", "exp://192.168.1.100:8081"], // Add your frontend URLs
+      credentials: true
+    },
+    transports: ['websocket', 'polling']
+  });
+
+  // Middleware for authentication
+  io.use((socket, next) => {
+    const token = socket.handshake.auth.token || socket.handshake.query.token;
+    
+    if (!token) {
+      return next(new Error('Authentication error: No token provided'));
+    }
+
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
+      socket.userId = decoded.userId;
+      socket.userRole = decoded.role;
+      console.log(`🔐 User ${decoded.userId} authenticated via socket`);
+      next();
+    } catch (error) {
+      console.error('Socket authentication error:', error);
+      next(new Error('Authentication error: Invalid token'));
+    }
+  });
+
+  // Handle socket connections
+  io.on('connection', (socket) => {
+    console.log(`✅ User ${socket.userId} connected via socket`);
+    
+    // Join user to their personal room for targeted notifications
+    socket.join(`user_${socket.userId}`);
+    
+    // Handle disconnection
+    socket.on('disconnect', (reason) => {
+      console.log(`❌ User ${socket.userId} disconnected:`, reason);
+    });
+
+    // Optional: Handle ping/pong for connection health
+    socket.on('ping', () => {
+      socket.emit('pong');
+    });
+
+    // Optional: Handle notification acknowledgment
+    socket.on('notification:read', (notificationId) => {
+      console.log(`📖 User ${socket.userId} read notification ${notificationId}`);
+      // You could update the notification as read in the database here
+    });
+  });
+
+  console.log('🚀 Socket.IO server initialized');
+  return io;
+};
+
+export const getSocketIO = (): SocketIOServer | null => {
+  return io;
+};
+
+// Declare socket extensions for TypeScript
+declare module 'socket.io' {
+  interface Socket {
+    userId?: string;
+    userRole?: string;
+  }
+}
