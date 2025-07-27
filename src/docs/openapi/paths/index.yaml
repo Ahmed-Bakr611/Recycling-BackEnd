@@ -41,3 +41,6 @@
 
 /adminAllAdresses:
   $ref: "./address.yaml#/paths/~1adminAllAdresses"
+# Orders Routes
+/orders:
+  $ref: "./pickup.yml#/paths/~1orders"
