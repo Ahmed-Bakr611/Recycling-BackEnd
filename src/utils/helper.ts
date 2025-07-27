@@ -82,3 +82,23 @@ export const sendOtpEmail = async (to: string, code: string) => {
     html: emailHtml,
   });
 };
+
+
+export const sendSubscriptionEmail = async (to: string, subscriberName?: string) => {
+  const emailHtml = `
+    <div style="font-family: sans-serif;">
+      <h2>Thank you for subscribing!</h2>
+      <p>Hi ${subscriberName ?? "there"},</p>
+      <p>We're excited to have you on board. You'll now receive our latest updates and news.</p>
+      <p style="margin-top: 16px;">If you have any questions, feel free to reply to this email.</p>
+      <p style="font-size: 12px; color: #888;">Best regards,<br/>Recycle App Team</p>
+    </div>
+  `;
+
+  await transporter.sendMail({
+    from: `"Recycle App" <${process.env.MAIL_USER}>`,
+    to,
+    subject: "Subscription Confirmation",
+    html: emailHtml,
+  });
+};

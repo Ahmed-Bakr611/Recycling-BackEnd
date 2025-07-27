@@ -6,17 +6,19 @@ import { Request, Response } from "express";
 import mongoose from 'mongoose';
 import path from 'path';
 import fs from 'fs'
+import { v2 as cloudinary } from "cloudinary";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
+import { createOrderAssignedNotification, createOrderCompletedNotification } from '../services/notificationService';
+
 // Define valid order statuses
 type OrderStatus = 'pending' | 'assigntocourier' | 'completed' | 'cancelled';
 
-// Interface for status history
 interface StatusHistoryEntry {
   status: OrderStatus;
   timestamp: Date;
   updatedBy?: string; // Admin/system who made the change
 }
 
-// Assign courier to order
 export const assignCourierToOrder = async (req: Request, res: Response) => {
   const { orderId } = req.params;
   const { courierId, status } = req.body;
@@ -104,12 +106,24 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
       courier: savedOrder.courier
     });
 
+    // Create notification if order is assigned to courier
+    if (newStatus === 'assigntocourier') {
+      try {
+        const userId = order.user.userId.toString();
+        await createOrderAssignedNotification(userId, orderId);
+        console.log(`✅ Notification created for user ${userId} - order assigned`);
+      } catch (notificationError) {
+        console.error('❌ Error creating notification:', notificationError);
+        // Don't fail the request if notification fails
+      }
+    }
+
     // 6. Try to populate courier info for response (with error handling)
     let populatedOrder = savedOrder;
     try {
       populatedOrder = await Order.findById(savedOrder._id)
-        .populate('courier', 'userName phoneNumber email')
-        .populate('user.userId', 'userName phoneNumber email');
+        .populate('courier', 'name phoneNumber email imgUrl') // User schema fields
+        .populate('user.userId', 'name phoneNumber email imgUrl'); // User schema fields
       
       console.log('✅ Order populated successfully');
     } catch (populateError) {
@@ -139,20 +153,19 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
   }
 };
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadPath = 'uploads/delivery-proofs';
-    // Create directory if it doesn't exist
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
+const cloudinaryStorage = new CloudinaryStorage({
+  cloudinary,
+  params: async (req, file) => {
+    return {
+      folder: "delivery-proofs", // ✅ This goes inside the async return
+      format: "png",             // or 'jpeg' / 'jpg' based on file
+      public_id: `delivery-proof-${Date.now()}-${Math.round(
+        Math.random() * 1e9
+      )}`,
+    };
   },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, `delivery-proof-${uniqueSuffix}${path.extname(file.originalname)}`);
-  }
 });
+
 const fileFilter = (req: any, file: any, cb: any) => {
   // Accept only image files
   if (file.mimetype.startsWith('image/')) {
@@ -163,179 +176,12 @@ const fileFilter = (req: any, file: any, cb: any) => {
 };
 
 export const uploadProof = multer({
-  storage,
+  storage: cloudinaryStorage,
   fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-  }
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
 });
-
-// Update order status
-export const updateOrderStatus = async (req: Request, res: Response) => {
-  try {
-    const { orderId } = req.params;
-    const { status } = req.body;
-
-    if (!status) {
-      return res.status(400).json({ message: 'Status is required' });
-    }
-
-    const order = await Order.findById(orderId);
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
-    }
-
-    // Validate status transition
-    const validTransitions: Record<OrderStatus, OrderStatus[]> = {
-      pending: ['assigntocourier', 'cancelled'],
-      assigntocourier: ['completed', 'cancelled'],
-      completed: [],
-      cancelled: [],
-    };
-
-    const currentStatus = order.status.toLowerCase() as OrderStatus;
-    const newStatus = status.toLowerCase() as OrderStatus;
-
-    if (!validTransitions[currentStatus]?.includes(newStatus)) {
-      return res.status(400).json({ 
-        message: `Invalid status transition from ${currentStatus} to ${newStatus}` 
-      });
-    }
-
-    order.status = newStatus;
-
-    // Add to status history if it exists
-    if (order.statusHistory) {
-      order.statusHistory.push({
-        status: newStatus,
-        timestamp: new Date(),
-        updatedBy: req.user?.userId || 'admin'
-      });
-    }
-
-    await order.save();
-
-    res.status(200).json({ 
-      message: 'Order status updated successfully', 
-      order 
-    });
-
-  } catch (error) {
-    console.error('Update order status error:', error);
-    res.status(500).json({ 
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-// Get all available couriers
-export const getAvailableCouriers = async (req: Request, res: Response) => {
-  try {
-    const couriers = await User.find({ 
-      role: 'delivery',
-      isActive: { $ne: false } // Assuming you have an isActive field
-    }).select('userName phoneNumber email');
-
-    res.status(200).json({ couriers });
-
-  } catch (error) {
-    console.error('Get couriers error:', error);
-    res.status(500).json({ 
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-export const getOrderStats = async (req: Request, res: Response) => {
-  try {
-    const stats = await Order.aggregate([
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    const totalOrders = await Order.countDocuments();
-    const todayOrders = await Order.countDocuments({
-      createdAt: {
-        $gte: new Date(new Date().setHours(0, 0, 0, 0))
-      }
-    });
-
-    const formattedStats = stats.reduce((acc, stat) => {
-      acc[stat._id] = stat.count;
-      return acc;
-    }, {});
-
-    res.status(200).json({
-      totalOrders,
-      todayOrders,
-      statusBreakdown: formattedStats
-    });
-
-  } catch (error) {
-    console.error('Get stats error:', error);
-    res.status(500).json({ 
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-// Cancel order
-export const cancelOrder = async (req: Request, res: Response) => {
-  try {
-    const { orderId } = req.params;
-    const { reason } = req.body;
-
-    const order = await Order.findById(orderId);
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
-    }
-
-    if (order.status === 'completed') {
-      return res.status(400).json({ 
-        message: 'Cannot cancel completed order' 
-      });
-    }
-
-    if (order.status === 'cancelled') {
-      return res.status(400).json({ 
-        message: 'Order is already cancelled' 
-      });
-    }
-
-    order.status = 'cancelled';
-    
-    if (order.statusHistory) {
-      order.statusHistory.push({
-        status: 'cancelled',
-        timestamp: new Date(),
-        updatedBy: req.user?.userId || 'admin',
-        reason // If you want to track cancellation reason
-      });
-    }
-
-    await order.save();
-
-    res.status(200).json({ 
-      message: 'Order cancelled successfully', 
-      order 
-    });
-
-  } catch (error) {
-    console.error('Cancel order error:', error);
-    res.status(500).json({ 
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
 
 export const getCourierAssignedOrders = async (req: Request, res: Response) => {
   try {
@@ -364,8 +210,8 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
       courier: courierId,
       status: 'assigntocourier'
     })
-    .populate('user.userId', 'userName phoneNumber email')
-    .populate('courier', 'userName phoneNumber email')
+    .populate('user.userId', 'name phoneNumber email imgUrl') // Populate with User schema fields
+    .populate('courier', 'name phoneNumber email imgUrl') // Populate with User schema fields
     .sort({ createdAt: -1 });
 
     console.log('✅ Found orders for courier:', orders.length);
@@ -379,7 +225,35 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
       });
     }
 
-    res.status(200).json({ orders });
+    // Clean up the response to avoid duplication and match Order schema structure
+    const cleanedOrders = orders.map(order => {
+      const orderObj = order.toObject();
+      
+      // If user.userId is populated, update the user object with populated data
+      if (orderObj.user?.userId && typeof orderObj.user.userId === 'object') {
+        const populatedUser = orderObj.user.userId as any; // Type assertion for populated fields
+        
+        // Debug: Log the populated user data
+        console.log('Populated user data:', populatedUser);
+        console.log('User imgUrl:', populatedUser.imgUrl);
+        
+        // Create a clean user object with only the fields we need (no nested userId)
+        orderObj.user = {
+          userId: populatedUser._id, // Use the _id as a string, not the full object
+          phoneNumber: populatedUser.phoneNumber || orderObj.user.phoneNumber,
+          userName: populatedUser.name || orderObj.user.userName, // Map 'name' to 'userName' 
+          email: populatedUser.email || orderObj.user.email,
+          image: populatedUser.imgUrl || orderObj.user.image || null // Map 'imgUrl' to 'image'
+        };
+        
+        // Debug: Log the final user object
+        console.log('Final user object:', orderObj.user);
+      }
+      
+      return orderObj;
+    });
+
+    res.status(200).json({ orders: cleanedOrders });
   } catch (error) {
     console.error('❌ Get courier orders error:', error);
     res.status(500).json({ 
@@ -388,23 +262,26 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
     });
   }
 };
+
 export const completeOrderWithProof = async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
     const { notes } = req.body;
-    const proofPhoto = req.file;
+    const proofPhoto = req.file as Express.Multer.File;
 
     console.log('📸 Completing order with photo proof...');
     console.log('Order ID:', orderId);
     console.log('Courier ID:', req.user?.userId);
     console.log('Photo:', proofPhoto?.filename);
-  if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+
+    if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
       return res.status(400).json({ message: "Invalid or missing order ID" });
     }
+
     // 1. Validate photo is provided
     if (!proofPhoto) {
-      return res.status(400).json({ 
-        message: 'Delivery proof photo is required' 
+      return res.status(400).json({
+        message: 'Delivery proof photo is required'
       });
     }
 
@@ -424,8 +301,8 @@ export const completeOrderWithProof = async (req: Request, res: Response) => {
       if (proofPhoto.path && fs.existsSync(proofPhoto.path)) {
         fs.unlinkSync(proofPhoto.path);
       }
-      return res.status(403).json({ 
-        message: 'You are not assigned to this order' 
+      return res.status(403).json({
+        message: 'You are not assigned to this order'
       });
     }
 
@@ -435,26 +312,26 @@ export const completeOrderWithProof = async (req: Request, res: Response) => {
       if (proofPhoto.path && fs.existsSync(proofPhoto.path)) {
         fs.unlinkSync(proofPhoto.path);
       }
-      return res.status(400).json({ 
-        message: 'Order cannot be completed from current status' 
+      return res.status(400).json({
+        message: 'Order cannot be completed from current status'
       });
     }
 
     // 5. Update order status and add delivery proof
     order.status = 'completed';
-order.deliveryProof = {
-  photoPath: proofPhoto.path,
-  photoUrl: `/uploads/delivery-proofs/${proofPhoto.filename}`,
-  uploadedAt: new Date(),
-  notes: notes || '',
-  completedBy: new mongoose.Types.ObjectId(req.user?.userId) // Convert string to ObjectId
-};
+    order.deliveryProof = {
+      photoPath: proofPhoto.filename,
+      photoUrl: proofPhoto.path,
+      uploadedAt: new Date(),
+      notes: notes || '',
+      completedBy: new mongoose.Types.ObjectId(req.user?.userId),
+    }
 
     // 6. Add to status history
     if (!order.statusHistory) {
       order.statusHistory = [];
     }
-    
+
     order.statusHistory.push({
       status: 'completed',
       timestamp: new Date(),
@@ -468,16 +345,71 @@ order.deliveryProof = {
     // 8. Save the order
     const savedOrder = await order.save();
 
+    // 🎯 NEW: AWARD POINTS TO THE USER
+    try {
+      // Calculate total points from items array (points * quantity for each item)
+      const totalPointsToAward = order.items.reduce((sum, item) => {
+        return sum + (item.points * item.quantity);
+      }, 0);
+      
+      console.log('Items breakdown:', order.items.map(item => ({
+        itemName: item.itemName,
+        points: item.points,
+        quantity: item.quantity,
+        totalPoints: item.points * item.quantity
+      })));
+      console.log('Total points to award:', totalPointsToAward);
+      
+      // Award points using your existing function logic
+      const user = await User.findById(order.user.userId);
+      if (user && totalPointsToAward > 0) {
+        // Update user's total points
+        user.totalPoints = (user.totalPoints || 0) + totalPointsToAward;
+        
+        // Add to points history
+        if (!user.pointsHistory) {
+          user.pointsHistory = [];
+        }
+        
+        user.pointsHistory.push({
+          orderId: savedOrder._id.toString(),
+          points: totalPointsToAward,
+          type: 'earned',
+          reason: 'Order completion',
+          timestamp: new Date()
+        });
+        
+        // Save user with updated points
+        await user.save();
+        
+        console.log(`✅ Awarded ${totalPointsToAward} points to user ${user._id} for order ${savedOrder._id}`);
+      }
+    } catch (pointsError) {
+      console.error('❌ Error awarding points:', pointsError);
+      // Don't fail the entire operation if points fail
+    }
+
     console.log('✅ Order completed with proof:', {
       orderId: savedOrder._id,
       proofPhoto: proofPhoto.filename,
       completedAt: savedOrder.completedAt
     });
 
+    // Create completion notification
+    try {
+      const userId = order.user.userId.toString();
+      const totalPointsToAward = order.items.reduce((sum, item) => sum + (item.points * item.quantity), 0);
+      await createOrderCompletedNotification(userId, orderId);
+      console.log(`✅ Completion notification created for user ${userId}`);
+    } catch (notificationError) {
+      console.error('❌ Error creating completion notification:', notificationError);
+      // Don't fail the request if notification fails
+    }
+
     // 9. Populate and return response
     const populatedOrder = await Order.findById(savedOrder._id)
-      .populate('courier', 'userName phoneNumber email')
-      .populate('user.userId', 'userName phoneNumber email');
+      .populate('courier', 'name phoneNumber email imgUrl') // User schema fields
+      .populate('user.userId', 'name phoneNumber email imgUrl'); // User schema fields
 
     res.status(200).json({
       message: 'Order completed successfully with delivery proof',
@@ -496,7 +428,7 @@ order.deliveryProof = {
 
   } catch (error) {
     console.error('❌ Complete order with proof error:', error);
-    
+
     // Clean up uploaded file on error
     if (req.file?.path && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
