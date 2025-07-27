@@ -22,25 +22,25 @@ export default (router: express.Router) => {
   router.get(
     "/addresses",
     authenticate,
-    authorize(["customer", "admin"]),
+    authorize(["customer", "buyer", "admin"]),
     getAddresses
   );
   router.post(
     "/addresses",
     authenticate,
-    authorize(["customer", "admin"]),
+    authorize(["customer", "buyer", "admin"]),
     createAddress
   );
   router.put(
     "/addresses/:id",
     authenticate,
-    authorize(["customer", "admin"]),
+    authorize(["customer", "buyer", "admin"]),
     updateAddress
   );
   router.delete(
     "/addresses/:id",
     authenticate,
-    authorize(["customer", "admin"]),
+    authorize(["customer", "buyer", "admin"]),
     deleteAddress
   );
 };
