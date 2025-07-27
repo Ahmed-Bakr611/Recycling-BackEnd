@@ -10,7 +10,6 @@ import {
   // Add these new imports for points management
   addUserPoints,
   deductUserPoints,
-  adjustUserPoints,
   getUserPoints,
   getPointsLeaderboard,
 } from "../controllers/userController";
@@ -21,6 +20,13 @@ import {
   getUserOrdersWithPoints,
   recalculateUserPointsFromOrders,
 } from "../controllers/pickupController";
+import {
+  createPaymentIntent,
+  createStripeCustomer,
+  getAllPayments,
+  getAllPaymentsForUser,
+  createCheckoutSession,
+} from "../controllers/stripePayment";
 
 export default (appRouter: express.Router) => {
   // User stats
@@ -56,12 +62,7 @@ export default (appRouter: express.Router) => {
     authorize(["admin", "customer"]),
     deductUserPoints
   );
-  appRouter.put(
-    "/users/:userId/points/adjust",
-    authenticate,
-    authorize(["admin"]),
-    adjustUserPoints
-  );
+
   appRouter.get("/users/:userId/points", authenticate, getUserPoints); // This is the one your frontend needs
   appRouter.get(
     "/users/points/leaderboard",
@@ -87,5 +88,31 @@ export default (appRouter: express.Router) => {
     authenticate,
     authorize(["admin"]),
     recalculateUserPointsFromOrders
+  );
+  appRouter.post(
+    "/users/:id/stripe-customer",
+    authenticate,
+    createStripeCustomer
+  );
+
+  // Route to create payment intent for user
+  appRouter.post(
+    "/users/:id/create-payment-intent",
+    authenticate,
+    createPaymentIntent
+  );
+  appRouter.post(
+    "/users/:id/create-checkout-session",
+    authenticate,
+    createCheckoutSession
+  );
+
+  appRouter.get("/users/:id/payments", authenticate, getAllPaymentsForUser);
+
+  appRouter.get(
+    "/payments",
+    authenticate,
+    authorize(["admin"]),
+    getAllPayments
   );
 };

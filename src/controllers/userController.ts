@@ -309,57 +309,6 @@ export const deductUserPoints = async (req: Request, res: Response) => {
   }
 };
 
-// Manually adjust user points (admin function)
-export const adjustUserPoints = async (req: Request, res: Response) => {
-  try {
-    const { userId } = req.params;
-    const { points, reason = "Manual adjustment" } = req.body;
-
-    const user = await User.findById(userId).select("-password -refreshToken");
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    const oldPoints = user.totalPoints || 0;
-    user.totalPoints = Math.max(0, points); // Ensure points don't go negative
-
-    // Add to points history
-    if (!user.pointsHistory) {
-      user.pointsHistory = [];
-    }
-
-    user.pointsHistory.push({
-      points: user.totalPoints - oldPoints,
-      type: "adjusted",
-      reason,
-      timestamp: new Date(),
-    });
-
-    await user.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Points adjusted successfully",
-      data: {
-        userId: user._id,
-        oldPoints,
-        newPoints: user.totalPoints,
-        adjustment: user.totalPoints - oldPoints,
-      },
-    });
-  } catch (error) {
-    console.error("Error adjusting points:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while adjusting points",
-    });
-  }
-};
-
-// Get user points and history
 export const getUserPoints = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
@@ -411,7 +360,6 @@ export const getUserPoints = async (req: Request, res: Response) => {
   }
 };
 
-// Get points leaderboard
 export const getPointsLeaderboard = async (req: Request, res: Response) => {
   try {
     const { limit = 10 } = req.query;
