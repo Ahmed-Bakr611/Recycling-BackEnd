@@ -26,16 +26,17 @@ export default (router: express.Router) => {
   router.get('/top-materials-recycled', getTopMaterialsRecycled);
   // router.get('/top-users-points', getTopUsersByStoredPoints);
 
-router.get("/orders", authenticate, authorize(["customer", "admin"]), getAllOrders);
-router.get("/orders/points", authenticate, authorize(["customer", "admin"]), getUserOrdersWithPoints);
-router.post("/orders", authenticate,  createOrder);
+
+router.get("/orders", authenticate, authorize(["customer", "buyer", "admin"]), getAllOrders);
+router.get("/orders/points", authenticate, authorize(["customer", "buyer", "admin"]), getUserOrdersWithPoints);
+router.post("/orders", authenticate,  authorize(["customer", "buyer", "admin"]), createOrder);
 router.get('/orders/analytics', getOrderAnalytics);
 
-router.get("/orders/:id", authenticate, authorize(["customer", "admin"]), getOrderById);
-router.delete("/orders/:id", authenticate, authorize(["customer", "admin"]), deleteOrderById);
-router.delete("/orders", authenticate, authorize(["customer", "admin"]), deleteAllOrders);
-router.get("/orders/status/:status", authenticate, authorize(["customer", "admin"]), getOrdersByStatus);
-router.put("/orders/:id/status", authenticate, authorize(["customer", "admin"]), updateOrderStatus);
+router.get("/orders/:id", authenticate, authorize(["customer", "buyer", "admin"]), getOrderById);
+router.delete("/orders/:id", authenticate, authorize(["customer", "buyer", "admin"]), deleteOrderById);
+router.delete("/orders", authenticate, authorize(["customer", "buyer", "admin"]), deleteAllOrders);
+router.get("/orders/status/:status", authenticate, authorize(["customer", "buyer", "admin"]), getOrdersByStatus);
+router.put("/orders/:id/status", authenticate, authorize(["customer", "buyer", "admin"]), updateOrderStatus);
 
 // 🛡️ ADMIN routes
 router.get("/admin/orders", authenticate, authorize(["admin"]), getAllOrdersForAdmin);
@@ -44,7 +45,7 @@ router.put("/admin/orders/:id/status", authenticate, authorize(["admin"]), updat
 router.patch(
   "/orders/:id/cancel",
   authenticate,
-  authorize(["customer", "admin"]),
+  authorize(["customer", "buyer", "admin"]),
   cancelOrder
 )
 router.post('/:orderId/complete-with-proof',
