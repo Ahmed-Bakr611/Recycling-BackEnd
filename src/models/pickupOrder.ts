@@ -1,5 +1,5 @@
 // models/pickupOrder.ts
-import mongoose, { Document, Model } from "mongoose";
+import mongoose, { Document, Model, Types } from "mongoose";
 
 const AddressSchema = new mongoose.Schema({
   city: { type: String, required: true },
@@ -33,7 +33,13 @@ const ItemSchema = new mongoose.Schema({
     required: true,
   },
   image: { type: String, required: true },
-  itemName: { type: String, required: true },
+  itemName: {
+    type: String,
+    required: true,
+    unique: true,
+    lowercase: true, // store lowercase version
+    trim: true,
+  },
   measurement_unit: { type: Number, enum: [1, 2], required: true },
   points: { type: Number, required: true },
   price: { type: Number, required: true },
@@ -157,7 +163,7 @@ export interface IAddress {
 }
 
 export interface IItem {
-  _id?: mongoose.Types.ObjectId; // optional to support pre-insertion or flexibility
+  _id: Types.ObjectId; // optional to support pre-insertion or flexibility
   categoryId: mongoose.Types.ObjectId;
   image: string;
   itemName: string;
