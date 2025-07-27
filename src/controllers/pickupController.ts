@@ -1,14 +1,15 @@
 import express from "express";
-import mongoose from 'mongoose';
-import Order, { IOrder, IItem, IStatusHistory } from '../models/pickupOrder'; // Use the comprehensive schema
-import Category from '../models/category';
-import User from '../models/users';
-import { 
-  createOrderAssignedNotification, 
-  createOrderCancelledNotification, 
+import mongoose from "mongoose";
+import Order, { IOrder, IItem, IStatusHistory } from "../models/pickupOrder"; // Use the comprehensive schema
+import Category from "../models/category";
+import User from "../models/users";
+import {
+  createOrderAssignedNotification,
+  createOrderCancelledNotification,
   createOrderCompletedNotification,
-  createOrderStatusChangeNotification 
-} from '../services/notificationService';
+  createOrderStatusChangeNotification,
+} from "../services/notificationService";
+import { updateItemQuantities } from "../utils/stockHelper";
 
 // Use interfaces from pickupOrder.ts
 interface IAuthenticatedRequest extends express.Request {
@@ -21,24 +22,43 @@ interface IAuthenticatedRequest extends express.Request {
 }
 
 const calculateOrderPoints = (items: IItem[]): number => {
-  return items.reduce((total, item) => total + (item.points * item.quantity), 0);
+  return items.reduce((total, item) => total + item.points * item.quantity, 0);
 };
 
-export const createOrder = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
+export const createOrder = async (
+  req: IAuthenticatedRequest,
+  res: express.Response
+): Promise<void> => {
   try {
     const userId = req.user.userId;
     const { address, items, phoneNumber, userName, imageUrl, email } = req.body;
     console.log("🔍 Incoming order request:", req.body);
 
-    // Validate required fields
     if (!address || !items || !phoneNumber || !userName) {
       res.status(400).json({
         success: false,
-        message: "Missing required fields: address, items, phoneNumber, userName"
+        message:
+          "Missing required fields: address, items, phoneNumber, userName",
       });
       return;
     }
 
+    // 🔍 Fetch user and check role
+    const user = await User.findById(userId);
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+      return;
+    }
+
+    // 🛒 If buyer, update item quantities
+    if (user.role === "buyer") {
+      await updateItemQuantities(items, "decrease");
+    }
+
+    // 🧠 Enrich items with category names
     const enrichedItems = await Promise.all(
       items.map(async (item: IItem) => {
         const category = await Category.findById(item.categoryId);
@@ -54,51 +74,58 @@ export const createOrder = async (req: IAuthenticatedRequest, res: express.Respo
         userId: new mongoose.Types.ObjectId(userId),
         phoneNumber,
         userName,
-        email
+        email,
       },
       address,
       items: enrichedItems,
-      status: 'pending' // Use the enum value from pickupOrder schema
+      status: "pending",
     });
-    
+
     const savedOrder = await newOrder.save();
-    
+
     res.status(201).json({
       success: true,
       message: "Order created successfully",
-      data: savedOrder
+      data: savedOrder,
     });
   } catch (error) {
     console.error("Error creating order:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-export const getAllOrders = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
+export const getAllOrders = async (
+  req: IAuthenticatedRequest,
+  res: express.Response
+): Promise<void> => {
   try {
     const userId = req.user.userId;
-    
-    const orders = await Order.find({ 'user.userId': userId })
-      .sort({ createdAt: -1 });
-    
+
+    const orders = await Order.find({ "user.userId": userId }).sort({
+      createdAt: -1,
+    });
+
     res.json({
       success: true,
       count: orders.length,
-      data: orders
+      data: orders,
     });
   } catch (error) {
     console.error("Error fetching orders:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-export const deleteOrderById = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
+export const deleteOrderById = async (
+  req: IAuthenticatedRequest,
+  res: express.Response
+): Promise<void> => {
   try {
     const userId = req.user.userId;
     const userRole = req.user.role;
@@ -113,17 +140,17 @@ export const deleteOrderById = async (req: IAuthenticatedRequest, res: express.R
       console.warn("❌ Invalid Order ID format:", orderId);
       res.status(400).json({
         success: false,
-        message: "Invalid order ID format"
+        message: "Invalid order ID format",
       });
       return;
     }
 
-    const orderToDelete = await Order.findById(orderId) as IOrder | null;
+    const orderToDelete = (await Order.findById(orderId)) as IOrder | null;
     if (!orderToDelete) {
       console.warn("❌ Order not found:", orderId);
       res.status(404).json({
         success: false,
-        message: "Order not found"
+        message: "Order not found",
       });
       return;
     }
@@ -133,16 +160,16 @@ export const deleteOrderById = async (req: IAuthenticatedRequest, res: express.R
 
     if (userRole === "admin") {
       console.log("🛡️ Admin attempting to delete order...");
-      
-      if (orderToDelete.status === 'completed') {
+
+      if (orderToDelete.status === "completed") {
         shouldRemovePoints = true;
         console.log("⚠️ Order was completed, will remove points from user");
       }
-      
+
       deletedOrder = await Order.findByIdAndDelete(orderId);
     } else {
       console.log("👤 Customer attempting to delete their own order...");
-      
+
       const ownerId = orderToDelete.user?.userId?.toString();
       console.log("👤 Order Owner ID:", ownerId);
 
@@ -150,19 +177,19 @@ export const deleteOrderById = async (req: IAuthenticatedRequest, res: express.R
         console.warn("🚫 Permission denied. User does not own the order.");
         res.status(403).json({
           success: false,
-          message: "You do not have permission to delete this order"
+          message: "You do not have permission to delete this order",
         });
         return;
       }
 
-      if (orderToDelete.status === 'completed') {
+      if (orderToDelete.status === "completed") {
         shouldRemovePoints = true;
         console.log("⚠️ Order was completed, will remove points from user");
       }
 
       deletedOrder = await Order.findOneAndDelete({
         _id: orderId,
-        'user.userId': userId
+        "user.userId": userId,
       });
     }
 
@@ -170,7 +197,7 @@ export const deleteOrderById = async (req: IAuthenticatedRequest, res: express.R
       console.warn("❌ Order not found or already deleted:", orderId);
       res.status(404).json({
         success: false,
-        message: "Order not found or already deleted"
+        message: "Order not found or already deleted",
       });
       return;
     }
@@ -181,33 +208,39 @@ export const deleteOrderById = async (req: IAuthenticatedRequest, res: express.R
         const pointsToRemove = calculateOrderPoints(deletedOrder.items);
         const orderUserId = deletedOrder.user.userId;
 
-        console.log(`🔄 Removing ${pointsToRemove} points from user ${orderUserId}`);
+        console.log(
+          `🔄 Removing ${pointsToRemove} points from user ${orderUserId}`
+        );
 
         const user = await User.findById(orderUserId);
         if (user) {
           const currentPoints = user.totalPoints || 0;
           user.totalPoints = Math.max(0, currentPoints - pointsToRemove);
-          
+
           if (!user.pointsHistory) {
             user.pointsHistory = [];
           }
-          
+
           user.pointsHistory.push({
             orderId: orderId,
             points: -pointsToRemove,
-            type: 'deducted',
+            type: "deducted",
             reason: `Order deleted - Points refund`,
-            timestamp: new Date()
+            timestamp: new Date(),
           });
 
           await user.save();
-          
-          console.log(`✅ Removed ${pointsToRemove} points from user ${orderUserId}. New total: ${user.totalPoints}`);
+
+          console.log(
+            `✅ Removed ${pointsToRemove} points from user ${orderUserId}. New total: ${user.totalPoints}`
+          );
         } else {
-          console.warn(`⚠️ User ${orderUserId} not found when trying to remove points`);
+          console.warn(
+            `⚠️ User ${orderUserId} not found when trying to remove points`
+          );
         }
       } catch (pointsError) {
-        console.error('❌ Error removing points from user:', pointsError);
+        console.error("❌ Error removing points from user:", pointsError);
       }
     }
 
@@ -217,159 +250,180 @@ export const deleteOrderById = async (req: IAuthenticatedRequest, res: express.R
       message: "Order deleted successfully",
       data: {
         ...deletedOrder.toObject(),
-        pointsRemoved: shouldRemovePoints ? calculateOrderPoints(deletedOrder.items) : 0
-      }
+        pointsRemoved: shouldRemovePoints
+          ? calculateOrderPoints(deletedOrder.items)
+          : 0,
+      },
     });
-
   } catch (error) {
     console.error("🔥 Error deleting order:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-export const deleteAllOrders = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
+export const deleteAllOrders = async (
+  req: IAuthenticatedRequest,
+  res: express.Response
+): Promise<void> => {
   try {
     const userId = req.user.userId;
-    
-    const result = await Order.deleteMany({ 'user.userId': userId });
-    
+
+    const result = await Order.deleteMany({ "user.userId": userId });
+
     res.json({
       success: true,
-      message: `${result.deletedCount} orders deleted successfully`
+      message: `${result.deletedCount} orders deleted successfully`,
     });
   } catch (error) {
     console.error("Error deleting all orders:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-export const getOrderById = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
+export const getOrderById = async (
+  req: IAuthenticatedRequest,
+  res: express.Response
+): Promise<void> => {
   try {
     const userId = req.user.userId;
     const orderId = req.params.id;
-    
+
     const order = await Order.findOne({
       _id: orderId,
-      'user.userId': userId
+      "user.userId": userId,
     });
-    
+
     if (!order) {
       res.status(404).json({
         success: false,
-        message: "Order not found or access denied"
+        message: "Order not found or access denied",
       });
       return;
     }
-    
+
     res.json({
       success: true,
-      data: order
+      data: order,
     });
   } catch (error) {
     console.error("Error fetching order:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-export const getOrdersByStatus = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
+export const getOrdersByStatus = async (
+  req: IAuthenticatedRequest,
+  res: express.Response
+): Promise<void> => {
   try {
     const userId = req.user.userId;
     const status = req.params.status;
-    
+
     const orders = await Order.find({
-      'user.userId': userId,
-      status: status
+      "user.userId": userId,
+      status: status,
     }).sort({ createdAt: -1 });
-    
+
     res.json({
       success: true,
       count: orders.length,
-      data: orders
+      data: orders,
     });
   } catch (error) {
     console.error("Error fetching orders by status:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-export const updateOrderStatus = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
+export const updateOrderStatus = async (
+  req: IAuthenticatedRequest,
+  res: express.Response
+): Promise<void> => {
   try {
     const userId = req.user.userId;
     const orderId = req.params.id;
     const { status, reason, notes } = req.body;
-    
+
     if (!status) {
       res.status(400).json({
         success: false,
-        message: "Status is required"
+        message: "Status is required",
       });
       return;
     }
 
-    const validStatuses = ['pending', 'assigntocourier', 'completed', 'cancelled'];
+    const validStatuses = [
+      "pending",
+      "assigntocourier",
+      "completed",
+      "cancelled",
+    ];
     if (!validStatuses.includes(status)) {
       res.status(400).json({
         success: false,
-        message: "Invalid status value"
+        message: "Invalid status value",
       });
       return;
     }
-    
-    const order = await Order.findOne({
+
+    const order = (await Order.findOne({
       _id: orderId,
-      'user.userId': userId
-    }) as IOrder | null;
-    
+      "user.userId": userId,
+    })) as IOrder | null;
+
     if (!order) {
       res.status(404).json({
         success: false,
-        message: "Order not found or you don't have permission to update it"
+        message: "Order not found or you don't have permission to update it",
       });
       return;
     }
 
     // Update status and add to history
     order.status = status;
-    
+
     const statusHistoryEntry: IStatusHistory = {
       status: status,
       timestamp: new Date(),
       updatedBy: req.user.userName || req.user.email || userId,
-      ...(status === 'cancelled' && reason && { reason }),
-      ...(notes && { notes })
+      ...(status === "cancelled" && reason && { reason }),
+      ...(notes && { notes }),
     };
 
     order.statusHistory.push(statusHistoryEntry);
-    
+
     const updatedOrder = await order.save();
-    
+
     res.json({
       success: true,
       message: "Order status updated successfully",
-      data: updatedOrder
+      data: updatedOrder,
     });
   } catch (error) {
     console.error("Error updating order status:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-export const getAllOrdersForAdmin = async (_req: express.Request, res: express.Response): Promise<void> => {
+export const getAllOrdersForAdmin = async (
+  _req: express.Request,
+  res: express.Response
+): Promise<void> => {
   try {
     const orders = await Order.find({}).sort({ createdAt: -1 });
 
@@ -387,49 +441,52 @@ export const getAllOrdersForAdmin = async (_req: express.Request, res: express.R
   }
 };
 
-export const cancelOrder = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
+export const cancelOrder = async (
+  req: IAuthenticatedRequest,
+  res: express.Response
+): Promise<void> => {
   try {
     const userId = req.user.userId;
     const orderId = req.params.id;
     const { reason, notes } = req.body;
 
-    const order = await Order.findOne({
+    const order = (await Order.findOne({
       _id: orderId,
-      'user.userId': userId
-    }) as IOrder | null;
+      "user.userId": userId,
+    })) as IOrder | null;
 
     if (!order) {
       res.status(404).json({
         success: false,
-        message: "Order not found or access denied"
+        message: "Order not found or access denied",
       });
       return;
     }
 
-    if (order.status === 'assigntocourier') {
+    if (order.status === "assigntocourier") {
       res.status(400).json({
         success: false,
-        message: "Cannot cancel an order that is already assigned to courier"
+        message: "Cannot cancel an order that is already assigned to courier",
       });
       return;
     }
 
-    if (order.status === 'cancelled') {
+    if (order.status === "cancelled") {
       res.status(400).json({
         success: false,
-        message: "Order is already cancelled"
+        message: "Order is already cancelled",
       });
       return;
     }
 
-    order.status = 'cancelled';
-    
+    order.status = "cancelled";
+
     order.statusHistory.push({
-      status: 'cancelled',
+      status: "cancelled",
       timestamp: new Date(),
       updatedBy: req.user.userName || req.user.email || userId,
-      reason: reason || 'Order cancelled by customer',
-      notes: notes || undefined
+      reason: reason || "Order cancelled by customer",
+      notes: notes || undefined,
     });
 
     await order.save();
@@ -437,18 +494,21 @@ export const cancelOrder = async (req: IAuthenticatedRequest, res: express.Respo
     res.json({
       success: true,
       message: "Order canceled successfully",
-      data: order
+      data: order,
     });
   } catch (error) {
     console.error("Error canceling order:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-export const updateOrderStatusByAdmin = async (req: express.Request, res: express.Response): Promise<void> => {
+export const updateOrderStatusByAdmin = async (
+  req: express.Request,
+  res: express.Response
+): Promise<void> => {
   try {
     const orderId = req.params.id;
     const { status, reason, notes } = req.body;
@@ -461,7 +521,12 @@ export const updateOrderStatusByAdmin = async (req: express.Request, res: expres
       return;
     }
 
-    const validStatuses = ['pending', 'assigntocourier', 'completed', 'cancelled'];
+    const validStatuses = [
+      "pending",
+      "assigntocourier",
+      "completed",
+      "cancelled",
+    ];
     if (!validStatuses.includes(status)) {
       res.status(400).json({
         success: false,
@@ -470,7 +535,7 @@ export const updateOrderStatusByAdmin = async (req: express.Request, res: expres
       return;
     }
 
-    const currentOrder = await Order.findById(orderId) as IOrder | null;
+    const currentOrder = (await Order.findById(orderId)) as IOrder | null;
     if (!currentOrder) {
       res.status(404).json({
         success: false,
@@ -479,7 +544,7 @@ export const updateOrderStatusByAdmin = async (req: express.Request, res: expres
       return;
     }
 
-    if (status === 'cancelled' && !reason) {
+    if (status === "cancelled" && !reason) {
       res.status(400).json({
         success: false,
         message: "Cancellation reason is required when cancelling an order",
@@ -489,13 +554,13 @@ export const updateOrderStatusByAdmin = async (req: express.Request, res: expres
 
     const previousStatus = currentOrder.status;
     currentOrder.status = status;
-    
+
     const statusHistoryEntry: IStatusHistory = {
       status: status,
       timestamp: new Date(),
-      updatedBy: 'admin',
-      ...(status === 'cancelled' && reason && { reason }),
-      ...(notes && { notes })
+      updatedBy: "admin",
+      ...(status === "cancelled" && reason && { reason }),
+      ...(notes && { notes }),
     };
 
     currentOrder.statusHistory.push(statusHistoryEntry);
@@ -503,49 +568,63 @@ export const updateOrderStatusByAdmin = async (req: express.Request, res: expres
 
     // Create notifications based on status change
     const userId = currentOrder.user.userId.toString();
-    
+
     try {
-      if (status === 'assigntocourier' && previousStatus !== 'assigntocourier') {
+      if (
+        status === "assigntocourier" &&
+        previousStatus !== "assigntocourier"
+      ) {
         await createOrderAssignedNotification(userId, orderId);
-      } else if (status === 'cancelled' && previousStatus !== 'cancelled') {
-        await createOrderCancelledNotification(userId, orderId, reason || 'No reason provided');
-      } else if (status === 'completed' && previousStatus !== 'completed') {
+      } else if (status === "cancelled" && previousStatus !== "cancelled") {
+        await createOrderCancelledNotification(
+          userId,
+          orderId,
+          reason || "No reason provided"
+        );
+      } else if (status === "completed" && previousStatus !== "completed") {
         await createOrderCompletedNotification(userId, orderId);
       } else if (previousStatus !== status) {
-        await createOrderStatusChangeNotification(userId, orderId, previousStatus, status);
+        await createOrderStatusChangeNotification(
+          userId,
+          orderId,
+          previousStatus,
+          status
+        );
       }
     } catch (notificationError) {
-      console.error('❌ Error creating notification:', notificationError);
+      console.error("❌ Error creating notification:", notificationError);
       // Don't fail the request if notification fails
     }
 
     // If order is being marked as completed, add points to user
-    if (status === 'completed' && previousStatus !== 'completed') {
+    if (status === "completed" && previousStatus !== "completed") {
       try {
         const totalPoints = calculateOrderPoints(updatedOrder.items);
-        
+
         const user = await User.findById(currentOrder.user.userId);
         if (user) {
           user.totalPoints = (user.totalPoints || 0) + totalPoints;
-          
+
           if (!user.pointsHistory) {
             user.pointsHistory = [];
           }
-          
+
           user.pointsHistory.push({
             orderId: orderId,
             points: totalPoints,
-            type: 'earned',
+            type: "earned",
             reason: `Order completed - Recycling items`,
-            timestamp: new Date()
+            timestamp: new Date(),
           });
 
           await user.save();
-          
-          console.log(`✅ Added ${totalPoints} points to user ${user._id} for completed order ${orderId}`);
+
+          console.log(
+            `✅ Added ${totalPoints} points to user ${user._id} for completed order ${orderId}`
+          );
         }
       } catch (pointsError) {
-        console.error('❌ Error adding points to user:', pointsError);
+        console.error("❌ Error adding points to user:", pointsError);
       }
     }
 
@@ -562,37 +641,44 @@ export const updateOrderStatusByAdmin = async (req: express.Request, res: expres
     });
   }
 };
-export const getOrderAnalyticsWithPoints = async (_req: express.Request, res: express.Response): Promise<void> => {
+export const getOrderAnalyticsWithPoints = async (
+  _req: express.Request,
+  res: express.Response
+): Promise<void> => {
   try {
     const totalOrders = await Order.countDocuments();
-    const completedOrders = await Order.countDocuments({ status: 'completed' });
-    
+    const completedOrders = await Order.countDocuments({ status: "completed" });
+
     const statusCounts = await Order.aggregate([
-      { $group: { _id: "$status", count: { $sum: 1 } } }
+      { $group: { _id: "$status", count: { $sum: 1 } } },
     ]);
 
     // Calculate total points distributed
     const pointsData = await Order.aggregate([
-      { $match: { status: 'completed' } },
+      { $match: { status: "completed" } },
       { $unwind: "$items" },
       {
         $group: {
           _id: null,
-          totalPointsDistributed: { $sum: { $multiply: ["$items.points", "$items.quantity"] } },
-          totalItemsRecycled: { $sum: "$items.quantity" }
-        }
-      }
+          totalPointsDistributed: {
+            $sum: { $multiply: ["$items.points", "$items.quantity"] },
+          },
+          totalItemsRecycled: { $sum: "$items.quantity" },
+        },
+      },
     ]);
 
     const dailyOrdersRaw = await Order.aggregate([
       {
         $group: {
           _id: {
-            day: { $dayOfWeek: { date: "$createdAt", timezone: "Africa/Cairo" } }
+            day: {
+              $dayOfWeek: { date: "$createdAt", timezone: "Africa/Cairo" },
+            },
           },
           count: { $sum: 1 },
-        }
-      }
+        },
+      },
     ]);
 
     const dailyOrders = Array(7).fill(0);
@@ -614,49 +700,61 @@ export const getOrderAnalyticsWithPoints = async (_req: express.Request, res: ex
         pointsAnalytics: {
           totalPointsDistributed: pointsData[0]?.totalPointsDistributed || 0,
           totalItemsRecycled: pointsData[0]?.totalItemsRecycled || 0,
-          averagePointsPerOrder: completedOrders > 0 ? Math.round((pointsData[0]?.totalPointsDistributed || 0) / completedOrders) : 0
-        }
-      }
+          averagePointsPerOrder:
+            completedOrders > 0
+              ? Math.round(
+                  (pointsData[0]?.totalPointsDistributed || 0) / completedOrders
+                )
+              : 0,
+        },
+      },
     });
   } catch (error) {
     console.error("Error getting order analytics with points:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : "Unknown error"
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-export const getOrderAnalytics = async (_req: express.Request, res: express.Response): Promise<void> => {
+export const getOrderAnalytics = async (
+  _req: express.Request,
+  res: express.Response
+): Promise<void> => {
   try {
     const totalOrders = await Order.countDocuments();
-    const completedOrders = await Order.countDocuments({ status: 'completed' });
-    
+    const completedOrders = await Order.countDocuments({ status: "completed" });
+
     const statusCounts = await Order.aggregate([
-      { $group: { _id: "$status", count: { $sum: 1 } } }
+      { $group: { _id: "$status", count: { $sum: 1 } } },
     ]);
 
     const pointsData = await Order.aggregate([
-      { $match: { status: 'completed' } },
+      { $match: { status: "completed" } },
       { $unwind: "$items" },
       {
         $group: {
           _id: null,
-          totalPointsDistributed: { $sum: { $multiply: ["$items.points", "$items.quantity"] } },
-          totalItemsRecycled: { $sum: "$items.quantity" }
-        }
-      }
+          totalPointsDistributed: {
+            $sum: { $multiply: ["$items.points", "$items.quantity"] },
+          },
+          totalItemsRecycled: { $sum: "$items.quantity" },
+        },
+      },
     ]);
 
     const dailyOrdersRaw = await Order.aggregate([
       {
         $group: {
           _id: {
-            day: { $dayOfWeek: { date: "$createdAt", timezone: "Africa/Cairo" } }
+            day: {
+              $dayOfWeek: { date: "$createdAt", timezone: "Africa/Cairo" },
+            },
           },
           count: { $sum: 1 },
-        }
-      }
+        },
+      },
     ]);
 
     const dailyOrders = Array(7).fill(0);
@@ -678,26 +776,32 @@ export const getOrderAnalytics = async (_req: express.Request, res: express.Resp
         pointsAnalytics: {
           totalPointsDistributed: pointsData[0]?.totalPointsDistributed || 0,
           totalItemsRecycled: pointsData[0]?.totalItemsRecycled || 0,
-          averagePointsPerOrder: completedOrders > 0 ? Math.round((pointsData[0]?.totalPointsDistributed || 0) / completedOrders) : 0
-        }
-      }
+          averagePointsPerOrder:
+            completedOrders > 0
+              ? Math.round(
+                  (pointsData[0]?.totalPointsDistributed || 0) / completedOrders
+                )
+              : 0,
+        },
+      },
     });
   } catch (error) {
     console.error("Error getting order analytics:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : "Unknown error"
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-export const getTopMaterialsRecycled = async (req: express.Request, res: express.Response): Promise<void> => {
+export const getTopMaterialsRecycled = async (
+  req: express.Request,
+  res: express.Response
+): Promise<void> => {
   try {
     const category = req.query.category as string | undefined;
 
-    const pipeline: any[] = [
-      { $unwind: "$items" },
-    ];
+    const pipeline: any[] = [{ $unwind: "$items" }];
 
     if (category) {
       pipeline.push({ $match: { "items.categoryName": category } });
@@ -706,12 +810,15 @@ export const getTopMaterialsRecycled = async (req: express.Request, res: express
     pipeline.push(
       {
         $group: {
-          _id: { itemName: "$items.itemName", categoryName: "$items.categoryName" },
+          _id: {
+            itemName: "$items.itemName",
+            categoryName: "$items.categoryName",
+          },
           totalQuantity: { $sum: "$items.quantity" },
           totalPoints: { $sum: "$items.points" },
           image: { $first: "$items.image" },
           categoryName: { $first: "$items.categoryName" },
-        }
+        },
       },
       { $sort: { totalQuantity: -1 } },
       { $limit: 4 }
@@ -721,68 +828,74 @@ export const getTopMaterialsRecycled = async (req: express.Request, res: express
 
     res.json({
       success: true,
-      data: materials
+      data: materials,
     });
   } catch (error) {
     console.error("Error getting top materials recycled:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : "Unknown error"
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
-}; 
+};
 
-export const getTopCitiesByOrders = async (_req: express.Request, res: express.Response): Promise<void> => {
+export const getTopCitiesByOrders = async (
+  _req: express.Request,
+  res: express.Response
+): Promise<void> => {
   try {
     const topCities = await Order.aggregate([
       {
         $group: {
           _id: "$address.city",
-          totalOrders: { $sum: 1 }
-        }
+          totalOrders: { $sum: 1 },
+        },
       },
       { $sort: { totalOrders: -1 } },
-      { $limit: 10 }
+      { $limit: 10 },
     ]);
 
     res.json({
       success: true,
-      data: topCities.map(city => ({
+      data: topCities.map((city) => ({
         city: city._id,
-        totalOrders: city.totalOrders
-      }))
+        totalOrders: city.totalOrders,
+      })),
     });
   } catch (error) {
     console.error("Error getting top cities by orders:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : "Unknown error"
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-export const recalculateUserPointsFromOrders = async (req: express.Request, res: express.Response): Promise<void> => {
+export const recalculateUserPointsFromOrders = async (
+  req: express.Request,
+  res: express.Response
+): Promise<void> => {
   try {
     const { userId } = req.params;
 
     const completedOrders = await Order.find({
-      'user.userId': userId,
-      status: 'completed'
+      "user.userId": userId,
+      status: "completed",
     });
 
     let totalPointsFromOrders = 0;
     const pointsHistory: any[] = [];
 
-    completedOrders.forEach(order => {
+    completedOrders.forEach((order) => {
       const orderPoints = calculateOrderPoints(order.items);
       totalPointsFromOrders += orderPoints;
-      
+
       pointsHistory.push({
         orderId: order._id,
         points: orderPoints,
-        type: 'earned',
+        type: "earned",
         reason: `Order completed - Recycling items`,
-        timestamp: order.createdAt
+        timestamp: order.createdAt,
       });
     });
 
@@ -790,7 +903,7 @@ export const recalculateUserPointsFromOrders = async (req: express.Request, res:
     if (!user) {
       res.status(404).json({
         success: false,
-        message: "User not found"
+        message: "User not found",
       });
       return;
     }
@@ -798,13 +911,13 @@ export const recalculateUserPointsFromOrders = async (req: express.Request, res:
     const oldPoints = user.totalPoints || 0;
     user.totalPoints = totalPointsFromOrders;
     user.pointsHistory = pointsHistory;
-    
+
     if (oldPoints !== totalPointsFromOrders) {
       user.pointsHistory.push({
         points: totalPointsFromOrders - oldPoints,
-        type: 'adjusted',
-        reason: 'Points recalculated from completed orders',
-        timestamp: new Date()
+        type: "adjusted",
+        reason: "Points recalculated from completed orders",
+        timestamp: new Date(),
       });
     }
 
@@ -818,41 +931,46 @@ export const recalculateUserPointsFromOrders = async (req: express.Request, res:
         oldPoints,
         newPoints: totalPointsFromOrders,
         completedOrders: completedOrders.length,
-        adjustment: totalPointsFromOrders - oldPoints
-      }
+        adjustment: totalPointsFromOrders - oldPoints,
+      },
     });
   } catch (error) {
     console.error("Error recalculating user points:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : "Unknown error"
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-export const getUserOrdersWithPoints = async (req: IAuthenticatedRequest, res: express.Response): Promise<void> => {
+export const getUserOrdersWithPoints = async (
+  req: IAuthenticatedRequest,
+  res: express.Response
+): Promise<void> => {
   try {
     const userId = req.user.userId;
-    
-    const orders = await Order.find({ 'user.userId': userId })
-      .sort({ createdAt: -1 });
-    
-    const ordersWithPoints = orders.map(order => ({
+
+    const orders = await Order.find({ "user.userId": userId }).sort({
+      createdAt: -1,
+    });
+
+    const ordersWithPoints = orders.map((order) => ({
       ...order.toObject(),
-      pointsEarned: order.status === 'completed' ? calculateOrderPoints(order.items) : 0,
-      potentialPoints: calculateOrderPoints(order.items)
+      pointsEarned:
+        order.status === "completed" ? calculateOrderPoints(order.items) : 0,
+      potentialPoints: calculateOrderPoints(order.items),
     }));
-    
+
     res.json({
       success: true,
       count: ordersWithPoints.length,
-      data: ordersWithPoints
+      data: ordersWithPoints,
     });
   } catch (error) {
     console.error("Error fetching user orders with points:", error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };

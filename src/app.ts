@@ -14,10 +14,7 @@ app.use((req, _res, next) => {
   console.log(`🔥 Request received: ${req.method} ${req.originalUrl}`);
   next();
 });
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://www.localhost:3000",
-];
+const allowedOrigins = ["http://localhost:3000", "http://www.localhost:3000"];
 
 app.use(
   cors({
@@ -31,7 +28,7 @@ app.use(
     },
   })
 );
- 
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
