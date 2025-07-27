@@ -8,10 +8,16 @@ let io: SocketIOServer | null = null;
 export const initializeSocketIO = (server: HTTPServer): SocketIOServer => {
   io = new SocketIOServer(server, {
     cors: {
-      origin: ["http://localhost:3000", "exp://192.168.1.100:8081"], // Add your frontend URLs
+      origin: [
+        "http://localhost:3000", 
+        "exp://192.168.1.100:8081",
+        "exp://localhost:8081",
+        "*" // Allow all origins for Expo Go during development
+      ],
       credentials: true
     },
-    transports: ['websocket', 'polling']
+    transports: ['websocket', 'polling'],
+    allowEIO3: true // Allow Engine.IO v3 clients (for better compatibility)
   });
 
   // Middleware for authentication
