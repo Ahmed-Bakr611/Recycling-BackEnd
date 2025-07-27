@@ -435,7 +435,7 @@ export const completeOrderWithProof = async (req: Request, res: Response) => {
 
     //10. update stock with new Quantities
     try {
-      await updateItemQuantities(order.items, "increase");
+      await updateItemQuantities(savedOrder.items, "increase");
       console.log("✅ Restocked item quantities for completed order.");
     } catch (restockError) {
       console.error("❌ Failed to restock items:", restockError);
