@@ -4,27 +4,24 @@ import User from "../models/users";
 
 export const getAllUsers = async (req: Request, res: Response) => {
   try {
-    const { 
-      role, 
-      search, 
-      page = 1, 
+    const {
+      role,
+      search,
+      page = 1,
       limit = 10,
-      sortBy = 'createdAt',
-      sortOrder = 'desc'
+      sortBy = "createdAt",
+      sortOrder = "desc",
     } = req.query;
 
     const filter: any = {};
-    
+
     if (role) {
       filter.role = role;
     }
 
     if (search) {
-      const searchRegex = new RegExp(search as string, 'i');
-      filter.$or = [
-        { name: searchRegex },
-        { email: searchRegex }
-      ];
+      const searchRegex = new RegExp(search as string, "i");
+      filter.$or = [{ name: searchRegex }, { email: searchRegex }];
     }
 
     // Calculate pagination
@@ -32,7 +29,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
 
     // Build sort object
     const sort: any = {};
-    sort[sortBy as string] = sortOrder === 'desc' ? -1 : 1;
+    sort[sortBy as string] = sortOrder === "desc" ? -1 : 1;
 
     // Execute queries
     const [users, totalUsers] = await Promise.all([
@@ -41,7 +38,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
         .sort(sort)
         .skip(skip)
         .limit(Number(limit)),
-      User.countDocuments(filter)
+      User.countDocuments(filter),
     ]);
 
     // Calculate pagination info
@@ -58,18 +55,18 @@ export const getAllUsers = async (req: Request, res: Response) => {
         totalUsers,
         hasNextPage,
         hasPrevPage,
-        limit: Number(limit)
+        limit: Number(limit),
       },
       filters: {
         role: role || null,
-        search: search || null
-      }
+        search: search || null,
+      },
     });
   } catch (err) {
     console.error("Error fetching users:", err);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server Error" 
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
     });
   }
 };
@@ -130,7 +127,6 @@ export const searchUsers = async (req: Request, res: Response) => {
   }
 };
 
-
 export const getUserStats = async (req: Request, res: Response) => {
   try {
     const oneYearAgo = new Date();
@@ -160,8 +156,19 @@ export const getUserStats = async (req: Request, res: Response) => {
     ]);
 
     const monthsMap = [
-      "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+      "",
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
     ];
 
     const formatted = stats.map((item) => ({
@@ -169,7 +176,7 @@ export const getUserStats = async (req: Request, res: Response) => {
       count: item.count,
     }));
 
-return res.status(200).json({ success: true, data: formatted });
+    return res.status(200).json({ success: true, data: formatted });
   } catch (error) {
     console.error("Error getting user stats:", error);
     return res.status(500).json({ message: "Server error" });
@@ -182,34 +189,34 @@ export const addUserPoints = async (req: Request, res: Response) => {
     const { points, orderId, reason = "Order completion" } = req.body;
 
     if (!points || points <= 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invalid points amount" 
+      return res.status(400).json({
+        success: false,
+        message: "Invalid points amount",
       });
     }
 
     const user = await User.findById(userId).select("-password -refreshToken");
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "User not found" 
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
       });
     }
 
     // Add points to user's total
     user.totalPoints = (user.totalPoints || 0) + points;
-    
+
     // Add to points history
     if (!user.pointsHistory) {
       user.pointsHistory = [];
     }
-    
+
     user.pointsHistory.push({
       orderId,
       points,
-      type: 'earned',
+      type: "earned",
       reason,
-      timestamp: new Date()
+      timestamp: new Date(),
     });
 
     await user.save();
@@ -220,14 +227,14 @@ export const addUserPoints = async (req: Request, res: Response) => {
       data: {
         userId: user._id,
         totalPoints: user.totalPoints,
-        pointsAdded: points
-      }
+        pointsAdded: points,
+      },
     });
   } catch (error) {
     console.error("Error adding points:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error while adding points" 
+    res.status(500).json({
+      success: false,
+      message: "Server error while adding points",
     });
   }
 };
@@ -239,47 +246,47 @@ export const deductUserPoints = async (req: Request, res: Response) => {
     const { points, reason = "Points deduction" } = req.body;
 
     if (!points || points <= 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invalid points amount" 
+      return res.status(400).json({
+        success: false,
+        message: "Invalid points amount",
       });
     }
 
     const user = await User.findById(userId).select("-password -refreshToken");
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "User not found" 
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
       });
     }
 
     const currentPoints = user.totalPoints || 0;
-    
+
     // Check if user has enough points
     if (currentPoints < points) {
-      return res.status(400).json({ 
-        success: false, 
+      return res.status(400).json({
+        success: false,
         message: "Insufficient points",
         data: {
           currentPoints,
-          requestedPoints: points
-        }
+          requestedPoints: points,
+        },
       });
     }
 
     // Deduct points
     user.totalPoints = currentPoints - points;
-    
+
     // Add to points history
     if (!user.pointsHistory) {
       user.pointsHistory = [];
     }
-    
+
     user.pointsHistory.push({
       points: -points,
-      type: 'deducted',
+      type: "deducted",
       reason,
-      timestamp: new Date()
+      timestamp: new Date(),
     });
 
     await user.save();
@@ -290,14 +297,14 @@ export const deductUserPoints = async (req: Request, res: Response) => {
       data: {
         userId: user._id,
         totalPoints: user.totalPoints,
-        pointsDeducted: points
-      }
+        pointsDeducted: points,
+      },
     });
   } catch (error) {
     console.error("Error deducting points:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error while deducting points" 
+    res.status(500).json({
+      success: false,
+      message: "Server error while deducting points",
     });
   }
 };
@@ -310,25 +317,25 @@ export const adjustUserPoints = async (req: Request, res: Response) => {
 
     const user = await User.findById(userId).select("-password -refreshToken");
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "User not found" 
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
       });
     }
 
     const oldPoints = user.totalPoints || 0;
     user.totalPoints = Math.max(0, points); // Ensure points don't go negative
-    
+
     // Add to points history
     if (!user.pointsHistory) {
       user.pointsHistory = [];
     }
-    
+
     user.pointsHistory.push({
       points: user.totalPoints - oldPoints,
-      type: 'adjusted',
+      type: "adjusted",
       reason,
-      timestamp: new Date()
+      timestamp: new Date(),
     });
 
     await user.save();
@@ -340,14 +347,14 @@ export const adjustUserPoints = async (req: Request, res: Response) => {
         userId: user._id,
         oldPoints,
         newPoints: user.totalPoints,
-        adjustment: user.totalPoints - oldPoints
-      }
+        adjustment: user.totalPoints - oldPoints,
+      },
     });
   } catch (error) {
     console.error("Error adjusting points:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error while adjusting points" 
+    res.status(500).json({
+      success: false,
+      message: "Server error while adjusting points",
     });
   }
 };
@@ -358,11 +365,13 @@ export const getUserPoints = async (req: Request, res: Response) => {
     const { userId } = req.params;
     const { limit = 10, page = 1 } = req.query;
 
-    const user = await User.findById(userId).select("totalPoints pointsHistory name email");
+    const user = await User.findById(userId).select(
+      "totalPoints pointsHistory name email"
+    );
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "User not found" 
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
       });
     }
 
@@ -371,7 +380,10 @@ export const getUserPoints = async (req: Request, res: Response) => {
     const startIndex = (Number(page) - 1) * Number(limit);
     const endIndex = startIndex + Number(limit);
     const paginatedHistory = pointsHistory
-      .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      )
       .slice(startIndex, endIndex);
 
     res.status(200).json({
@@ -386,22 +398,21 @@ export const getUserPoints = async (req: Request, res: Response) => {
           currentPage: Number(page),
           totalItems: pointsHistory.length,
           totalPages: Math.ceil(pointsHistory.length / Number(limit)),
-          hasMore: endIndex < pointsHistory.length
-        }
-      }
+          hasMore: endIndex < pointsHistory.length,
+        },
+      },
     });
   } catch (error) {
     console.error("Error getting user points:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error while fetching points" 
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching points",
     });
   }
 };
 
 // Get points leaderboard
 export const getPointsLeaderboard = async (req: Request, res: Response) => {
-  
   try {
     const { limit = 10 } = req.query;
 
@@ -411,7 +422,6 @@ export const getPointsLeaderboard = async (req: Request, res: Response) => {
       .limit(Number(limit));
 
     res.status(200).json({
-      
       success: true,
       data: topUsers.map((user, index) => ({
         rank: index + 1,
@@ -419,15 +429,14 @@ export const getPointsLeaderboard = async (req: Request, res: Response) => {
         name: user.name,
         email: user.email,
         totalPoints: user.totalPoints || 0,
-        imageUrl:user.imgUrl || ''
-      }))
+        imageUrl: user.imgUrl || "",
+      })),
     });
-
   } catch (error) {
     console.error("Error getting leaderboard:", error);
-    res.status(500).json({ 
-      success: false, 
-      message: "Server error while fetching leaderboard" 
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching leaderboard",
     });
   }
 };
