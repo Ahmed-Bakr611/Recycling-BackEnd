@@ -52,3 +52,35 @@ export const authenticate = (
     return res.status(403).json({ message: "Invalid access token" });
   }
 };
+
+export const optionalAuthenticate = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const authHeader = req.headers["authorization"];
+  const accessToken = authHeader?.split(" ")[1];
+
+  if (!accessToken) {
+    return next(); // No token — treat as guest
+  }
+
+  try {
+    const decoded = jwt.verify(
+      accessToken,
+      process.env.JWT_ACCESS_SECRET as string
+    ) as TokenPayload;
+
+    req.user = decoded;
+
+    User.findByIdAndUpdate(decoded.userId, {
+      lastActiveAt: new Date(),
+    }).catch((err) => console.error("Failed to update lastActiveAt", err));
+
+    next();
+  } catch (err: any) {
+    // Invalid or expired token — continue as guest
+    console.log("Optional auth: invalid token, skipping user");
+    next();
+  }
+};
