@@ -10,6 +10,7 @@ export interface ISession extends Document {
   isValid: boolean;
   createdAt: Date;
   expiresAt: Date;
+  lastUsedAt: Date; // ✅ Add this
 }
 
 const sessionSchema = new Schema<ISession>({
@@ -22,6 +23,7 @@ const sessionSchema = new Schema<ISession>({
   isValid: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
   expiresAt: { type: Date, required: true },
+  lastUsedAt: { type: Date, default: Date.now }, // ✅ Add this
 });
 
 export default model<ISession>("Session", sessionSchema);
