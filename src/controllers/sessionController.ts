@@ -14,7 +14,15 @@ export const createGuestSession = async (req: Request, res: Response) => {
     expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
   });
 
-  res.status(201).json({ sessionId });
+  res
+    .cookie("sessionId", sessionId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    })
+    .status(201)
+    .json({ sessionId });
 };
 
 // List all sessions for authenticated user

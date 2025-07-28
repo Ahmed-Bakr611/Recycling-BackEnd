@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 import multer from "multer";
 import { Request, Response, NextFunction } from "express";
 import setupSwagger from "./config/swagger"; // ✅ use only this
+import { sessionMiddleware } from "./middlewares/sessionMiddleware";
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(sessionMiddleware); // applied to all routes
 
 app.use((req, res, next) => {
   if (!req.cookies.sessionId) {
