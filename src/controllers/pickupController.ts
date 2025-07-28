@@ -54,9 +54,7 @@ export const createOrder = async (
     }
 
     // 🛒 If buyer, update item quantities
-    if (user.role === "buyer") {
-      await updateItemQuantities(items, "decrease");
-    }
+    
 
     // 🧠 Enrich items with category names
     const enrichedItems = await Promise.all(
@@ -83,6 +81,11 @@ export const createOrder = async (
 
     const savedOrder = await newOrder.save();
 
+
+    if (user.role === "buyer") {
+      await updateItemQuantities(savedOrder.items, "decrease");
+    }
+
     res.status(201).json({
       success: true,
       message: "Order created successfully",
@@ -93,10 +96,9 @@ export const createOrder = async (
     res.status(500).json({
       success: false,
       message: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
+    });
+  }
 };
-
 export const getAllOrders = async (
   req: IAuthenticatedRequest,
   res: express.Response

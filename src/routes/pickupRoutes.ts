@@ -41,6 +41,7 @@ router.put("/orders/:id/status", authenticate, authorize(["customer", "buyer", "
 // 🛡️ ADMIN routes
 router.get("/admin/orders", authenticate, authorize(["admin"]), getAllOrdersForAdmin);
 router.put("/admin/orders/:id/status", authenticate, authorize(["admin"]), updateOrderStatusByAdmin);
+  router.delete("/admin/orders/:id", authenticate, authorize(["admin"]), deleteOrderById);
 
 router.patch(
   "/orders/:id/cancel",
