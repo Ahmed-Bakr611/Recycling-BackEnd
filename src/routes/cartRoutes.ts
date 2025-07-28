@@ -6,11 +6,12 @@ import {
   removeCartItem,
   clearCart,
 } from "../controllers/cartControllers";
+import { optionalAuthenticate } from "../middlewares/authenticate";
 
 export default (router: express.Router) => {
-  router.get("/cart", getCart);
-  router.post("/cart", addItemToCart);
-  router.put("/cart", updateCartItem);
-  router.delete("/cart/:categoryId", removeCartItem);
-  router.delete("/cart/", clearCart);
+  router.get("/cart", optionalAuthenticate, getCart);
+  router.post("/cart", optionalAuthenticate,addItemToCart);
+  router.put("/cart", optionalAuthenticate,updateCartItem);
+  router.delete("/cart/:categoryId", optionalAuthenticate,removeCartItem);
+  router.delete("/cart/", optionalAuthenticate, clearCart);
 };
