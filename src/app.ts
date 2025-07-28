@@ -14,6 +14,9 @@ app.use((req, _res, next) => {
   console.log(`🔥 Request received: ${req.method} ${req.originalUrl}`);
   next();
 });
+
+
+
 const allowedOrigins = ["http://localhost:3000", "http://www.localhost:3000"];
 
 app.use(
