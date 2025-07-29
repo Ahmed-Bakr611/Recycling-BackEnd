@@ -40,6 +40,28 @@ interface MulterRequest extends Request {
 //     res.status(500).json({ message: (err as Error).message });
 //   }
 // };
+const calculatePriceWithMarkup = (originalPrice: number, userRole?: string): number => {
+  if (!userRole) return originalPrice;
+  
+  // Define your markup percentages based on role
+  const markupRates: { [key: string]: number } = {
+    'buyer': 0.20,      // 15% markup for buyers
+    'premium': 0.10,    // 10% markup for premium users
+    'wholesale': 0.05,  // 5% markup for wholesale
+    'admin': 0,         // No markup for admin
+    // Add other roles as needed
+  };
+  
+  const markupRate = markupRates[userRole.toLowerCase()] || 0;
+  return Math.round((originalPrice * (1 + markupRate)) * 100) / 100; // Round to 2 decimal places
+};
+const applyRoleBasedPricing = (items: any[], userRole?: string) => {
+  return items.map(item => ({
+    ...item,
+    originalPrice: item.price, // Keep original price for reference
+    price: calculatePriceWithMarkup(item.price, userRole), // Update price with markup
+  }));
+};
 
 export const getAllItems = async (
   req: Request,
@@ -47,7 +69,8 @@ export const getAllItems = async (
 ): Promise<void> => {
   try {
     const { skip, limit } = req.pagination;
-
+    const userRole = req.query.userRole as string; // Get user role from query params
+    
     // 1. First get total item count
     const totalResult = await Category.aggregate([
       { $project: { itemCount: { $size: "$items" } } },
@@ -78,15 +101,20 @@ export const getAllItems = async (
       },
     ]);
 
-    res.paginated(items, totalItems);
+    // Apply role-based pricing
+    const itemsWithPricing = applyRoleBasedPricing(items, userRole);
+
+    res.paginated(itemsWithPricing, totalItems);
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }
 };
+
 export const getItems = async (req: Request, res: Response): Promise<void> => {
   try {
     const { categoryName } = req.params;
     const { skip, limit } = req.pagination;
+    const userRole = req.query.userRole as string; // Get user role from query params
 
     const category = await Category.findOne({ name: categoryName }).slice(
       "items",
@@ -102,11 +130,14 @@ export const getItems = async (req: Request, res: Response): Promise<void> => {
     const fullCategory = await Category.findOne({ name: categoryName });
     const totalItems = fullCategory?.items.length || 0;
 
-    res.paginated(category.items, totalItems);
+    // Apply role-based pricing to category items
+    const itemsWithPricing = applyRoleBasedPricing(category.items, userRole);
+
+    res.paginated(itemsWithPricing, totalItems);
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }
-};
+};  
 
 export const addItem = async (
   req: MulterRequest,
