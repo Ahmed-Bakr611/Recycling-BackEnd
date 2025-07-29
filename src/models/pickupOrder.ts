@@ -29,15 +29,19 @@ const ItemSchema = new mongoose.Schema({
   itemName: {
     type: String,
     required: true,
-    unique: true,
-    lowercase: true, // store lowercase version
     trim: true,
   },
   measurement_unit: { type: Number, enum: [1, 2], required: true },
   points: { type: Number, required: true },
-  price: { type: Number, required: true },
+  price: { type: Number, required: true },              // Price actually paid (with markup)
+  originalPrice: { type: Number, required: true },      // Original item price from database
+  paidPrice: { type: Number, required: true },          // Explicit paid price field (same as price)
   quantity: { type: Number, required: true },
-  categoryName: String, 
+  categoryName: String,
+  // NEW: Pricing metadata
+  userRole: { type: String },                           // Role used for pricing calculation
+  markupApplied: { type: Number, default: 0 },          // Markup amount applied
+  pricingCalculatedAt: { type: Date, default: Date.now } // When pricing was calculated
 });
 
 const StatusHistorySchema = new mongoose.Schema({
@@ -52,7 +56,7 @@ const StatusHistorySchema = new mongoose.Schema({
   notes: String
 }, { _id: false });
 
-// NEW: Delivery Proof Schema
+// Delivery Proof Schema
 const DeliveryProofSchema = new mongoose.Schema({
   photoPath: { 
     type: String, 
@@ -97,16 +101,18 @@ const OrderSchema = new mongoose.Schema({
     type: [StatusHistorySchema], 
     default: [] 
   },
-  // NEW: Delivery proof field
   deliveryProof: {
     type: DeliveryProofSchema,
     default: null
   },
-  // NEW: Completion timestamp
   completedAt: {
     type: Date,
     default: null
   },
+  // NEW: Order-level pricing fields
+  totalAmount: { type: Number, required: true },        // Total amount actually paid
+  userRole: { type: String },                           // User role at time of purchase
+  pricingAppliedAt: { type: Date, default: Date.now },  // When pricing was calculated
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
@@ -120,6 +126,14 @@ OrderSchema.pre('save', function(next) {
     this.completedAt = new Date();
   }
   
+  // Calculate totalAmount if not provided
+  if (!this.totalAmount && this.items && this.items.length > 0) {
+    this.totalAmount = this.items.reduce((sum: number, item: any) => {
+      const paidPrice = item.paidPrice || item.price;
+      return sum + (paidPrice * item.quantity);
+    }, 0);
+  }
+  
   next();
 });
 
@@ -128,6 +142,7 @@ OrderSchema.index({ courier: 1, status: 1 });
 OrderSchema.index({ 'user.userId': 1 });
 OrderSchema.index({ status: 1 });
 OrderSchema.index({ createdAt: -1 });
+OrderSchema.index({ userRole: 1 }); // NEW: Index for role-based queries
 
 // Define TypeScript interfaces
 export interface IAddress {
@@ -142,15 +157,21 @@ export interface IAddress {
 }
 
 export interface IItem {
-  _id: Types.ObjectId; // optional to support pre-insertion or flexibility
+  _id?: Types.ObjectId;
   categoryId: mongoose.Types.ObjectId;
   image: string;
   itemName: string;
   measurement_unit: 1 | 2;
   points: number;
-  price: number;
+  price: number;                    // Price actually paid (with markup)
+  originalPrice: number;            // Original item price from database
+  paidPrice: number;                // Explicit paid price field
   quantity: number;
   categoryName?: string;
+  // NEW: Pricing metadata
+  userRole?: string;                // Role used for pricing calculation
+  markupApplied?: number;           // Markup amount applied
+  pricingCalculatedAt?: Date;       // When pricing was calculated
 }
 
 export interface IStatusHistory {
@@ -161,7 +182,6 @@ export interface IStatusHistory {
   notes?: string;
 }
 
-// NEW: Delivery Proof interface
 export interface IDeliveryProof {
   photoPath: string;
   photoUrl: string;
@@ -176,8 +196,6 @@ export interface IOrderUser {
   userName?: string;
   email?: string;
   image?: string;
-
-
 }
 
 export interface IOrder extends Document {
@@ -187,8 +205,12 @@ export interface IOrder extends Document {
   courier?: mongoose.Types.ObjectId;
   status: 'pending' | 'assigntocourier' | 'completed' | 'cancelled';
   statusHistory: IStatusHistory[];
-  deliveryProof?: IDeliveryProof; // NEW
-  completedAt?: Date; // NEW
+  deliveryProof?: IDeliveryProof;
+  completedAt?: Date;
+  // NEW: Order-level pricing fields
+  totalAmount: number;              // Total amount actually paid
+  userRole?: string;                // User role at time of purchase
+  pricingAppliedAt?: Date;          // When pricing was calculated
   createdAt: Date;
   updatedAt: Date;
 }
