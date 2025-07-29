@@ -12,12 +12,19 @@ const AddressSchema = new mongoose.Schema({
   isDefault: { type: Boolean, default: false },
 });
 
-const UserSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  addresses: [AddressSchema],
-  phoneNumber: { type: String, required: true },
-  userName: { type: String, required: true },
-}, { _id: false });
+const UserSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    addresses: [AddressSchema],
+    phoneNumber: { type: String, required: true },
+    userName: { type: String, required: true },
+  },
+  { _id: false }
+);
 
 const ItemSchema = new mongoose.Schema({
   categoryId: {
@@ -29,120 +36,119 @@ const ItemSchema = new mongoose.Schema({
   itemName: {
     type: String,
     required: true,
+    unique: true,
+    lowercase: true, // store lowercase version
     trim: true,
   },
   measurement_unit: { type: Number, enum: [1, 2], required: true },
   points: { type: Number, required: true },
-  price: { type: Number, required: true },              // Price actually paid (with markup)
-  originalPrice: { type: Number, required: true },      // Original item price from database
-  paidPrice: { type: Number, required: true },          // Explicit paid price field (same as price)
+  price: { type: Number, required: true },
   quantity: { type: Number, required: true },
   categoryName: String,
-  // NEW: Pricing metadata
-  userRole: { type: String },                           // Role used for pricing calculation
-  markupApplied: { type: Number, default: 0 },          // Markup amount applied
-  pricingCalculatedAt: { type: Date, default: Date.now } // When pricing was calculated
 });
 
-const StatusHistorySchema = new mongoose.Schema({
-  status: { 
-    type: String, 
-    enum: ['pending', 'assigntocourier', 'completed', 'cancelled'],
-    required: true 
+const StatusHistorySchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ["pending", "assigntocourier", "completed", "cancelled"],
+      required: true,
+    },
+    timestamp: { type: Date, default: Date.now },
+    updatedBy: String,
+    reason: String,
+    notes: String,
   },
-  timestamp: { type: Date, default: Date.now },
-  updatedBy: String,
-  reason: String,
-  notes: String
-}, { _id: false });
+  { _id: false }
+);
 
-// Delivery Proof Schema
-const DeliveryProofSchema = new mongoose.Schema({
-  photoPath: { 
-    type: String, 
-    required: true 
+// NEW: Delivery Proof Schema
+const DeliveryProofSchema = new mongoose.Schema(
+  {
+    photoPath: {
+      type: String,
+      required: true,
+    },
+    photoUrl: {
+      type: String,
+      required: true,
+    },
+    uploadedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    notes: String,
+    completedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
   },
-  photoUrl: { 
-    type: String, 
-    required: true 
-  },
-  uploadedAt: { 
-    type: Date, 
-    default: Date.now 
-  },
-  notes: String,
-  completedBy: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User',
-    required: true 
-  }
-}, { _id: false });
+  { _id: false }
+);
 
 const OrderSchema = new mongoose.Schema({
   user: {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
     phoneNumber: String,
     userName: String,
     email: String,
   },
-  address: AddressSchema, 
+  address: AddressSchema,
   items: [ItemSchema],
-  courier: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User',
-    default: null 
+  courier: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    default: null,
   },
-  status: { 
-    type: String, 
-    enum: ['pending', 'assigntocourier', 'completed', 'cancelled'],
-    default: "pending" 
+  status: {
+    type: String,
+    enum: ["pending", "assigntocourier", "completed", "cancelled"],
+    default: "pending",
   },
-  statusHistory: { 
-    type: [StatusHistorySchema], 
-    default: [] 
+  statusHistory: {
+    type: [StatusHistorySchema],
+    default: [],
   },
+  // NEW: Delivery proof field
   deliveryProof: {
     type: DeliveryProofSchema,
-    default: null
+    default: null,
   },
+  // NEW: Completion timestamp
   completedAt: {
     type: Date,
-    default: null
+    default: null,
   },
-  // NEW: Order-level pricing fields
-  totalAmount: { type: Number, required: true },        // Total amount actually paid
-  userRole: { type: String },                           // User role at time of purchase
-  pricingAppliedAt: { type: Date, default: Date.now },  // When pricing was calculated
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
 });
 
 // Add pre-save middleware to update the updatedAt field
-OrderSchema.pre('save', function(next) {
+OrderSchema.pre("save", function (next) {
   this.updatedAt = new Date();
-  
+
   // Set completedAt when status changes to completed
-  if (this.isModified('status') && this.status === 'completed' && !this.completedAt) {
+  if (
+    this.isModified("status") &&
+    this.status === "completed" &&
+    !this.completedAt
+  ) {
     this.completedAt = new Date();
   }
-  
-  // Calculate totalAmount if not provided
-  if (!this.totalAmount && this.items && this.items.length > 0) {
-    this.totalAmount = this.items.reduce((sum: number, item: any) => {
-      const paidPrice = item.paidPrice || item.price;
-      return sum + (paidPrice * item.quantity);
-    }, 0);
-  }
-  
+
   next();
 });
 
 // Add indexes for better query performance
 OrderSchema.index({ courier: 1, status: 1 });
-OrderSchema.index({ 'user.userId': 1 });
+OrderSchema.index({ "user.userId": 1 });
 OrderSchema.index({ status: 1 });
 OrderSchema.index({ createdAt: -1 });
-OrderSchema.index({ userRole: 1 }); // NEW: Index for role-based queries
 
 // Define TypeScript interfaces
 export interface IAddress {
@@ -157,31 +163,26 @@ export interface IAddress {
 }
 
 export interface IItem {
-  _id?: Types.ObjectId;
+  _id: Types.ObjectId; // optional to support pre-insertion or flexibility
   categoryId: mongoose.Types.ObjectId;
   image: string;
   itemName: string;
   measurement_unit: 1 | 2;
   points: number;
-  price: number;                    // Price actually paid (with markup)
-  originalPrice: number;            // Original item price from database
-  paidPrice: number;                // Explicit paid price field
+  price: number;
   quantity: number;
   categoryName?: string;
-  // NEW: Pricing metadata
-  userRole?: string;                // Role used for pricing calculation
-  markupApplied?: number;           // Markup amount applied
-  pricingCalculatedAt?: Date;       // When pricing was calculated
 }
 
 export interface IStatusHistory {
-  status: 'pending' | 'assigntocourier' | 'completed' | 'cancelled';
+  status: "pending" | "assigntocourier" | "completed" | "cancelled";
   timestamp: Date;
   updatedBy?: string;
   reason?: string;
   notes?: string;
 }
 
+// NEW: Delivery Proof interface
 export interface IDeliveryProof {
   photoPath: string;
   photoUrl: string;
@@ -203,14 +204,10 @@ export interface IOrder extends Document {
   address: IAddress;
   items: IItem[];
   courier?: mongoose.Types.ObjectId;
-  status: 'pending' | 'assigntocourier' | 'completed' | 'cancelled';
+  status: "pending" | "assigntocourier" | "completed" | "cancelled";
   statusHistory: IStatusHistory[];
-  deliveryProof?: IDeliveryProof;
-  completedAt?: Date;
-  // NEW: Order-level pricing fields
-  totalAmount: number;              // Total amount actually paid
-  userRole?: string;                // User role at time of purchase
-  pricingAppliedAt?: Date;          // When pricing was calculated
+  deliveryProof?: IDeliveryProof; // NEW
+  completedAt?: Date; // NEW
   createdAt: Date;
   updatedAt: Date;
 }
@@ -220,6 +217,6 @@ if (mongoose.models.Order) {
   delete mongoose.models.Order;
 }
 
-const Order: Model<IOrder> = mongoose.model<IOrder>('Order', OrderSchema);
+const Order: Model<IOrder> = mongoose.model<IOrder>("Order", OrderSchema);
 
 export default Order;
