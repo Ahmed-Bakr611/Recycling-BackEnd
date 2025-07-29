@@ -31,26 +31,14 @@ export const createOrder = async (
 ): Promise<void> => {
   try {
     const userId = req.user.userId;
-    const { address, items, phoneNumber, userName, imageUrl, email, totalAmount } = req.body;
-    
-    console.log("🔍 Incoming order request:", {
-      userId,
-      itemsCount: items?.length,
-      totalAmount,
-      address: address ? "provided" : "missing",
-      items: items?.map((item: any) => ({
-        name: item.itemName,
-        price: item.price,
-        originalPrice: item.originalPrice,
-        paidPrice: item.paidPrice,
-        quantity: item.quantity
-      }))
-    });
+    const { address, items, phoneNumber, userName, imageUrl, email } = req.body;
+    console.log("🔍 Incoming order request:", req.body);
 
     if (!address || !items || !phoneNumber || !userName) {
       res.status(400).json({
         success: false,
-        message: "Missing required fields: address, items, phoneNumber, userName",
+        message:
+          "Missing required fields: address, items, phoneNumber, userName",
       });
       return;
     }
@@ -65,80 +53,18 @@ export const createOrder = async (
       return;
     }
 
-    console.log("👤 User role:", user.role);
+    // 🛒 If buyer, update item quantities
 
-    // Helper function to calculate price with markup (same as frontend)
-    const calculatePriceWithMarkup = (originalPrice: number, userRole?: string): number => {
-      if (userRole !== "buyer") return originalPrice;
-      
-      const markup = 0.20; // 20% markup for buyers
-      const priceWithMarkup = originalPrice + (originalPrice * markup);
-      return parseFloat(priceWithMarkup.toFixed(2));
-    };
-
-    // 🧠 Enrich items with category names and calculate correct pricing
+    // 🧠 Enrich items with category names
     const enrichedItems = await Promise.all(
-      items.map(async (item: any) => {
+      items.map(async (item: IItem) => {
         const category = await Category.findById(item.categoryId);
-        
-        // Determine the original price (price from database)
-        const originalPrice = item.originalPrice || item.price;
-        
-        // Calculate the final price user should pay based on their role
-        const finalPrice = calculatePriceWithMarkup(originalPrice, user.role);
-        
-        // If frontend sent paidPrice, use that; otherwise calculate it
-        const actualPaidPrice = item.paidPrice || finalPrice;
-        
-        console.log('💰 Item pricing calculation:', {
-          itemName: item.itemName,
-          originalPrice,
-          calculatedFinalPrice: finalPrice,
-          frontendPaidPrice: item.paidPrice,
-          actualPaidPrice,
-          userRole: user.role,
-          quantity: item.quantity,
-          subtotal: (actualPaidPrice * item.quantity).toFixed(2)
-        });
-        
         return {
           ...item,
           categoryName: category ? category.name : undefined,
-          originalPrice: originalPrice,        // Store original price from database
-          price: actualPaidPrice,             // Store the price actually paid
-          paidPrice: actualPaidPrice,         // Explicit field for paid price
-          userRole: user.role,                // Store user role at time of purchase
-          markupApplied: actualPaidPrice - originalPrice,
-          pricingCalculatedAt: new Date()
         };
       })
     );
-
-    // 🧮 Calculate and verify total amount
-    const calculatedTotal = enrichedItems.reduce((sum, item) => {
-      return sum + (item.paidPrice * item.quantity);
-    }, 0);
-
-    console.log('💰 Total verification:', {
-      frontendTotal: totalAmount,
-      backendCalculated: calculatedTotal.toFixed(2),
-      difference: totalAmount ? Math.abs(calculatedTotal - totalAmount).toFixed(2) : 'N/A'
-    });
-
-    // Verify total amount if provided (with small tolerance for floating point differences)
-    if (totalAmount && Math.abs(calculatedTotal - totalAmount) > 0.02) {
-      console.error('❌ Total amount mismatch detected');
-      res.status(400).json({
-        success: false,
-        message: "Price calculation mismatch. Please refresh your cart and try again.",
-        details: {
-          frontendTotal: totalAmount,
-          backendCalculated: calculatedTotal.toFixed(2),
-          difference: Math.abs(calculatedTotal - totalAmount).toFixed(2)
-        }
-      });
-      return;
-    }
 
     const newOrder = new Order({
       user: {
@@ -149,28 +75,12 @@ export const createOrder = async (
       },
       address,
       items: enrichedItems,
-      totalAmount: calculatedTotal,        // Store the actual amount paid
-      userRole: user.role,                 // Store user role at time of purchase
-      pricingAppliedAt: new Date(),        // When pricing was calculated
       status: "pending",
     });
 
     const savedOrder = await newOrder.save();
-    
-    console.log("✅ Order created successfully:", {
-      orderId: savedOrder._id,
-      totalAmount: calculatedTotal.toFixed(2),
-      userRole: user.role,
-      itemsCount: enrichedItems.length
-    });
-
-    console.log("📦 Order items with pricing:", savedOrder.items.map(item => ({
-      name: item.itemName,
-      originalPrice: item.originalPrice,
-      paidPrice: item.paidPrice,
-      quantity: item.quantity,
-      subtotal: (item.paidPrice * item.quantity).toFixed(2)
-    })));
+    console.log("kkkkkkkkkkkkkkkk");
+    console.log(savedOrder.items);
 
     if (user.role === "buyer") {
       await updateItemQuantities(savedOrder.items, "decrease");
@@ -179,85 +89,32 @@ export const createOrder = async (
     res.status(201).json({
       success: true,
       message: "Order created successfully",
-      data: {
-        ...savedOrder.toObject(),
-        calculatedTotal: calculatedTotal.toFixed(2),
-        pricingBreakdown: enrichedItems.map(item => ({
-          itemName: item.itemName,
-          originalPrice: item.originalPrice,
-          paidPrice: item.paidPrice,
-          markupApplied: item.markupApplied,
-          quantity: item.quantity,
-          subtotal: (item.paidPrice * item.quantity).toFixed(2)
-        }))
-      }
+      data: savedOrder,
     });
   } catch (error) {
-    console.error("❌ Error creating order:", error);
+    console.error("Error creating order:", error);
     res.status(500).json({
       success: false,
       message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
+
 export const getAllOrders = async (
   req: IAuthenticatedRequest,
   res: express.Response
 ): Promise<void> => {
   try {
     const userId = req.user.userId;
-    
-    // Extract pagination parameters from query string
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
-    
-    // Calculate skip value
-    const skip = (page - 1) * limit;
-    
-    // Validate pagination parameters
-    if (page < 1) {
-      res.status(400).json({
-        success: false,
-        message: "Page number must be greater than 0",
-      });
-      return;
-    }
-    
-    if (limit < 1 || limit > 100) {
-      res.status(400).json({
-        success: false,
-        message: "Limit must be between 1 and 100",
-      });
-      return;
-    }
 
-    // Get total count for pagination metadata
-    const totalOrders = await Order.countDocuments({ "user.userId": userId });
-    
-    // Fetch paginated orders
-    const orders = await Order.find({ "user.userId": userId })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    // Calculate pagination metadata
-    const totalPages = Math.ceil(totalOrders / limit);
-    const hasNextPage = page < totalPages;
-    const hasPrevPage = page > 1;
+    const orders = await Order.find({ "user.userId": userId }).sort({
+      createdAt: -1,
+    });
 
     res.json({
       success: true,
+      count: orders.length,
       data: orders,
-      pagination: {
-        currentPage: page,
-        totalPages,
-        totalOrders,
-        limit,
-        hasNextPage,
-        hasPrevPage,
-        nextPage: hasNextPage ? page + 1 : null,
-        prevPage: hasPrevPage ? page - 1 : null,
-      },
     });
   } catch (error) {
     console.error("Error fetching orders:", error);
