@@ -52,11 +52,44 @@ const cartItemSchema = new Schema<ICartItem>(
 
 const cartSchema = new Schema<ICart>(
   {
-    userId: { type: Schema.Types.ObjectId, ref: "User", sparse: true },
-    sessionId: { type: String, sparse: true },
+    userId: { 
+      type: Schema.Types.ObjectId, 
+      ref: "User", 
+      required: false,
+      unique: true,
+      sparse: true
+    },
+    sessionId: { 
+      type: String, 
+      required: false,
+      unique: true,
+      sparse: true 
+    },
     items: [cartItemSchema],
   },
   { timestamps: true }
+);
+
+// Ensure that either userId or sessionId is present (but not both)
+cartSchema.pre('save', function (next) {
+  if ((!this.userId && !this.sessionId) || (this.userId && this.sessionId)) {
+    return next(new Error('Either userId or sessionId must be provided, but not both'));
+  }
+  next();
+});
+
+// Create compound index to ensure uniqueness
+cartSchema.index(
+  { userId: 1, sessionId: 1 }, 
+  { 
+    unique: true,
+    partialFilterExpression: {
+      $or: [
+        { userId: { $exists: true } },
+        { sessionId: { $exists: true } }
+      ]
+    }
+  }
 );
 
 const Cart = mongoose.model<ICart>("Cart", cartSchema);

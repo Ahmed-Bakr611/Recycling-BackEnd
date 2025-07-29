@@ -8,6 +8,7 @@ import {
   verifyRefreshToken,
 } from "../utils/jwt";
 import jwt from "jsonwebtoken";
+import Cart from "../models/cart";
 
 ////////////////////////////////////////////////
 // Sign Up logic
@@ -89,6 +90,85 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
+    const sessionId = req.sessionId; // Get session ID from middleware
+    const userId = user._id;
+    // Find session-based cart items
+    const sessionCart = await Cart.findOne({ sessionId });
+
+    // Always check if user already has a cart (preserves cart after logout/login)
+    let userCart = await Cart.findOne({ userId });
+
+    if (sessionCart && sessionCart.items.length > 0) {
+      if (!userCart) {
+        // Create new user cart with session items
+        userCart = new Cart({
+          userId: userId,
+          items: sessionCart.items
+        });
+        await userCart.save();
+        console.log(`Created new user cart with ${sessionCart.items.length} items from session`);
+      } else {
+        // Merge session items with existing user cart
+        for (const sessionItem of sessionCart.items) {
+          // Check if this item already exists in user cart (by categoryId)
+          const existingItemIndex = userCart.items.findIndex(
+            item => item.categoryId === sessionItem.categoryId
+          );
+          
+          if (existingItemIndex !== -1) {
+            // Item exists, add quantities
+            const existingItem = userCart.items[existingItemIndex];
+            const newQuantity = existingItem.quantity + sessionItem.quantity;
+            
+            // Validate the new quantity based on measurement_unit
+            const validateQuantity = (quantity: number, measurement_unit: number) => {
+              if (measurement_unit === 1) { // KG items
+                const multiplied = Math.round(quantity * 4);
+                return multiplied >= 1 && Math.abs(quantity * 4 - multiplied) < 0.0001;
+              } else { // Piece items
+                return Number.isInteger(quantity) && quantity >= 1;
+              }
+            };
+            
+            if (validateQuantity(newQuantity, existingItem.measurement_unit)) {
+              existingItem.quantity = newQuantity;
+              // Update other fields from session item if needed
+              existingItem.itemName = sessionItem.itemName;
+              existingItem.image = sessionItem.image;
+              existingItem.points = sessionItem.points;
+              existingItem.price = sessionItem.price;
+              existingItem.categoryName = sessionItem.categoryName;
+            } else {
+              // If new quantity is invalid, keep the existing quantity but log a warning
+              console.warn(`Cannot merge item ${sessionItem.itemName}: invalid quantity ${newQuantity}`);
+            }
+          } else {
+            // Item doesn't exist, add it to user cart
+            userCart.items.push({
+              categoryId: sessionItem.categoryId,
+              categoryName: sessionItem.categoryName,
+              itemName: sessionItem.itemName,
+              image: sessionItem.image,
+              points: sessionItem.points,
+              price: sessionItem.price,
+              measurement_unit: sessionItem.measurement_unit,
+              quantity: sessionItem.quantity
+            });
+          }
+        }
+        await userCart.save();
+        console.log(`Merged ${sessionCart.items.length} session items with existing user cart`);
+      }
+      
+      // Delete session-based cart after successful transfer
+      await Cart.deleteOne({ sessionId });
+    } else {
+      // No session cart, but user cart should persist from previous sessions
+      if (userCart) {
+        console.log(`User cart preserved with ${userCart.items.length} items`);
+      }
+    }
+    
     // Pass user.role to token generation
     const accessToken = generateAccessToken(user._id.toString(), user.role);
     const refreshToken = generateRefreshToken(user._id.toString(), user.role);
@@ -97,6 +177,7 @@ export const login = async (req: Request, res: Response) => {
     user.refreshToken = refreshToken;
     await user.save();
 
+    res.clearCookie("sessionId");
     // Send access in header and JSON, and refresh in HTTP-only cookie
     res
       .status(200)
