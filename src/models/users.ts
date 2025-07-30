@@ -1,12 +1,30 @@
 import mongoose, { Document, Model, Schema } from "mongoose";
 import bcrypt from "bcryptjs";
+
 interface PointsHistoryEntry {
   orderId?: string;
   points: number;
-  type: 'earned' | 'deducted' | 'adjusted';
+  type: "earned" | "deducted" | "adjusted";
   reason: string;
   timestamp: Date;
 }
+
+export interface SafeUser {
+  id: string;
+  name: string;
+  email: string;
+  phoneNumber: string;
+  provider: string;
+  role: string;
+  isApproved: boolean;
+  attachments?: Record<string, any>;
+  imgUrl?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  lastActiveAt?: Date;
+  stripeCustomerId?: string;
+}
+
 // 1. Interface representing a User document
 export interface IUser extends Document {
   id: string;
@@ -15,55 +33,47 @@ export interface IUser extends Document {
   password: string;
   phoneNumber: string;
   provider: "google" | "facebook" | "none";
-  refreshToken?: string; // Now optional and lowercase
+  refreshToken?: string;
   role: "admin" | "customer" | "buyer" | "delivery";
-  isGuest: boolean;
- totalPoints: number;
-  pointsHistory: PointsHistoryEntry[]
+  isApproved: boolean;
+  attachments?: Record<string, any>;
+  totalPoints: number;
+  pointsHistory: PointsHistoryEntry[];
   imgUrl?: string;
   createdAt?: Date;
   updatedAt?: Date;
   lastActiveAt?: Date;
-  stripeCustomerId?: string; // Here is the field in the interface
+  stripeCustomerId?: string;
 
-
-  // Instance method to compare passwords
   comparePassword(candidate: string): Promise<boolean>;
-  toSafeObject(): SafeUser; // ✅ add this line
+  toSafeObject(): SafeUser;
 }
-const pointsHistorySchema = new Schema({
-  orderId: { type: String },
-  points: { type: Number, required: true },
-  type: { 
-    type: String, 
-    enum: ['earned', 'deducted', 'adjusted'], 
-    required: true 
+
+const pointsHistorySchema = new Schema(
+  {
+    orderId: { type: String },
+    points: { type: Number, required: true },
+    type: {
+      type: String,
+      enum: ["earned", "deducted", "adjusted"],
+      required: true,
+    },
+    reason: { type: String, required: true },
+    timestamp: { type: Date, default: Date.now },
   },
-  reason: { type: String, required: true },
-  timestamp: { type: Date, default: Date.now }
-}, { _id: false });
-export interface SafeUser {
-  id: string;
-  name: string;
-  email: string;
-  phoneNumber: string;
-  provider: string;
-  role: string;
-  isGuest: boolean;
-  imgUrl?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-  lastActiveAt: Date;
-}
-// 2. Create schema
+  { _id: false }
+);
+
+// 2. User schema
 const userSchema = new Schema<IUser>(
   {
-     totalPoints: { 
-    type: Number, 
-    default: 0,
-    min: 0
-  },  pointsHistory: [pointsHistorySchema],
-    stripeCustomerId: { type: String, default: null }, 
+    totalPoints: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    pointsHistory: [pointsHistorySchema],
+    stripeCustomerId: { type: String, default: null },
     imgUrl: { type: String },
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
@@ -74,24 +84,27 @@ const userSchema = new Schema<IUser>(
       enum: ["google", "facebook", "none"],
       default: "none",
     },
-    refreshToken: { type: String }, // optional for token revocation
+    refreshToken: { type: String },
     role: {
       type: String,
       enum: ["admin", "customer", "buyer", "delivery"],
       default: "customer",
     },
-    isGuest: {
+    isApproved: {
       type: Boolean,
       default: false,
     },
+    attachments: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
     lastActiveAt: { type: Date },
   },
-  
-  { timestamps: true },
-  
-
+  { timestamps: true }
 );
-userSchema.methods.toSafeObject = function () {
+
+// 3. Instance method: return safe user object
+userSchema.methods.toSafeObject = function (): SafeUser {
   return {
     id: this._id.toString(),
     name: this.name,
@@ -99,16 +112,17 @@ userSchema.methods.toSafeObject = function () {
     phoneNumber: this.phoneNumber,
     provider: this.provider,
     role: this.role,
-    isGuest: this.isGuest,
+    isApproved: this.isApproved,
+    attachments: this.attachments,
     imgUrl: this.imgUrl,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
-    stripeCustomerId: this.stripeCustomerId, // add this if needed
-
+    lastActiveAt: this.lastActiveAt,
+    stripeCustomerId: this.stripeCustomerId,
   };
 };
 
-// 3. Pre-save hook: hash password if modified
+// 4. Pre-save: hash password if modified
 userSchema.pre("save", async function (next) {
   const user = this as IUser;
   if (user.isModified("password") && user.password) {
@@ -118,11 +132,11 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-// 4. Instance method to compare passwords
+// 5. Password compare method
 userSchema.methods.comparePassword = async function (candidate: string) {
   return bcrypt.compare(candidate, this.password || "");
 };
 
-// 5. Export model
+// 6. Export model
 const User: Model<IUser> = mongoose.model<IUser>("User", userSchema);
 export default User;

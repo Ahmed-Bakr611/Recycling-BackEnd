@@ -1,27 +1,32 @@
 import express from "express";
 import {
   initiateSignup,
-  verifyOtpAndRegister,
   login,
   forgotPassword,
   resetPassword,
   logout,
   refreshToken,
   validateToken,
+  verifyOtpSentToUser,
+  RegisterNewUser,
 } from "../controllers/auth";
 import { refreshAccessToken } from "../controllers/token";
 import { authenticate } from "../middlewares/authenticate";
 import { generateRefreshToken } from "utils/jwt";
+import { googleCheckFirstTime } from "../controllers/provider";
 
 export default (router: express.Router) => {
   router.post("/auth/initiateSignup", initiateSignup);
-  router.post("/auth/verifyRegisterToken", verifyOtpAndRegister);
+  router.post("/auth/verifyOtp", verifyOtpSentToUser);
+  router.post("/auth/register", RegisterNewUser);
+
   router.post("/auth/login", login);
   router.post("/auth/forgotPassword", forgotPassword);
   router.post("/auth/resetPassword", resetPassword);
   router.post("/auth/refresh", refreshToken);
   router.post("/auth/logout", logout);
   router.get("/auth/validate", authenticate, validateToken);
+  router.post("/auth/provider/google", googleCheckFirstTime);
 
   // router.post("/auth/refreshToken", refreshToken);
 

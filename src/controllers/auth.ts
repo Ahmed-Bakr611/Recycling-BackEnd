@@ -9,6 +9,8 @@ import {
 } from "../utils/jwt";
 import jwt from "jsonwebtoken";
 import Cart from "../models/cart";
+import { OAuth2Client } from "google-auth-library";
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 ////////////////////////////////////////////////
 // Sign Up logic
@@ -31,32 +33,89 @@ export const initiateSignup = async (req: Request, res: Response) => {
   }
 };
 
-export const verifyOtpAndRegister = async (req: Request, res: Response) => {
+export const verifyOtpSentToUser = async (req: Request, res: Response) => {
   try {
     console.log("Verifying OTP and registering user");
     console.log("Request body:", req.body);
-    const { name, email, password, provider, phoneNumber, otpCode, role } =
-      req.body;
+    const { email, otpCode } = req.body;
 
     await verifyOtp(email, otpCode);
-    const user = await User.create({
+
+    return res.status(200).json({ message: "OTP verified successfully" });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: err.message || "Signup failed" });
+  }
+};
+
+export const RegisterNewUser = async (req: Request, res: Response) => {
+  try {
+    const {
       name,
       email,
       password,
-      provider: provider || "none",
-      phoneNumber: phoneNumber.padStart(11, "0"),
-      role: role || "customer", // set default role if you want
-    });
+      provider,
+      phoneNumber,
+      role,
+      imgUrl,
+      attachments,
+      idToken, // used if provider is Google
+    } = req.body;
 
-    // Pass role when generating tokens
+    let user;
+
+    if (provider === "google") {
+      if (!idToken) {
+        return res.status(400).json({ message: "Google ID token is required" });
+      }
+
+      const ticket = await client.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+
+      const payload = ticket.getPayload();
+
+      if (!payload?.email) {
+        return res.status(400).json({ message: "Invalid Google token" });
+      }
+
+      // Check if user already exists
+      user = await User.findOne({ email: payload.email });
+
+      if (!user) {
+        user = await User.create({
+          name: payload.name || name,
+          email: payload.email,
+          provider: "google",
+          phoneNumber: phoneNumber?.padStart(11, "0") || "",
+          role: role || "customer",
+          imgUrl: payload.picture || imgUrl,
+          attachments: attachments || {},
+        });
+      }
+    } else {
+      // Traditional email/password registration
+      user = await User.create({
+        name,
+        email,
+        password,
+        provider: provider || "none",
+        phoneNumber: phoneNumber.padStart(11, "0"),
+        role: role || "customer",
+        imgUrl: imgUrl,
+        attachments: attachments || {},
+      });
+    }
+
+    // Create tokens
     const accessToken = generateAccessToken(user._id.toString(), user.role);
     const refreshToken = generateRefreshToken(user._id.toString(), user.role);
 
-    // Save refreshToken in DB
     user.refreshToken = refreshToken;
     await user.save();
 
-    res
+    return res
       .status(201)
       .cookie("refreshToken", refreshToken, {
         httpOnly: true,
@@ -67,7 +126,7 @@ export const verifyOtpAndRegister = async (req: Request, res: Response) => {
       })
       .header("Authorization", `Bearer ${accessToken}`)
       .json({ accessToken, user });
-  } catch (err) {
+  } catch (err: any) {
     console.error(err);
     return res.status(500).json({ message: err.message || "Signup failed" });
   }
@@ -86,8 +145,12 @@ export const login = async (req: Request, res: Response) => {
     }
 
     const match = await user.comparePassword(password);
-    if (!match) {
+    if (user.provider === "none" && !match) {
       return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    if (user.role === "delivery" && !user.isApproved) {
+      return res.status(401).json({ message: "Delivery Not Approved Yet" });
     }
 
     const sessionId = req.sessionId; // Get session ID from middleware
@@ -103,33 +166,43 @@ export const login = async (req: Request, res: Response) => {
         // Create new user cart with session items
         userCart = new Cart({
           userId: userId,
-          items: sessionCart.items
+          items: sessionCart.items,
         });
         await userCart.save();
-        console.log(`Created new user cart with ${sessionCart.items.length} items from session`);
+        console.log(
+          `Created new user cart with ${sessionCart.items.length} items from session`
+        );
       } else {
         // Merge session items with existing user cart
         for (const sessionItem of sessionCart.items) {
           // Check if this item already exists in user cart (by categoryId)
           const existingItemIndex = userCart.items.findIndex(
-            item => item.categoryId === sessionItem.categoryId
+            (item) => item.categoryId === sessionItem.categoryId
           );
-          
+
           if (existingItemIndex !== -1) {
             // Item exists, add quantities
             const existingItem = userCart.items[existingItemIndex];
             const newQuantity = existingItem.quantity + sessionItem.quantity;
-            
+
             // Validate the new quantity based on measurement_unit
-            const validateQuantity = (quantity: number, measurement_unit: number) => {
-              if (measurement_unit === 1) { // KG items
+            const validateQuantity = (
+              quantity: number,
+              measurement_unit: number
+            ) => {
+              if (measurement_unit === 1) {
+                // KG items
                 const multiplied = Math.round(quantity * 4);
-                return multiplied >= 1 && Math.abs(quantity * 4 - multiplied) < 0.0001;
-              } else { // Piece items
+                return (
+                  multiplied >= 1 &&
+                  Math.abs(quantity * 4 - multiplied) < 0.0001
+                );
+              } else {
+                // Piece items
                 return Number.isInteger(quantity) && quantity >= 1;
               }
             };
-            
+
             if (validateQuantity(newQuantity, existingItem.measurement_unit)) {
               existingItem.quantity = newQuantity;
               // Update other fields from session item if needed
@@ -140,7 +213,9 @@ export const login = async (req: Request, res: Response) => {
               existingItem.categoryName = sessionItem.categoryName;
             } else {
               // If new quantity is invalid, keep the existing quantity but log a warning
-              console.warn(`Cannot merge item ${sessionItem.itemName}: invalid quantity ${newQuantity}`);
+              console.warn(
+                `Cannot merge item ${sessionItem.itemName}: invalid quantity ${newQuantity}`
+              );
             }
           } else {
             // Item doesn't exist, add it to user cart
@@ -152,14 +227,16 @@ export const login = async (req: Request, res: Response) => {
               points: sessionItem.points,
               price: sessionItem.price,
               measurement_unit: sessionItem.measurement_unit,
-              quantity: sessionItem.quantity
+              quantity: sessionItem.quantity,
             });
           }
         }
         await userCart.save();
-        console.log(`Merged ${sessionCart.items.length} session items with existing user cart`);
+        console.log(
+          `Merged ${sessionCart.items.length} session items with existing user cart`
+        );
       }
-      
+
       // Delete session-based cart after successful transfer
       await Cart.deleteOne({ sessionId });
     } else {
@@ -168,7 +245,7 @@ export const login = async (req: Request, res: Response) => {
         console.log(`User cart preserved with ${userCart.items.length} items`);
       }
     }
-    
+
     // Pass user.role to token generation
     const accessToken = generateAccessToken(user._id.toString(), user.role);
     const refreshToken = generateRefreshToken(user._id.toString(), user.role);

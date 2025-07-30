@@ -35,4 +35,32 @@ const userStorage = new CloudinaryStorage({
   }),
 });
 
-export { cloudinary, categoryStorage, subcategoryStorage, userStorage };
+const deliveryAttachmentStorage = new CloudinaryStorage({
+  cloudinary,
+  params: async (req, file) => {
+    let folder = "recycling/delivery/attachments";
+
+    // Optional: organize by file field name
+    if (file.fieldname === "deliveryImage") {
+      folder = "recycling/delivery/deliveryImage";
+    } else if (file.fieldname === "vehicleImage") {
+      folder = "recycling/delivery/vehicleImage";
+    } else if (file.fieldname === "criminalRecord") {
+      folder = "recycling/delivery/criminalRecord";
+    }
+
+    return {
+      folder,
+      allowed_formats: ["jpg", "png", "jpeg", "pdf"],
+      public_id: `${Date.now()}-${file.originalname.split(".")[0]}`, // optional unique name
+    };
+  },
+});
+
+export {
+  cloudinary,
+  categoryStorage,
+  subcategoryStorage,
+  userStorage,
+  deliveryAttachmentStorage,
+};

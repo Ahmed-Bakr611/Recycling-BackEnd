@@ -15,7 +15,7 @@ const startServer = async () => {
 
     // Create HTTP server for Socket.IO
     const server = createServer(app);
-    
+
     // Initialize Socket.IO
     initializeSocketIO(server);
 
