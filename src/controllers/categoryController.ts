@@ -46,14 +46,32 @@ export const getCategoriesWithPagination = async (
   res: Response
 ) => {
   try {
+    const role = req.query.role;
     const [categories, total] = await Promise.all([
-      Category.find().skip(req.pagination.skip).limit(req.pagination.limit),
+      Category.find().skip(req.pagination.skip).limit(req.pagination.limit).lean(),
       Category.countDocuments(),
     ]);
 
+    let modifiedCategories = categories;
+    if (role === "buyer") {
+      modifiedCategories = categories.map(category => {
+        // Convert category to a plain object to avoid DocumentArray issues
+        const plainCategory = typeof category.toObject === "function" ? category.toObject() : category;
+        return {
+          ...plainCategory,
+          items: Array.isArray(plainCategory.items)
+            ? plainCategory.items.map((item: any) => ({
+                ...item,
+                price: item.price ? Math.round(item.price * 1.5 * 100) / 100 : item.price
+              }))
+            : [],
+        };
+      });
+    }
+
     res.json({
       success: true,
-      data: categories,
+      data: role === "buyer" ? modifiedCategories : categories,
       pagination: {
         currentPage: req.pagination.page,
         itemsPerPage: req.pagination.limit,

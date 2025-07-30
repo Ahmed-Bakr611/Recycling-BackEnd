@@ -7,10 +7,11 @@ import users from "./usersRoute";
 import categoryRoutes from "./categoryRoutes";
 import cartRoutes from "./cartRoutes";
 import courierRoutes from "./courierRoutes";
-import subscribe from "../routes/subscribe";
 import notificationRoutes from "./notificationRoutes";
 import session from "./sessionRoutes";
 import delivery from "./delivery";
+import subscribe from "../routes/subscribe";
+import payment from "./payment";
 const router = express.Router();
 
 export default (): express.Router => {
@@ -25,6 +26,9 @@ export default (): express.Router => {
   courierRoutes(router);
   subscribe(router);
   delivery(router);
+  courierRoutes(router);
+  subscribe(router);
+  payment(router);
   router.use("/notifications", notificationRoutes);
   return router;
 };
