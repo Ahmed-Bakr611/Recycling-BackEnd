@@ -47,6 +47,7 @@ export const getAllItems = async (
 ): Promise<void> => {
   try {
     const { skip, limit } = req.pagination;
+    const { role } = req.body;
 
     // 1. First get total item count
     const totalResult = await Category.aggregate([
@@ -56,7 +57,7 @@ export const getAllItems = async (
     const totalItems = totalResult[0]?.totalItems || 0;
 
     // 2. Get paginated items with category info
-    const items = await Category.aggregate([
+    let items = await Category.aggregate([
       { $unwind: "$items" }, // Flatten items
       { $skip: skip }, // Skip at item level
       { $limit: limit }, // Limit at item level
@@ -76,7 +77,15 @@ export const getAllItems = async (
           categoryId: "$_id",
         },
       },
-    ]);
+    ]) as Array<Record<string, any>>;
+
+    // If role is buyer, increase price by 50%
+    if (role === "buyer") {
+      items = items.map(item => ({
+        ...item,
+        price: item.price ? Math.round(item.price * 1.5 * 100) / 100 : item.price
+      }));
+    }
 
     res.paginated(items, totalItems);
   } catch (err) {
@@ -87,6 +96,7 @@ export const getItems = async (req: Request, res: Response): Promise<void> => {
   try {
     const { categoryName } = req.params;
     const { skip, limit } = req.pagination;
+    const { role } = req.body;
 
     const category = await Category.findOne({ name: categoryName }).slice(
       "items",
@@ -102,7 +112,17 @@ export const getItems = async (req: Request, res: Response): Promise<void> => {
     const fullCategory = await Category.findOne({ name: categoryName });
     const totalItems = fullCategory?.items.length || 0;
 
-    res.paginated(category.items, totalItems);
+    let items = Array.isArray(category.items)
+      ? category.items.map(item => item.toObject ? item.toObject() : { ...item })
+      : [];
+    if (role === "buyer") {
+      items = items.map(item => ({
+        ...item,
+        price: item.price ? Math.round(item.price * 1.5 * 100) / 100 : item.price
+      }));
+    }
+
+    res.paginated(items, totalItems);
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }
