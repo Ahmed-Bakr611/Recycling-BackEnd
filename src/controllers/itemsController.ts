@@ -47,7 +47,7 @@ export const getAllItems = async (
 ): Promise<void> => {
   try {
     const { skip, limit } = req.pagination;
-    const { role } = req.body;
+    const role = req.query.role;
 
     // 1. First get total item count
     const totalResult = await Category.aggregate([
@@ -96,7 +96,7 @@ export const getItems = async (req: Request, res: Response): Promise<void> => {
   try {
     const { categoryName } = req.params;
     const { skip, limit } = req.pagination;
-    const { role } = req.body;
+    const role = req.query.role;
 
     const category = await Category.findOne({ name: categoryName }).slice(
       "items",
