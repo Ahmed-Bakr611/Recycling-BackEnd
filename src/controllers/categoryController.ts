@@ -46,7 +46,7 @@ export const getCategoriesWithPagination = async (
   res: Response
 ) => {
   try {
-    const { role } = req.body;
+    const role = req.query.role;
     const [categories, total] = await Promise.all([
       Category.find().skip(req.pagination.skip).limit(req.pagination.limit).lean(),
       Category.countDocuments(),
@@ -55,6 +55,7 @@ export const getCategoriesWithPagination = async (
     let modifiedCategories = categories;
     if (role === "buyer") {
       modifiedCategories = categories.map(category => {
+        // Convert category to a plain object to avoid DocumentArray issues
         const plainCategory = typeof category.toObject === "function" ? category.toObject() : category;
         return {
           ...plainCategory,
