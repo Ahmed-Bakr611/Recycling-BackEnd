@@ -83,8 +83,10 @@ export const sendOtpEmail = async (to: string, code: string) => {
   });
 };
 
-
-export const sendSubscriptionEmail = async (to: string, subscriberName?: string) => {
+export const sendSubscriptionEmail = async (
+  to: string,
+  subscriberName?: string
+) => {
   const emailHtml = `
     <div style="font-family: sans-serif;">
       <h2>Thank you for subscribing!</h2>

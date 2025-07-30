@@ -13,7 +13,7 @@ export const generateAccessToken = (userId: string, role: string): string => {
   const payload: TokenPayload = { userId, role };
 
   return jwt.sign(payload, accessSecret, {
-    expiresIn: "20s",
+    expiresIn: "20m",
   });
 };
 export const generateRefreshToken = (userId: string, role: string): string => {

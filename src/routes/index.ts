@@ -10,6 +10,7 @@ import courierRoutes from "./courierRoutes";
 import subscribe from "../routes/subscribe";
 import notificationRoutes from "./notificationRoutes";
 import session from "./sessionRoutes";
+import delivery from "./delivery";
 const router = express.Router();
 
 export default (): express.Router => {
@@ -23,6 +24,7 @@ export default (): express.Router => {
   cartRoutes(router);
   courierRoutes(router);
   subscribe(router);
+  delivery(router);
   router.use("/notifications", notificationRoutes);
   return router;
 };
