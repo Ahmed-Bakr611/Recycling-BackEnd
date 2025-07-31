@@ -22,9 +22,9 @@ export interface ICart extends Document {
 const cartItemSchema = new Schema<ICartItem>(
   {
     _id: { type: String, required: false },
-    originalCategoryId: { type: String, required: false },
+    // originalCategoryId: { type: String, required: false },
     categoryId: { type: String, required: true },
-    itemName: { type: String, required: true },
+    name: { type: String, required: true },
     image: { type: String, required: false },
     points: { type: Number, required: true },
     price: { type: Number, required: true },
