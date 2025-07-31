@@ -8,38 +8,51 @@ export const updateItemQuantities = async (
   items: IItem[], // must include categoryId and name
   operation: Operation
 ) => {
-  for (const item of items) {
-    const categoryId = new Types.ObjectId(item.categoryId);
+  console.log(
+    "BAKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKkk"
+  );
+  console.log(
+    "----------------------------------------------------------------------------"
+  );
+  console.log("inside update Quantity Now");
+  console.log(
+    "----------------------------------------------------------------------------"
+  );
+  console.log("icooming items ::");
+  console.log(
+    "----------------------------------------------------------------------------"
+  );
+  console.log(items);
+  console.log(
+    "----------------------------------------------------------------------------"
+  );
+  const categories = await Category.find();
 
-    const category = await Category.findById(categoryId);
-    if (!category) {
-      throw new Error(`Category with ID ${item.categoryId} not found`);
-    }
+  for (const category of categories) {
+    let modified = false;
 
-    // 🔍 Find the embedded item by name
-    const targetItem = category.items.find(
-      (i: any) => i.name.toLowerCase() === item.itemName.toLowerCase()
-    );
-
-    if (!targetItem) {
-      throw new Error(
-        `Item with name "${item.itemName}" not found in category ${item.categoryId}`
-      );
-    }
-
-    if (operation === "decrease") {
-      if (targetItem.quantity < item.quantity) {
-        throw new Error(`Not enough quantity for item: ${targetItem.name}`);
+    for (const { categoryId, quantity } of items) {
+      const stokItem = category.items.id(categoryId); // ← Find item by _id in embedded array
+      if (stokItem) {
+        if (operation === "decrease") {
+          if (stokItem.quantity < quantity) {
+            throw new Error(`Not enough quantity for item: ${stokItem.name}`);
+          }
+          stokItem.quantity -= quantity;
+        } else if (operation === "increase") {
+          stokItem.quantity += quantity;
+        } else {
+          throw new Error(
+            `Invalid operation "${operation}". Use "increase" or "decrease".`
+          );
+        }
+        modified = true;
       }
-      targetItem.quantity -= item.quantity;
-    } else if (operation === "increase") {
-      targetItem.quantity += item.quantity;
-    } else {
-      throw new Error(
-        `Invalid operation "${operation}". Use "increase" or "decrease".`
-      );
     }
 
-    await category.save();
+    if (modified) {
+      await category.save();
+      console.log(`Updated category: ${category.name}`);
+    }
   }
 };
