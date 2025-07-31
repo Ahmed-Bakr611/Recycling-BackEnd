@@ -198,6 +198,7 @@ export interface IOrderUser {
   userName?: string;
   email?: string;
   image?: string;
+  role?:string
 }
 
 export interface IOrder extends Document {

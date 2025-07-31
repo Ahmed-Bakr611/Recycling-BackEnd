@@ -435,16 +435,78 @@ export const updateOrderStatus = async (
 };
 
 export const getAllOrdersForAdmin = async (
-  _req: express.Request,
+  req: express.Request,
   res: express.Response
 ): Promise<void> => {
   try {
-    const orders = await Order.find({}).sort({ createdAt: -1 });
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const userRole = req.query.userRole as string; // 'customer' or 'buyer'
+    
+    const skip = (page - 1) * limit;
+
+    // Build the aggregation pipeline
+    const pipeline: any[] = [
+      {
+        $lookup: {
+          from: "users", // MongoDB collection name (usually plural)
+          localField: "user.userId",
+          foreignField: "_id",
+          as: "userDetails"
+        }
+      },
+      {
+        $addFields: {
+          "user.role": {
+            $arrayElemAt: ["$userDetails.role", 0]
+          }
+        }
+      }
+    ];
+
+    // Add role filter if specified
+    if (userRole && (userRole === 'customer' || userRole === 'buyer')) {
+      pipeline.push({
+        $match: {
+          "user.role": userRole
+        }
+      });
+    }
+
+    // Add sorting, pagination, and cleanup
+    pipeline.push(
+      {
+        $project: {
+          userDetails: 0 // Remove the userDetails array to clean up the response
+        }
+      },
+      {
+        $sort: { createdAt: -1 }
+      }
+    );
+
+    // Get total count for pagination
+    const countPipeline = [...pipeline];
+    countPipeline.push({ $count: "total" });
+    
+    const totalResult = await Order.aggregate(countPipeline);
+    const totalOrders = totalResult[0]?.total || 0;
+
+    // Add pagination to main pipeline
+    pipeline.push(
+      { $skip: skip },
+      { $limit: limit }
+    );
+
+    const ordersWithUserRoles = await Order.aggregate(pipeline);
 
     res.json({
       success: true,
-      count: orders.length,
-      data: orders,
+      count: ordersWithUserRoles.length,
+      totalOrders,
+      totalPages: Math.ceil(totalOrders / limit),
+      currentPage: page,
+      data: ordersWithUserRoles,
     });
   } catch (error) {
     console.error("Admin - Error fetching all orders:", error);
@@ -454,7 +516,6 @@ export const getAllOrdersForAdmin = async (
     });
   }
 };
-
 export const cancelOrder = async (
   req: IAuthenticatedRequest,
   res: express.Response
@@ -737,13 +798,62 @@ export const getOrderAnalytics = async (
   res: express.Response
 ): Promise<void> => {
   try {
+    // Get current week's start and end dates in Egypt timezone
+    const getCurrentWeekBounds = () => {
+      const now = new Date();
+      // Convert to Egypt timezone
+      const egyptNow = new Date(now.toLocaleString("en-US", {timeZone: "Africa/Cairo"}));
+      
+      // Get current day of week (0 = Sunday, 1 = Monday, etc.)
+      const currentDay = egyptNow.getDay();
+      
+      // Calculate days since Monday (Monday = 0, Tuesday = 1, etc.)
+      const daysSinceMonday = currentDay === 0 ? 6 : currentDay - 1;
+      
+      // Get Monday of current week
+      const startOfWeek = new Date(egyptNow);
+      startOfWeek.setDate(egyptNow.getDate() - daysSinceMonday);
+      startOfWeek.setHours(0, 0, 0, 0);
+      
+      // Get Sunday of current week (end of week)
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      endOfWeek.setHours(23, 59, 59, 999);
+      
+      // Convert back to UTC for MongoDB query
+      const startOfWeekUTC = new Date(startOfWeek.toISOString());
+      const endOfWeekUTC = new Date(endOfWeek.toISOString());
+      
+      console.log('Current week bounds:');
+      console.log('Egypt Now:', egyptNow);
+      console.log('Start of week (Egypt):', startOfWeek);
+      console.log('End of week (Egypt):', endOfWeek);
+      console.log('Start of week (UTC):', startOfWeekUTC);
+      console.log('End of week (UTC):', endOfWeekUTC);
+      
+      return { startOfWeekUTC, endOfWeekUTC };
+    };
+    
+    const { startOfWeekUTC, endOfWeekUTC } = getCurrentWeekBounds();
+    
+    // Current week filter
+    const currentWeekFilter = {
+      createdAt: {
+        $gte: startOfWeekUTC,
+        $lte: endOfWeekUTC
+      }
+    };
+
+    // Total orders (all time for overall stats)
     const totalOrders = await Order.countDocuments();
     const completedOrders = await Order.countDocuments({ status: "completed" });
 
+    // Status counts (all time)
     const statusCounts = await Order.aggregate([
       { $group: { _id: "$status", count: { $sum: 1 } } },
     ]);
 
+    // Points data (all time for overall analytics)
     const pointsData = await Order.aggregate([
       { $match: { status: "completed" } },
       { $unwind: "$items" },
@@ -758,7 +868,11 @@ export const getOrderAnalytics = async (
       },
     ]);
 
+    // Daily orders for CURRENT WEEK ONLY
     const dailyOrdersRaw = await Order.aggregate([
+      {
+        $match: currentWeekFilter // Only current week orders
+      },
       {
         $group: {
           _id: {
@@ -771,11 +885,24 @@ export const getOrderAnalytics = async (
       },
     ]);
 
+    console.log('Daily orders raw (current week only):', dailyOrdersRaw);
+
+    // Initialize array for 7 days (Monday = index 0, Sunday = index 6)
     const dailyOrders = Array(7).fill(0);
+    
     for (const item of dailyOrdersRaw) {
-      const dayIndex = item._id.day === 1 ? 6 : item._id.day - 2;
-      dailyOrders[dayIndex] = item.count;
+      // MongoDB dayOfWeek: 1 = Sunday, 2 = Monday, ..., 7 = Saturday
+      // We want: Monday = 0, Tuesday = 1, ..., Sunday = 6
+      const mongoDay = item._id.day;
+      const arrayIndex = mongoDay === 1 ? 6 : mongoDay - 2; // Sunday becomes 6, Monday becomes 0
+      dailyOrders[arrayIndex] = item.count;
     }
+
+    console.log('Processed daily orders array:', dailyOrders);
+
+    // Also get current week's orders for additional debugging
+    const currentWeekOrdersCount = await Order.countDocuments(currentWeekFilter);
+    console.log(`Total orders in current week: ${currentWeekOrdersCount}`);
 
     res.json({
       success: true,
@@ -786,7 +913,7 @@ export const getOrderAnalytics = async (
           acc[s._id] = s.count;
           return acc;
         }, {} as Record<string, number>),
-        dailyOrders,
+        dailyOrders, // Now only contains current week data
         pointsAnalytics: {
           totalPointsDistributed: pointsData[0]?.totalPointsDistributed || 0,
           totalItemsRecycled: pointsData[0]?.totalItemsRecycled || 0,
@@ -797,6 +924,15 @@ export const getOrderAnalytics = async (
                 )
               : 0,
         },
+        // Add debug info
+        debug: {
+          currentWeekBounds: {
+            start: startOfWeekUTC,
+            end: endOfWeekUTC
+          },
+          currentWeekOrdersCount,
+          dailyOrdersRaw
+        }
       },
     });
   } catch (error) {
@@ -815,7 +951,17 @@ export const getTopMaterialsRecycled = async (
   try {
     const category = req.query.category as string | undefined;
 
-    const pipeline: any[] = [{ $unwind: "$items" }];
+    const pipeline: any[] = [
+      { $unwind: "$items" },
+      {
+        $addFields: {
+          "items.quantity": { $toDouble: "$items.quantity" },
+          "items.points": { $toDouble: "$items.points" },
+          // Normalize item names to lowercase for grouping
+          "items.normalizedItemName": { $toLower: "$items.itemName" }
+        }
+      }
+    ];
 
     if (category) {
       pipeline.push({ $match: { "items.categoryName": category } });
@@ -825,24 +971,68 @@ export const getTopMaterialsRecycled = async (
       {
         $group: {
           _id: {
-            itemName: "$items.itemName",
-            categoryName: "$items.categoryName",
+            // Group by normalized (lowercase) name to combine case variations
+            itemName: "$items.normalizedItemName"
           },
           totalQuantity: { $sum: "$items.quantity" },
           totalPoints: { $sum: "$items.points" },
           image: { $first: "$items.image" },
+          // Use the first occurrence's original name (you can change this logic)
+          itemName: { $first: "$items.itemName" },
           categoryName: { $first: "$items.categoryName" },
+          documentCount: { $sum: 1 },
+          // Debug: show all the different case variations found
+          nameVariations: { $addToSet: "$items.itemName" }
         },
       },
       { $sort: { totalQuantity: -1 } },
       { $limit: 4 }
     );
 
+    console.log("Case-insensitive Pipeline:", JSON.stringify(pipeline, null, 2));
+
     const materials = await Order.aggregate(pipeline);
+
+    // Enhanced logging to show the case consolidation
+    console.log("Case-insensitive Results:");
+    materials.forEach((material, index) => {
+      console.log(`\n--- Material ${index + 1} ---`);
+      console.log(`Display Name: ${material.itemName}`);
+      console.log(`Total Quantity: ${material.totalQuantity}`);
+      console.log(`Document Count: ${material.documentCount}`);
+      console.log(`Name Variations Found:`, material.nameVariations);
+      
+      if (material._id.itemName === 'cooking pan') {
+        console.log(`🍳 COOKING PAN CONSOLIDATED:`);
+        console.log(`- Combined total: ${material.totalQuantity}`);
+        console.log(`- From ${material.documentCount} entries`);
+        console.log(`- Variations: ${material.nameVariations.join(', ')}`);
+      }
+    });
+
+    // Show what the totals would be for cooking pan specifically
+    const cookingPanTotal = await Order.aggregate([
+      { $unwind: "$items" },
+      { $match: { "items.itemName": { $regex: /^cooking pan$/i } } }, // Case insensitive exact match
+      {
+        $group: {
+          _id: null,
+          totalQuantity: { $sum: { $toDouble: "$items.quantity" } },
+          totalDocs: { $sum: 1 },
+          variations: { $addToSet: "$items.itemName" }
+        }
+      }
+    ]);
+
+    console.log("\n🔍 COOKING PAN VERIFICATION:", cookingPanTotal);
 
     res.json({
       success: true,
       data: materials,
+      debug: {
+        cookingPanTotal,
+        timestamp: new Date().toISOString()
+      }
     });
   } catch (error) {
     console.error("Error getting top materials recycled:", error);
@@ -852,7 +1042,6 @@ export const getTopMaterialsRecycled = async (
     });
   }
 };
-
 export const getTopCitiesByOrders = async (
   _req: express.Request,
   res: express.Response

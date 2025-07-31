@@ -221,8 +221,8 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
       courier: courierId,
       status: "assigntocourier",
     })
-      .populate("user.userId", "name phoneNumber email imgUrl") // Populate with User schema fields
-      .populate("courier", "name phoneNumber email imgUrl") // Populate with User schema fields
+      .populate("user.userId", "name phoneNumber email imgUrl role") // Added 'role' field
+      .populate("courier", "name phoneNumber email imgUrl role") // Added 'role' field for courier too
       .sort({ createdAt: -1 });
 
     console.log("✅ Found orders for courier:", orders.length);
@@ -247,6 +247,7 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
         // Debug: Log the populated user data
         console.log("Populated user data:", populatedUser);
         console.log("User imgUrl:", populatedUser.imgUrl);
+        console.log("User role:", populatedUser.role); // Debug log for role
 
         // Create a clean user object with only the fields we need (no nested userId)
         orderObj.user = {
@@ -255,10 +256,19 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
           userName: populatedUser.name || orderObj.user.userName, // Map 'name' to 'userName'
           email: populatedUser.email || orderObj.user.email,
           image: populatedUser.imgUrl || orderObj.user.image || null, // Map 'imgUrl' to 'image'
+          role: populatedUser.role || orderObj.user.role || null, // Include user role
         };
 
         // Debug: Log the final user object
         console.log("Final user object:", orderObj.user);
+      }
+
+      // Also handle courier role if needed (since we're populating it too)
+      if (orderObj.courier && typeof orderObj.courier === "object") {
+        const populatedCourier = orderObj.courier as any;
+        
+        // If you want to include courier role in the response, you can add it here
+        console.log("Courier role:", populatedCourier.role);
       }
 
       return orderObj;
@@ -273,7 +283,6 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
     });
   }
 };
-
 export const completeOrderWithProof = async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
