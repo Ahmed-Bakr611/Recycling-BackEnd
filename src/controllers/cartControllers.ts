@@ -91,7 +91,7 @@ export const addItemToCart = async (req: Request, res: Response) => {
 
   // Find item by categoryId
   const existingItem = cart.items.find(
-    (item) => item.categoryId === categoryId
+    (item) => item._id === _id
   );
   if (existingItem) {
     const newQuantity = existingItem.quantity + quantity;
@@ -132,12 +132,12 @@ export const updateCartItem = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
-    const { categoryId, quantity } = req.body;
+    const { _id, quantity } = req.body;
 
-    if (!categoryId || typeof quantity !== "number") {
+    if (!_id || typeof quantity !== "number") {
       return res
         .status(400)
-        .json({ message: "Valid categoryId and quantity are required" });
+        .json({ message: "Valid _id and quantity are required" });
     }
 
     let cart = await Cart.findOne(userId ? { userId } : { sessionId });
@@ -146,7 +146,7 @@ export const updateCartItem = async (req: Request, res: Response) => {
       await cart.save();
     }
 
-    const item = cart.items.find((i) => i.categoryId === categoryId);
+    const item = cart.items.find((i) => i._id === _id);
     if (!item)
       return res.status(404).json({ message: "Item not found in cart" });
 
@@ -168,10 +168,10 @@ export const removeCartItem = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
-    const categoryId = req.params.categoryId?.trim();
+    const _id = req.params._id?.trim();
 
-    if (!categoryId) {
-      return res.status(400).json({ message: "categoryId is required" });
+    if (!_id) {
+      return res.status(400).json({ message: "_id is required" });
     }
 
     let cart = await Cart.findOne(userId ? { userId } : { sessionId });
@@ -180,7 +180,7 @@ export const removeCartItem = async (req: Request, res: Response) => {
       await cart.save();
     }
     cart.items = cart.items.filter(
-      (item) => item.categoryId.toString().trim() !== categoryId
+      (item) => item._id.toString().trim() !== _id
     );
     await cart.save();
     return res.status(200).json(cart);
