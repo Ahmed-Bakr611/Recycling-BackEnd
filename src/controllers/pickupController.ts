@@ -34,6 +34,12 @@ export const createOrder = async (
     const { address, items, phoneNumber, userName, imageUrl, email } = req.body;
     console.log("🔍 Incoming order request:", req.body);
 
+    console.log("--------------INSIDE CREATE ORDER-------------");
+    console.log("--------------Incoming Items-------------");
+
+    console.log(items);
+    console.log("--------------INSIDE CREATE ORDER-------------");
+
     if (!address || !items || !phoneNumber || !userName) {
       res.status(400).json({
         success: false,

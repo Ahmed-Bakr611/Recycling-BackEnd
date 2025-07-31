@@ -439,6 +439,9 @@ export const completeOrderWithProof = async (req: Request, res: Response) => {
       console.log("✅ Restocked item quantities for completed order.");
     } catch (restockError) {
       console.error("❌ Failed to restock items:", restockError);
+      return res.status(404).json({
+        message: "Failed to restock items",
+      });
     }
 
     res.status(200).json({
