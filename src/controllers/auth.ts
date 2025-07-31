@@ -149,9 +149,9 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    if (user.role === "delivery" && !user.isApproved) {
-      return res.status(401).json({ message: "Delivery Not Approved Yet" });
-    }
+    // if (user.role === "delivery" && !user.isApproved) {
+    //   return res.status(401).json({ message: "Delivery Not Approved Yet" });
+    // }
 
     const sessionId = req.sessionId; // Get session ID from middleware
     const userId = user._id;
