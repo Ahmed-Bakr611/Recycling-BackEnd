@@ -113,7 +113,13 @@ export const getItems = async (req: Request, res: Response): Promise<void> => {
     const totalItems = fullCategory?.items.length || 0;
 
     let items = Array.isArray(category.items)
-      ? category.items.map(item => item.toObject ? item.toObject() : { ...item })
+      ? category.items.map(item => {
+          const obj = item.toObject ? item.toObject() : { ...item };
+          return {
+            ...obj,
+            categoryId: category._id
+          };
+        })
       : [];
     if (role === "buyer") {
       items = items.map(item => ({
