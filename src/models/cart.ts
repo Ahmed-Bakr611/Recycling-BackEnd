@@ -1,8 +1,10 @@
 import mongoose, { Schema, Document, Types } from "mongoose";
 
 export interface ICartItem {
+  _id?: string;
+  originalCategoryId?: string;
   categoryId: string;
-  categoryName: string; 
+  categoryName: string;
   itemName: string;
   image: string;
   points: number;
@@ -10,7 +12,6 @@ export interface ICartItem {
   measurement_unit: number;
   quantity: number;
 }
-
 
 export interface ICart extends Document {
   userId?: Types.ObjectId;
@@ -20,6 +21,8 @@ export interface ICart extends Document {
 
 const cartItemSchema = new Schema<ICartItem>(
   {
+    _id: { type: String, required: false },
+    originalCategoryId: { type: String, required: false },
     categoryId: { type: String, required: true },
     itemName: { type: String, required: true },
     image: { type: String, required: false },
@@ -27,12 +30,12 @@ const cartItemSchema = new Schema<ICartItem>(
     price: { type: Number, required: true },
     categoryName: { type: String, required: true },
     measurement_unit: { type: Number, required: true },
-    quantity: { 
-      type: Number, 
-      required: true, 
+    quantity: {
+      type: Number,
+      required: true,
       min: 0.25,
       validate: {
-        validator: function(this: ICartItem, value: number) {
+        validator: function (this: ICartItem, value: number) {
           // For KG items (measurement_unit = 1), allow 0.25 increments
           if (this.measurement_unit === 1) {
             // Check if value is a multiple of 0.25 (0.25, 0.5, 0.75, 1.0, 1.25, etc.)
@@ -43,8 +46,9 @@ const cartItemSchema = new Schema<ICartItem>(
           // For Piece items (measurement_unit = 2), require whole numbers >= 1
           return Number.isInteger(value) && value >= 1;
         },
-        message: 'For KG items, quantity must be in 0.25 increments (0.25, 0.5, 0.75, 1.0, etc.). For Piece items, quantity must be whole numbers >= 1.'
-      }
+        message:
+          "For KG items, quantity must be in 0.25 increments (0.25, 0.5, 0.75, 1.0, etc.). For Piece items, quantity must be whole numbers >= 1.",
+      },
     },
   },
   { _id: false }
@@ -52,18 +56,18 @@ const cartItemSchema = new Schema<ICartItem>(
 
 const cartSchema = new Schema<ICart>(
   {
-    userId: { 
-      type: Schema.Types.ObjectId, 
-      ref: "User", 
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
       required: false,
       unique: true,
-      sparse: true
+      sparse: true,
     },
-    sessionId: { 
-      type: String, 
+    sessionId: {
+      type: String,
       required: false,
       unique: true,
-      sparse: true 
+      sparse: true,
     },
     items: [cartItemSchema],
   },
@@ -71,24 +75,23 @@ const cartSchema = new Schema<ICart>(
 );
 
 // Ensure that either userId or sessionId is present (but not both)
-cartSchema.pre('save', function (next) {
+cartSchema.pre("save", function (next) {
   if ((!this.userId && !this.sessionId) || (this.userId && this.sessionId)) {
-    return next(new Error('Either userId or sessionId must be provided, but not both'));
+    return next(
+      new Error("Either userId or sessionId must be provided, but not both")
+    );
   }
   next();
 });
 
 // Create compound index to ensure uniqueness
 cartSchema.index(
-  { userId: 1, sessionId: 1 }, 
-  { 
+  { userId: 1, sessionId: 1 },
+  {
     unique: true,
     partialFilterExpression: {
-      $or: [
-        { userId: { $exists: true } },
-        { sessionId: { $exists: true } }
-      ]
-    }
+      $or: [{ userId: { $exists: true } }, { sessionId: { $exists: true } }],
+    },
   }
 );
 

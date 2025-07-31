@@ -50,3 +50,78 @@ export const registerDeliveryUser = async (req: Request, res: Response) => {
       .json({ message: err.message || "Delivery registration failed" });
   }
 };
+
+export const getAllDeliveries = async (req: Request, res: Response) => {
+  try {
+    const deliveries = await User.find({ role: "delivery" }).select(
+      "name email phoneNumber isApproved attachments createdAt"
+    );
+
+    return res.status(200).json({ deliveries });
+  } catch (err) {
+    console.error("Get deliveries error:", err);
+    return res.status(500).json({ message: "Failed to fetch delivery users" });
+  }
+};
+export const getDeliveryById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const user = await User.findOne({ _id: id, role: "delivery" }).select(
+      "name email phoneNumber isApproved attachments createdAt"
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "Delivery user not found" });
+    }
+
+    return res.status(200).json({ delivery: user });
+  } catch (err) {
+    console.error("Get delivery by ID error:", err);
+    return res.status(500).json({ message: "Failed to fetch delivery user" });
+  }
+};
+export const approveDeliveryUser = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { isApproved } = req.body;
+
+    const user = await User.findByIdAndUpdate(
+      id,
+      { isApproved },
+      { new: true }
+    ).select("name email isApproved");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({ message: "Approval status updated", user });
+  } catch (err) {
+    console.error("Update approval error:", err);
+    return res
+      .status(500)
+      .json({ message: "Failed to update approval status" });
+  }
+};
+export const updateDelivery = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    const user = await User.findOneAndUpdate(
+      { _id: id, role: "delivery" },
+      updates,
+      { new: true }
+    ).select("name email phoneNumber isApproved attachments");
+
+    if (!user) {
+      return res.status(404).json({ message: "Delivery user not found" });
+    }
+
+    return res.status(200).json({ message: "Delivery user updated", user });
+  } catch (err) {
+    console.error("Update delivery error:", err);
+    return res.status(500).json({ message: "Failed to update delivery user" });
+  }
+};

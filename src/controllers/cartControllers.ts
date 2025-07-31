@@ -1,23 +1,33 @@
-import { Request, Response } from 'express';
-import Cart from '../models/cart'
+import { Request, Response } from "express";
+import Cart from "../models/cart";
 
 // Helper function to validate quantity based on measurement unit
-const validateQuantity = (quantity: number, measurement_unit: number): { isValid: boolean; message?: string } => {
-  if (measurement_unit === 1) { // KG items
+const validateQuantity = (
+  quantity: number,
+  measurement_unit: number
+): { isValid: boolean; message?: string } => {
+  if (measurement_unit === 1) {
+    // KG items
     // Allow 0.25 increments: 0.25, 0.5, 0.75, 1.0, 1.25, etc.
     // Use Math.round to handle floating point precision issues
     const multiplied = Math.round(quantity * 4);
-    const isValid = multiplied >= 1 && Math.abs(quantity * 4 - multiplied) < 0.0001;
+    const isValid =
+      multiplied >= 1 && Math.abs(quantity * 4 - multiplied) < 0.0001;
     return {
       isValid,
-      message: !isValid ? "For KG items, quantity must be in 0.25 increments (0.25, 0.5, 0.75, 1.0, etc.)" : undefined
+      message: !isValid
+        ? "For KG items, quantity must be in 0.25 increments (0.25, 0.5, 0.75, 1.0, etc.)"
+        : undefined,
     };
-  } else { // Piece items (measurement_unit = 2)
+  } else {
+    // Piece items (measurement_unit = 2)
     // Require whole numbers >= 1
     const isValid = Number.isInteger(quantity) && quantity >= 1;
     return {
       isValid,
-      message: !isValid ? "For Piece items, quantity must be whole numbers >= 1" : undefined
+      message: !isValid
+        ? "For Piece items, quantity must be whole numbers >= 1"
+        : undefined,
     };
   }
 };
@@ -27,7 +37,7 @@ export const getCart = async (req: Request, res: Response) => {
   const sessionId = req.sessionId;
 
   if (!userId && !sessionId) {
-    return res.status(400).json({ message: 'Missing user or session' });
+    return res.status(400).json({ message: "Missing user or session" });
   }
 
   let cart = null;
@@ -47,16 +57,25 @@ export const getCart = async (req: Request, res: Response) => {
   return res.status(200).json(cart);
 };
 
-
 export const addItemToCart = async (req: Request, res: Response) => {
-  console.log('in add to cart');
-  
+  console.log("in add to cart");
+
   const userId = req.user?.userId;
   const sessionId = req.sessionId;
-  const { categoryId, categoryName, itemName, image, points, price, measurement_unit, quantity } = req.body;
+  const {
+    categoryId,
+    categoryName,
+    itemName,
+    image,
+    points,
+    price,
+    measurement_unit,
+    quantity,
+    originalCategoryId,
+  } = req.body;
 
   if (!userId && !sessionId) {
-    return res.status(400).json({ message: 'Missing user or session' });
+    return res.status(400).json({ message: "Missing user or session" });
   }
 
   // Validate quantity based on measurement unit
@@ -71,11 +90,16 @@ export const addItemToCart = async (req: Request, res: Response) => {
   }
 
   // Find item by categoryId
-  const existingItem = cart.items.find(item => item.categoryId === categoryId);
+  const existingItem = cart.items.find(
+    (item) => item.categoryId === categoryId
+  );
   if (existingItem) {
     const newQuantity = existingItem.quantity + quantity;
     // Validate the new total quantity
-    const newQuantityValidation = validateQuantity(newQuantity, measurement_unit);
+    const newQuantityValidation = validateQuantity(
+      newQuantity,
+      measurement_unit
+    );
     if (!newQuantityValidation.isValid) {
       return res.status(400).json({ message: newQuantityValidation.message });
     }
@@ -87,13 +111,22 @@ export const addItemToCart = async (req: Request, res: Response) => {
     if (price) existingItem.price = price;
     if (measurement_unit) existingItem.measurement_unit = measurement_unit;
   } else {
-   cart.items.push({ categoryId,categoryName, itemName, image, points, price, measurement_unit, quantity });
+    cart.items.push({
+      categoryId,
+      categoryName,
+      itemName,
+      image,
+      points,
+      price,
+      measurement_unit,
+      quantity,
+      originalCategoryId,
+    });
   }
 
   await cart.save();
   return res.json(cart);
 };
-
 
 export const updateCartItem = async (req: Request, res: Response) => {
   try {
@@ -102,7 +135,9 @@ export const updateCartItem = async (req: Request, res: Response) => {
     const { categoryId, quantity } = req.body;
 
     if (!categoryId || typeof quantity !== "number") {
-      return res.status(400).json({ message: "Valid categoryId and quantity are required" });
+      return res
+        .status(400)
+        .json({ message: "Valid categoryId and quantity are required" });
     }
 
     let cart = await Cart.findOne(userId ? { userId } : { sessionId });
@@ -110,9 +145,10 @@ export const updateCartItem = async (req: Request, res: Response) => {
       cart = new Cart({ ...(userId ? { userId } : { sessionId }), items: [] });
       await cart.save();
     }
-    
+
     const item = cart.items.find((i) => i.categoryId === categoryId);
-    if (!item) return res.status(404).json({ message: "Item not found in cart" });
+    if (!item)
+      return res.status(404).json({ message: "Item not found in cart" });
 
     // Validate quantity based on measurement unit
     const validation = validateQuantity(quantity, item.measurement_unit);
@@ -143,7 +179,9 @@ export const removeCartItem = async (req: Request, res: Response) => {
       cart = new Cart({ ...(userId ? { userId } : { sessionId }), items: [] });
       await cart.save();
     }
-    cart.items = cart.items.filter(item => item.categoryId.toString().trim() !== categoryId);
+    cart.items = cart.items.filter(
+      (item) => item.categoryId.toString().trim() !== categoryId
+    );
     await cart.save();
     return res.status(200).json(cart);
   } catch (error) {
@@ -157,7 +195,9 @@ export const clearCart = async (req: Request, res: Response) => {
     const sessionId = req.sessionId;
 
     if (!userId && !sessionId) {
-      return res.status(400).json({ message: "User or session ID is required" });
+      return res
+        .status(400)
+        .json({ message: "User or session ID is required" });
     }
 
     let cart = await Cart.findOne(userId ? { userId } : { sessionId });
