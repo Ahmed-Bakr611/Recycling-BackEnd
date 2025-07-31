@@ -63,15 +63,15 @@ export const addItemToCart = async (req: Request, res: Response) => {
   const userId = req.user?.userId;
   const sessionId = req.sessionId;
   const {
+    _id,
     categoryId,
     categoryName,
-    itemName,
+    name,
     image,
     points,
     price,
     measurement_unit,
     quantity,
-    originalCategoryId,
   } = req.body;
 
   if (!userId && !sessionId) {
@@ -105,22 +105,22 @@ export const addItemToCart = async (req: Request, res: Response) => {
     }
     existingItem.quantity = newQuantity;
     // Optionally update other fields if needed
-    if (itemName) existingItem.itemName = itemName;
+    if (name) existingItem.name = name;
     if (image) existingItem.image = image;
     if (points) existingItem.points = points;
     if (price) existingItem.price = price;
     if (measurement_unit) existingItem.measurement_unit = measurement_unit;
   } else {
     cart.items.push({
+      _id,
       categoryId,
       categoryName,
-      itemName,
+      name,
       image,
       points,
       price,
       measurement_unit,
       quantity,
-      originalCategoryId,
     });
   }
 
