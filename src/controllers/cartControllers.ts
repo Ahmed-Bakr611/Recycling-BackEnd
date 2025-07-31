@@ -169,6 +169,7 @@ export const removeCartItem = async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
     const _id = req.params._id?.trim();
+    console.log("Removing item with _id: --------", _id);
 
     if (!_id) {
       return res.status(400).json({ message: "_id is required" });
