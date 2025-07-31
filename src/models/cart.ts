@@ -2,10 +2,10 @@ import mongoose, { Schema, Document, Types } from "mongoose";
 
 export interface ICartItem {
   _id?: string;
-  originalCategoryId?: string;
+  // originalCategoryId?: string;
   categoryId: string;
   categoryName: string;
-  itemName: string;
+  name: string;
   image: string;
   points: number;
   price: number;
