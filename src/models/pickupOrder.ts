@@ -165,6 +165,7 @@ export interface IAddress {
 export interface IItem {
   _id: Types.ObjectId; // optional to support pre-insertion or flexibility
   categoryId: mongoose.Types.ObjectId;
+
   image: string;
   itemName: string;
   measurement_unit: 1 | 2;

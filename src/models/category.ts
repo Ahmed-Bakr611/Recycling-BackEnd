@@ -6,7 +6,6 @@ export interface ICategory extends Document {
   description: string;
   image: string;
   items: Types.DocumentArray<IItem>;
-
   createdAt: Date;
   updatedAt: Date;
 }

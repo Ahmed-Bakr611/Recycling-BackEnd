@@ -9,7 +9,10 @@ import {
   createOrderCompletedNotification,
   createOrderStatusChangeNotification,
 } from "../services/notificationService";
-import { updateItemQuantities } from "../utils/stockHelper";
+import {
+  mapCartItemsToOrderItems,
+  updateItemQuantities,
+} from "../utils/stockHelper";
 
 // Use interfaces from pickupOrder.ts
 interface IAuthenticatedRequest extends express.Request {
@@ -36,9 +39,11 @@ export const createOrder = async (
 
     console.log("--------------INSIDE CREATE ORDER-------------");
     console.log("--------------Incoming Items-------------");
-
     console.log(items);
-    console.log("--------------INSIDE CREATE ORDER-------------");
+    console.log("--------------Mapping Items-------------");
+    const newOrderItems = mapCartItemsToOrderItems(items);
+    console.log(newOrderItems);
+    console.log("--------------End Display Items-------------");
 
     if (!address || !items || !phoneNumber || !userName) {
       res.status(400).json({
@@ -80,7 +85,7 @@ export const createOrder = async (
         email,
       },
       address,
-      items: enrichedItems,
+      items: newOrderItems,
       status: "pending",
     });
 
