@@ -51,7 +51,7 @@ export const updateItemQuantities = async (
         );
       } catch (error: any) {
         console.error(
-          `❌ Error updating item ${index + 1} (${orderItem.itemName}):`,
+          `❌ Error updating item ${index + 1} (${orderItem.name}):`,
           error.message
         );
         throw error;
@@ -64,9 +64,9 @@ export const updateItemQuantities = async (
 export function mapCartItemsToOrderItems(cartItems: ICartItem[]): IItem[] {
   return cartItems.map((item) => ({
     _id: new mongoose.Types.ObjectId(item.categoryId),
-    categoryId: new mongoose.Types.ObjectId(item.originalCategoryId),
+    categoryId: new mongoose.Types.ObjectId(item.categoryId),
     categoryName: item.categoryName,
-    itemName: item.itemName,
+    name: item.name,
     image: item.image,
     points: item.points,
     price: item.price,
