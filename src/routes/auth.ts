@@ -13,6 +13,7 @@ import {
   declineDeliveryUser,
   approveDeliveryUser,
   getDeliveryStatus,
+  checkDeliveryStatusByEmail,
 } from "../controllers/auth";
 import { refreshAccessToken } from "../controllers/token";
 import { authenticate } from "../middlewares/authenticate";
@@ -36,6 +37,7 @@ router.patch("/delivery/approve/:userId", approveDeliveryUser);
 router.patch("/delivery/decline/:userId", declineDeliveryUser);
 router.get("/delivery-status", authenticate, getDeliveryStatus);
   // router.post("/auth/refreshToken", refreshToken);
+router.post('/auth/check-delivery-status', checkDeliveryStatusByEmail);
 
   return router;
 };
