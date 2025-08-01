@@ -90,7 +90,13 @@ export const addItemToCart = async (req: Request, res: Response) => {
   }
 
   // Find item by categoryId
+<<<<<<< HEAD
   const existingItem = cart.items.find((item) => item._id === _id);
+=======
+  const existingItem = cart.items.find(
+    (item) => item._id === _id
+  );
+>>>>>>> d710baebbacd9e700f625ba4d6d5f0844d33b5db
   if (existingItem) {
     const newQuantity = existingItem.quantity + quantity;
     // Validate the new total quantity
@@ -166,10 +172,18 @@ export const removeCartItem = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
+<<<<<<< HEAD
     const id = req.params.id?.trim();
 
     if (!id) {
       return res.status(400).json({ message: "id is required" });
+=======
+    const _id = req.params._id?.trim();
+    console.log("Removing item with _id: --------", _id);
+
+    if (!_id) {
+      return res.status(400).json({ message: "_id is required" });
+>>>>>>> d710baebbacd9e700f625ba4d6d5f0844d33b5db
     }
 
     let cart = await Cart.findOne(userId ? { userId } : { sessionId });
@@ -177,7 +191,13 @@ export const removeCartItem = async (req: Request, res: Response) => {
       cart = new Cart({ ...(userId ? { userId } : { sessionId }), items: [] });
       await cart.save();
     }
+<<<<<<< HEAD
     cart.items = cart.items.filter((item) => item._id.toString().trim() !== id);
+=======
+    cart.items = cart.items.filter(
+      (item) => item._id.toString().trim() !== _id
+    );
+>>>>>>> d710baebbacd9e700f625ba4d6d5f0844d33b5db
     await cart.save();
     return res.status(200).json(cart);
   } catch (error) {
