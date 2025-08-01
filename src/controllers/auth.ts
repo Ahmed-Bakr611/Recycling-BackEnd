@@ -82,7 +82,6 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
 
       // Check if user already exists
       user = await User.findOne({ email: payload.email });
-
       if (!user) {
         user = await User.create({
           name: payload.name || name,
@@ -91,7 +90,17 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
           phoneNumber: phoneNumber?.padStart(11, "0") || "",
           role: role || "customer",
           imgUrl: payload.picture || imgUrl,
-          attachments: attachments || {},
+          // ✅ FIX: Set initial pending status for delivery users
+          attachments:
+            role === "delivery"
+              ? {
+                  status: "pending",
+                  submittedAt: new Date(),
+                  ...attachments,
+                }
+              : attachments || {},
+          // ✅ FIX: Delivery users start as not approved
+          isApproved: role === "delivery" ? false : true,
         });
       }
     } else {
@@ -104,7 +113,17 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
         phoneNumber: phoneNumber.padStart(11, "0"),
         role: role || "customer",
         imgUrl: imgUrl,
-        attachments: attachments || {},
+        // ✅ FIX: Set initial pending status for delivery users
+        attachments:
+          role === "delivery"
+            ? {
+                status: "pending",
+                submittedAt: new Date(),
+                ...attachments,
+              }
+            : attachments || {},
+        // ✅ FIX: Delivery users start as not approved
+        isApproved: role === "delivery" ? false : true,
       });
     }
 
@@ -135,6 +154,7 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
 ////////////////////////////////////////////////
 // Login logic
 ////////////////////////////////////////////////
+// Updated login function with enhanced delivery user handling
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -149,21 +169,72 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // if (user.role === "delivery" && !user.isApproved) {
-    //   return res.status(401).json({ message: "Delivery Not Approved Yet" });
-    // }
+    // Enhanced delivery user status handling
+    if (user.role === "delivery") {
+      const declineReason = user.attachments?.declineReason || null;
+      const declinedAt = user.attachments?.declinedAt || null;
+      const approvedAt = user.attachments?.approvedAt || null;
+      const status = user.attachments?.status || "pending";
+      const declineTimestamp = declinedAt ? new Date(declinedAt).getTime() : 0;
+      const approveTimestamp = approvedAt ? new Date(approvedAt).getTime() : 0;
+      // Case 1: User is declined - redirect to waiting page with decline reason
+      if (
+        declineReason &&
+        (!approvedAt || declineTimestamp > approveTimestamp)
+      ) {
+        return res.status(200).json({
+          message: "Delivery application declined",
+          deliveryStatus: "declined",
+          redirectTo: "/waitingforapproval",
+          user: {
+            userId: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            isApproved: false,
+          },
+          declineReason,
+          declinedAt,
+          canReapply: true,
+        });
+      }
 
-    const sessionId = req.sessionId; // Get session ID from middleware
+      if (
+        user.isApproved &&
+        (!declinedAt || approveTimestamp > declineTimestamp)
+      ) {
+        console.log(
+          "✅ Approved delivery user, continuing to normal login flow"
+        );
+      } else {
+        // Case 3: User is pending approval (initial state or no recent actions)
+        return res.status(200).json({
+          message: "Delivery application pending approval",
+          deliveryStatus: "pending",
+          redirectTo: "/waitingforapproval",
+          user: {
+            userId: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            isApproved: false,
+          },
+        });
+      }
+
+      // Case 3: User is approved - continue with normal login flow (will redirect to /deliverydashboard)
+      // This falls through to the normal login logic below
+    }
+
+    const sessionId = req.sessionId;
     const userId = user._id;
-    // Find session-based cart items
-    const sessionCart = await Cart.findOne({ sessionId });
 
-    // Always check if user already has a cart (preserves cart after logout/login)
+    // Cart merging logic (unchanged)
+    const sessionCart = await Cart.findOne({ sessionId });
     let userCart = await Cart.findOne({ userId });
 
     if (sessionCart && sessionCart.items.length > 0) {
       if (!userCart) {
-        // Create new user cart with session items
         userCart = new Cart({
           userId: userId,
           items: sessionCart.items,
@@ -173,32 +244,26 @@ export const login = async (req: Request, res: Response) => {
           `Created new user cart with ${sessionCart.items.length} items from session`
         );
       } else {
-        // Merge session items with existing user cart
         for (const sessionItem of sessionCart.items) {
-          // Check if this item already exists in user cart (by categoryId)
           const existingItemIndex = userCart.items.findIndex(
             (item) => item.categoryId === sessionItem.categoryId
           );
 
           if (existingItemIndex !== -1) {
-            // Item exists, add quantities
             const existingItem = userCart.items[existingItemIndex];
             const newQuantity = existingItem.quantity + sessionItem.quantity;
 
-            // Validate the new quantity based on measurement_unit
             const validateQuantity = (
               quantity: number,
               measurement_unit: number
             ) => {
               if (measurement_unit === 1) {
-                // KG items
                 const multiplied = Math.round(quantity * 4);
                 return (
                   multiplied >= 1 &&
                   Math.abs(quantity * 4 - multiplied) < 0.0001
                 );
               } else {
-                // Piece items
                 return Number.isInteger(quantity) && quantity >= 1;
               }
             };
@@ -212,13 +277,11 @@ export const login = async (req: Request, res: Response) => {
               existingItem.price = sessionItem.price;
               existingItem.categoryName = sessionItem.categoryName;
             } else {
-              // If new quantity is invalid, keep the existing quantity but log a warning
               console.warn(
                 `Cannot merge item ${sessionItem.name}: invalid quantity ${newQuantity}`
               );
             }
           } else {
-            // Item doesn't exist, add it to user cart
             userCart.items.push({
               // _id:sessionItem._id,
               categoryId: sessionItem.categoryId,
@@ -238,25 +301,31 @@ export const login = async (req: Request, res: Response) => {
         );
       }
 
-      // Delete session-based cart after successful transfer
       await Cart.deleteOne({ sessionId });
     } else {
-      // No session cart, but user cart should persist from previous sessions
       if (userCart) {
         console.log(`User cart preserved with ${userCart.items.length} items`);
       }
     }
 
-    // Pass user.role to token generation
     const accessToken = generateAccessToken(user._id.toString(), user.role);
     const refreshToken = generateRefreshToken(user._id.toString(), user.role);
 
-    // Store refresh token in DB
     user.refreshToken = refreshToken;
     await user.save();
 
     res.clearCookie("sessionId");
-    // Send access in header and JSON, and refresh in HTTP-only cookie
+
+    // Determine redirect path based on user role and approval status
+    let redirectTo = "/dashboard"; // Default redirect
+    if (user.role === "delivery" && user.isApproved) {
+      redirectTo = "/deliverydashboard";
+    } else if (user.role === "admin") {
+      redirectTo = "/admin";
+    } else if (user.role === "customer") {
+      redirectTo = "/customer";
+    }
+
     res
       .status(200)
       .cookie("refreshToken", refreshToken, {
@@ -267,13 +336,17 @@ export const login = async (req: Request, res: Response) => {
         path: "/",
       })
       .header("Authorization", `Bearer ${accessToken}`)
-      .json({ accessToken, user });
+      .json({
+        accessToken,
+        user,
+        deliveryStatus: user.role === "delivery" ? "approved" : undefined,
+        redirectTo,
+      });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: "Login failed" });
   }
 };
-
 ////////////////////////////////////////////////
 // Forgot Password logic
 ////////////////////////////////////////////////
@@ -481,4 +554,381 @@ export const validateToken = async (req: Request, res: Response) => {
     message: "Access token is valid",
     user: req.user, // includes userId and role
   });
+};
+
+// Add this endpoint to your auth controller
+
+export const getDeliveryAttachments = async (req: Request, res: Response) => {
+  try {
+    const deliveryUsers = await User.find({
+      role: "delivery",
+    }).select("name email phoneNumber attachments isApproved createdAt");
+
+    if (!deliveryUsers || deliveryUsers.length === 0) {
+      return res.status(404).json({
+        message: "No delivery users found",
+      });
+    }
+
+    // ✅ IMPROVED: Better status determination for admin view
+    const deliveryAttachments = deliveryUsers.map((user) => {
+      const declineReason = user.attachments?.declineReason || null;
+      const declinedAt = user.attachments?.declinedAt || null;
+      const approvedAt = user.attachments?.approvedAt || null;
+
+      let currentStatus = "pending"; // Default
+
+      const declineTimestamp = declinedAt ? new Date(declinedAt).getTime() : 0;
+      const approveTimestamp = approvedAt ? new Date(approvedAt).getTime() : 0;
+
+      if (declineTimestamp > 0 && approveTimestamp > 0) {
+        currentStatus =
+          declineTimestamp > approveTimestamp ? "declined" : "approved";
+      } else if (user.isApproved && approvedAt) {
+        currentStatus = "approved";
+      } else if (declineReason && declinedAt) {
+        currentStatus = "declined";
+      }
+
+      return {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        isApproved: user.isApproved,
+        currentStatus, // This will show the actual current status
+        createdAt: user.createdAt,
+        attachments: user.attachments,
+      };
+    });
+
+    res.status(200).json({
+      message: "Delivery attachments retrieved successfully",
+      count: deliveryAttachments.length,
+      data: deliveryAttachments,
+    });
+  } catch (err) {
+    console.error("Error fetching delivery attachments:", err);
+    res.status(500).json({
+      message: "Failed to fetch delivery attachments",
+    });
+  }
+};
+// Fixed approveDeliveryUser function:
+
+export const approveDeliveryUser = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        message: "User ID is required",
+      });
+    }
+
+    const deliveryUser = await User.findById(userId);
+
+    if (!deliveryUser) {
+      return res.status(404).json({
+        message: "Delivery user not found",
+      });
+    }
+
+    if (deliveryUser.role !== "delivery") {
+      return res.status(400).json({
+        message: "User is not a delivery person",
+      });
+    }
+
+    // ✅ FIXED: Allow re-approval of previously declined users
+    // Remove the check for already approved users
+    // if (deliveryUser.isApproved) {
+    //   return res.status(400).json({
+    //     message: "Delivery user is already approved"
+    //   });
+    // }
+
+    console.log("🔄 Approving user:", {
+      userId: deliveryUser._id,
+      email: deliveryUser.email,
+      currentlyApproved: deliveryUser.isApproved,
+      hasDeclineReason: !!deliveryUser.attachments?.declineReason,
+    });
+
+    // ✅ FIXED: Always set isApproved to true
+    deliveryUser.isApproved = true;
+
+    // ✅ FIXED: Completely remove decline information and add approval timestamp
+    if (deliveryUser.attachments) {
+      // Remove decline-related fields entirely
+      const { declineReason, declinedAt, status, ...cleanAttachments } =
+        deliveryUser.attachments;
+      deliveryUser.attachments = {
+        ...cleanAttachments,
+        status: "approved",
+        approvedAt: new Date(),
+      };
+    } else {
+      // Create attachments if it doesn't exist
+      deliveryUser.attachments = {
+        status: "approved",
+        approvedAt: new Date(),
+      };
+    }
+
+    await deliveryUser.save();
+
+    console.log("✅ User approved successfully:", {
+      userId: deliveryUser._id,
+      isApproved: deliveryUser.isApproved,
+      attachments: deliveryUser.attachments,
+    });
+
+    res.status(200).json({
+      message: "Delivery user approved successfully",
+      user: {
+        userId: deliveryUser._id,
+        name: deliveryUser.name,
+        email: deliveryUser.email,
+        phoneNumber: deliveryUser.phoneNumber,
+        isApproved: deliveryUser.isApproved,
+        role: deliveryUser.role,
+      },
+    });
+  } catch (err) {
+    console.error("Error approving delivery user:", err);
+    res.status(500).json({
+      message: "Failed to approve delivery user",
+    });
+  }
+};
+export const declineDeliveryUser = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const { reason } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        message: "User ID is required",
+      });
+    }
+
+    const deliveryUser = await User.findById(userId);
+
+    if (!deliveryUser) {
+      return res.status(404).json({
+        message: "Delivery user not found",
+      });
+    }
+
+    if (deliveryUser.role !== "delivery") {
+      return res.status(400).json({
+        message: "User is not a delivery person",
+      });
+    }
+
+    // Set approval status to false and store decline information
+    deliveryUser.isApproved = false;
+
+    // Store decline reason and timestamp
+    deliveryUser.attachments = {
+      ...deliveryUser.attachments,
+      declineReason: reason || "Application declined",
+      declinedAt: new Date(),
+      status: "declined",
+    };
+
+    // Clear any existing refresh tokens to force re-login
+    deliveryUser.refreshToken = "";
+
+    await deliveryUser.save();
+
+    res.status(200).json({
+      message: "Delivery user declined successfully",
+      user: {
+        userId: deliveryUser._id,
+        name: deliveryUser.name,
+        email: deliveryUser.email,
+        phoneNumber: deliveryUser.phoneNumber,
+        isApproved: deliveryUser.isApproved,
+        role: deliveryUser.role,
+        declineReason: reason || "Application declined",
+        declinedAt: new Date(),
+      },
+    });
+  } catch (err) {
+    console.error("Error declining delivery user:", err);
+    res.status(500).json({
+      message: "Failed to decline delivery user",
+    });
+  }
+};
+// Update your getDeliveryStatus function in the backend:
+
+export const getDeliveryStatus = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.role !== "delivery") {
+      return res.status(400).json({ message: "User is not a delivery person" });
+    }
+
+    const declineReason = user.attachments?.declineReason || null;
+    const declinedAt = user.attachments?.declinedAt || null;
+    const approvedAt = user.attachments?.approvedAt || null;
+    const submittedAt = user.attachments?.submittedAt || user.createdAt;
+
+    // ✅ IMPROVED: Better logic for determining status
+    let deliveryStatus = "pending"; // Default to pending
+    let redirectTo = "/waitingforapproval";
+
+    const declineTimestamp = declinedAt ? new Date(declinedAt).getTime() : 0;
+    const approveTimestamp = approvedAt ? new Date(approvedAt).getTime() : 0;
+
+    console.log("🔍 Status check:", {
+      userId,
+      isApproved: user.isApproved,
+      hasDeclineReason: !!declineReason,
+      declineTimestamp,
+      approveTimestamp,
+      mostRecent: declineTimestamp > approveTimestamp ? "declined" : "approved",
+    });
+
+    // Determine status based on most recent action
+    if (declineTimestamp > 0 && approveTimestamp > 0) {
+      // Both actions exist, use the most recent
+      if (declineTimestamp > approveTimestamp) {
+        deliveryStatus = "declined";
+      } else {
+        deliveryStatus = "approved";
+        redirectTo = "/deliverydashboard";
+      }
+    } else if (user.isApproved && approvedAt) {
+      // Only approved
+      deliveryStatus = "approved";
+      redirectTo = "/deliverydashboard";
+    } else if (declineReason && declinedAt) {
+      // Only declined
+      deliveryStatus = "declined";
+    } else {
+      // No actions taken yet - still pending
+      deliveryStatus = "pending";
+    }
+
+    console.log("📤 Sending status:", deliveryStatus);
+
+    res.status(200).json({
+      deliveryStatus,
+      redirectTo,
+      user: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isApproved: deliveryStatus === "approved",
+        phoneNumber: user.phoneNumber,
+      },
+      ...(declineReason &&
+        deliveryStatus === "declined" && {
+          declineReason,
+          declinedAt,
+          canReapply: true,
+        }),
+      ...(approvedAt && deliveryStatus === "approved" && { approvedAt }),
+      statusHistory: {
+        submittedAt,
+        ...(declinedAt && { declinedAt }),
+        ...(approvedAt && { approvedAt }),
+      },
+    });
+  } catch (err) {
+    console.error("Error fetching delivery status:", err);
+    res.status(500).json({
+      message: "Failed to fetch delivery status",
+    });
+  }
+};
+export const checkDeliveryStatusByEmail = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const user = await User.findOne({ email, role: "delivery" });
+
+    if (!user) {
+      return res.status(404).json({ message: "Delivery user not found" });
+    }
+
+    const declineReason = user.attachments?.declineReason || null;
+    const declinedAt = user.attachments?.declinedAt || null;
+    const approvedAt = user.attachments?.approvedAt || null;
+    const submittedAt = user.attachments?.submittedAt || user.createdAt;
+
+    // Use same logic as getDeliveryStatus
+    let deliveryStatus = "pending";
+    let redirectTo = "/waiting-for-approval";
+
+    const declineTimestamp = declinedAt ? new Date(declinedAt).getTime() : 0;
+    const approveTimestamp = approvedAt ? new Date(approvedAt).getTime() : 0;
+
+    if (declineTimestamp > 0 && approveTimestamp > 0) {
+      if (declineTimestamp > approveTimestamp) {
+        deliveryStatus = "declined";
+      } else {
+        deliveryStatus = "approved";
+        redirectTo = "/deliverydashboard";
+      }
+    } else if (user.isApproved && approvedAt) {
+      deliveryStatus = "approved";
+      redirectTo = "/deliverydashboard";
+    } else if (declineReason && declinedAt) {
+      deliveryStatus = "declined";
+    }
+
+    res.status(200).json({
+      deliveryStatus,
+      redirectTo,
+      user: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isApproved: deliveryStatus === "approved",
+        phoneNumber: user.phoneNumber,
+      },
+      ...(declineReason &&
+        deliveryStatus === "declined" && {
+          declineReason,
+          declinedAt,
+          canReapply: true,
+        }),
+      ...(approvedAt && deliveryStatus === "approved" && { approvedAt }),
+      statusHistory: {
+        submittedAt,
+        ...(declinedAt && { declinedAt }),
+        ...(approvedAt && { approvedAt }),
+      },
+    });
+  } catch (err) {
+    console.error("Error checking delivery status by email:", err);
+    res.status(500).json({
+      message: "Failed to check delivery status",
+    });
+  }
 };
