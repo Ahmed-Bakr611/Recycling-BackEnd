@@ -167,7 +167,7 @@ export interface IItem {
   categoryId: mongoose.Types.ObjectId;
 
   image: string;
-  name: string;
+  itemName: string;
   measurement_unit: 1 | 2;
   points: number;
   price: number;
