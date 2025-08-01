@@ -63,10 +63,10 @@ export const updateItemQuantities = async (
 };
 export function mapCartItemsToOrderItems(cartItems: ICartItem[]): IItem[] {
   return cartItems.map((item) => ({
-    _id: new mongoose.Types.ObjectId(item.categoryId),
-    categoryId: new mongoose.Types.ObjectId(item.originalCategoryId),
+    _id: new mongoose.Types.ObjectId(item._id),
+    categoryId: new mongoose.Types.ObjectId(item.categoryId),
     categoryName: item.categoryName,
-    itemName: item.itemName,
+    itemName: item.name,
     image: item.image,
     points: item.points,
     price: item.price,
