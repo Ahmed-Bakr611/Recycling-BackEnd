@@ -206,7 +206,7 @@ export const login = async (req: Request, res: Response) => {
             if (validateQuantity(newQuantity, existingItem.measurement_unit)) {
               existingItem.quantity = newQuantity;
               // Update other fields from session item if needed
-              existingItem.itemName = sessionItem.itemName;
+              existingItem.name = sessionItem.name;
               existingItem.image = sessionItem.image;
               existingItem.points = sessionItem.points;
               existingItem.price = sessionItem.price;
@@ -214,15 +214,16 @@ export const login = async (req: Request, res: Response) => {
             } else {
               // If new quantity is invalid, keep the existing quantity but log a warning
               console.warn(
-                `Cannot merge item ${sessionItem.itemName}: invalid quantity ${newQuantity}`
+                `Cannot merge item ${sessionItem.name}: invalid quantity ${newQuantity}`
               );
             }
           } else {
             // Item doesn't exist, add it to user cart
             userCart.items.push({
+              // _id:sessionItem._id,
               categoryId: sessionItem.categoryId,
               categoryName: sessionItem.categoryName,
-              itemName: sessionItem.itemName,
+              name: sessionItem.name,
               image: sessionItem.image,
               points: sessionItem.points,
               price: sessionItem.price,
