@@ -90,9 +90,7 @@ export const addItemToCart = async (req: Request, res: Response) => {
   }
 
   // Find item by categoryId
-  const existingItem = cart.items.find(
-    (item) => item.categoryId === categoryId
-  );
+  const existingItem = cart.items.find((item) => item._id === _id);
   if (existingItem) {
     const newQuantity = existingItem.quantity + quantity;
     // Validate the new total quantity
