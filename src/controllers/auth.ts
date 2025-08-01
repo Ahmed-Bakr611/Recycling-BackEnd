@@ -82,8 +82,7 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
 
       // Check if user already exists
       user = await User.findOne({ email: payload.email });
-
-      if (!user) {
+  if (!user) {
         user = await User.create({
           name: payload.name || name,
           email: payload.email,
@@ -91,7 +90,14 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
           phoneNumber: phoneNumber?.padStart(11, "0") || "",
           role: role || "customer",
           imgUrl: payload.picture || imgUrl,
-          attachments: attachments || {},
+          // ✅ FIX: Set initial pending status for delivery users
+          attachments: role === "delivery" ? {
+            status: "pending",
+            submittedAt: new Date(),
+            ...attachments
+          } : (attachments || {}),
+          // ✅ FIX: Delivery users start as not approved
+          isApproved: role === "delivery" ? false : true,
         });
       }
     } else {
@@ -104,7 +110,14 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
         phoneNumber: phoneNumber.padStart(11, "0"),
         role: role || "customer",
         imgUrl: imgUrl,
-        attachments: attachments || {},
+        // ✅ FIX: Set initial pending status for delivery users
+        attachments: role === "delivery" ? {
+          status: "pending",
+          submittedAt: new Date(),
+          ...attachments
+        } : (attachments || {}),
+        // ✅ FIX: Delivery users start as not approved
+        isApproved: role === "delivery" ? false : true,
       });
     }
 
@@ -152,12 +165,14 @@ export const login = async (req: Request, res: Response) => {
 
     // Enhanced delivery user status handling
     if (user.role === "delivery") {
-      const declineReason = user.attachments?.declineReason || null;
+ const declineReason = user.attachments?.declineReason || null;
       const declinedAt = user.attachments?.declinedAt || null;
+      const approvedAt = user.attachments?.approvedAt || null;
       const status = user.attachments?.status || "pending";
-
+     const declineTimestamp = declinedAt ? new Date(declinedAt).getTime() : 0;
+      const approveTimestamp = approvedAt ? new Date(approvedAt).getTime() : 0;
       // Case 1: User is declined - redirect to waiting page with decline reason
-      if (!user.isApproved && declineReason) {
+  if (declineReason && (!approvedAt || declineTimestamp > approveTimestamp)) {
         return res.status(200).json({ 
           message: "Delivery application declined",
           deliveryStatus: "declined",
@@ -167,16 +182,20 @@ export const login = async (req: Request, res: Response) => {
             name: user.name,
             email: user.email,
             role: user.role,
-            isApproved: user.isApproved
+            isApproved: false
           },
           declineReason,
           declinedAt,
-          canReapply: true // Allow them to potentially reapply
+          canReapply: true
         });
       }
 
-      // Case 2: User is pending approval - redirect to waiting page
-      if (!user.isApproved) {
+   if (user.isApproved && (!declinedAt || approveTimestamp > declineTimestamp)) {
+       
+        console.log("✅ Approved delivery user, continuing to normal login flow");
+      }
+     else {
+        // Case 3: User is pending approval (initial state or no recent actions)
         return res.status(200).json({ 
           message: "Delivery application pending approval",
           deliveryStatus: "pending",
@@ -186,11 +205,13 @@ export const login = async (req: Request, res: Response) => {
             name: user.name,
             email: user.email,
             role: user.role,
-            isApproved: user.isApproved
+            isApproved: false
           }
         });
       }
+    
 
+      
       // Case 3: User is approved - continue with normal login flow (will redirect to /deliverydashboard)
       // This falls through to the normal login logic below
     }
@@ -527,28 +548,46 @@ export const validateToken = async (req: Request, res: Response) => {
 
 export const getDeliveryAttachments = async (req: Request, res: Response) => {
   try {
-    // Find all users with role 'delivery' who have attachments
     const deliveryUsers = await User.find({
-      role: "delivery",
-      attachments: { $exists: true, $ne: {} }
+      role: "delivery"
     }).select('name email phoneNumber attachments isApproved createdAt');
 
     if (!deliveryUsers || deliveryUsers.length === 0) {
       return res.status(404).json({ 
-        message: "No delivery users with attachments found" 
+        message: "No delivery users found" 
       });
     }
 
-    // Format the response to include user info with their attachments
-    const deliveryAttachments = deliveryUsers.map(user => ({
-      userId: user._id,
-      name: user.name,
-      email: user.email,
-      phoneNumber: user.phoneNumber,
-      isApproved: user.isApproved,
-      createdAt: user.createdAt,
-      attachments: user.attachments
-    }));
+    // ✅ IMPROVED: Better status determination for admin view
+    const deliveryAttachments = deliveryUsers.map(user => {
+      const declineReason = user.attachments?.declineReason || null;
+      const declinedAt = user.attachments?.declinedAt || null;
+      const approvedAt = user.attachments?.approvedAt || null;
+      
+      let currentStatus = "pending"; // Default
+      
+      const declineTimestamp = declinedAt ? new Date(declinedAt).getTime() : 0;
+      const approveTimestamp = approvedAt ? new Date(approvedAt).getTime() : 0;
+      
+      if (declineTimestamp > 0 && approveTimestamp > 0) {
+        currentStatus = declineTimestamp > approveTimestamp ? "declined" : "approved";
+      } else if (user.isApproved && approvedAt) {
+        currentStatus = "approved";
+      } else if (declineReason && declinedAt) {
+        currentStatus = "declined";
+      }
+
+      return {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        isApproved: user.isApproved,
+        currentStatus, // This will show the actual current status
+        createdAt: user.createdAt,
+        attachments: user.attachments
+      };
+    });
 
     res.status(200).json({
       message: "Delivery attachments retrieved successfully",
@@ -563,7 +602,6 @@ export const getDeliveryAttachments = async (req: Request, res: Response) => {
     });
   }
 };
-
 // Fixed approveDeliveryUser function:
 
 export const approveDeliveryUser = async (req: Request, res: Response) => {
@@ -718,7 +756,7 @@ export const declineDeliveryUser = async (req: Request, res: Response) => {
 
 export const getDeliveryStatus = async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.userId; // From auth middleware
+    const userId = req.user?.userId;
     
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -736,43 +774,44 @@ export const getDeliveryStatus = async (req: Request, res: Response) => {
 
     const declineReason = user.attachments?.declineReason || null;
     const declinedAt = user.attachments?.declinedAt || null;
-    const status = user.attachments?.status || "pending";
     const approvedAt = user.attachments?.approvedAt || null;
+    const submittedAt = user.attachments?.submittedAt || user.createdAt;
 
-    let deliveryStatus = "pending";
+    // ✅ IMPROVED: Better logic for determining status
+    let deliveryStatus = "pending"; // Default to pending
     let redirectTo = "/waitingforapproval";
 
-    // ✅ FIXED: Check the most recent action based on timestamps
     const declineTimestamp = declinedAt ? new Date(declinedAt).getTime() : 0;
     const approveTimestamp = approvedAt ? new Date(approvedAt).getTime() : 0;
     
     console.log("🔍 Status check:", {
       userId,
       isApproved: user.isApproved,
+      hasDeclineReason: !!declineReason,
       declineTimestamp,
       approveTimestamp,
       mostRecent: declineTimestamp > approveTimestamp ? "declined" : "approved"
     });
 
-    // If both timestamps exist, use the most recent one
+    // Determine status based on most recent action
     if (declineTimestamp > 0 && approveTimestamp > 0) {
+      // Both actions exist, use the most recent
       if (declineTimestamp > approveTimestamp) {
-        // Most recent action was decline
         deliveryStatus = "declined";
-        redirectTo = "/waitingforapproval";
       } else {
-        // Most recent action was approve
         deliveryStatus = "approved";
         redirectTo = "/deliverydashboard";
       }
-    } else if (user.isApproved && !declineReason) {
-      // Simple case: approved and no decline reason
+    } else if (user.isApproved && approvedAt) {
+      // Only approved
       deliveryStatus = "approved";
       redirectTo = "/deliverydashboard";
-    } else if (declineReason) {
-      // Has decline reason
+    } else if (declineReason && declinedAt) {
+      // Only declined
       deliveryStatus = "declined";
-      redirectTo = "/waitingforapproval";
+    } else {
+      // No actions taken yet - still pending
+      deliveryStatus = "pending";
     }
 
     console.log("📤 Sending status:", deliveryStatus);
@@ -785,17 +824,17 @@ export const getDeliveryStatus = async (req: Request, res: Response) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        isApproved: deliveryStatus === "approved", // Set based on actual status
+        isApproved: deliveryStatus === "approved",
         phoneNumber: user.phoneNumber
       },
-      ...(declineReason && { 
+      ...(declineReason && deliveryStatus === "declined" && { 
         declineReason,
         declinedAt,
         canReapply: true 
       }),
-      ...(approvedAt && { approvedAt }),
+      ...(approvedAt && deliveryStatus === "approved" && { approvedAt }),
       statusHistory: {
-        createdAt: user.createdAt,
+        submittedAt,
         ...(declinedAt && { declinedAt }),
         ...(approvedAt && { approvedAt })
       }
@@ -805,6 +844,77 @@ export const getDeliveryStatus = async (req: Request, res: Response) => {
     console.error("Error fetching delivery status:", err);
     res.status(500).json({ 
       message: "Failed to fetch delivery status" 
+    });
+  }
+};
+export const checkDeliveryStatusByEmail = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const user = await User.findOne({ email, role: "delivery" });
+    
+    if (!user) {
+      return res.status(404).json({ message: "Delivery user not found" });
+    }
+
+    const declineReason = user.attachments?.declineReason || null;
+    const declinedAt = user.attachments?.declinedAt || null;
+    const approvedAt = user.attachments?.approvedAt || null;
+    const submittedAt = user.attachments?.submittedAt || user.createdAt;
+
+    // Use same logic as getDeliveryStatus
+    let deliveryStatus = "pending";
+    let redirectTo = "/waiting-for-approval";
+
+    const declineTimestamp = declinedAt ? new Date(declinedAt).getTime() : 0;
+    const approveTimestamp = approvedAt ? new Date(approvedAt).getTime() : 0;
+    
+    if (declineTimestamp > 0 && approveTimestamp > 0) {
+      if (declineTimestamp > approveTimestamp) {
+        deliveryStatus = "declined";
+      } else {
+        deliveryStatus = "approved";
+        redirectTo = "/deliverydashboard";
+      }
+    } else if (user.isApproved && approvedAt) {
+      deliveryStatus = "approved";
+      redirectTo = "/deliverydashboard";
+    } else if (declineReason && declinedAt) {
+      deliveryStatus = "declined";
+    }
+
+    res.status(200).json({
+      deliveryStatus,
+      redirectTo,
+      user: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isApproved: deliveryStatus === "approved",
+        phoneNumber: user.phoneNumber
+      },
+      ...(declineReason && deliveryStatus === "declined" && { 
+        declineReason,
+        declinedAt,
+        canReapply: true 
+      }),
+      ...(approvedAt && deliveryStatus === "approved" && { approvedAt }),
+      statusHistory: {
+        submittedAt,
+        ...(declinedAt && { declinedAt }),
+        ...(approvedAt && { approvedAt })
+      }
+    });
+
+  } catch (err) {
+    console.error("Error checking delivery status by email:", err);
+    res.status(500).json({ 
+      message: "Failed to check delivery status" 
     });
   }
 };
