@@ -375,7 +375,7 @@ export const completeOrderWithProof = async (req: Request, res: Response) => {
       console.log(
         "Items breakdown:",
         order.items.map((item) => ({
-          name: item.name,
+          name: item.itemName,
           points: item.points,
           quantity: item.quantity,
           totalPoints: item.points * item.quantity,
