@@ -13,6 +13,7 @@ import {
   mapCartItemsToOrderItems,
   updateItemQuantities,
 } from "../utils/stockHelper";
+import { runAggregation } from "../utils/FilterHelper";
 
 // Use interfaces from pickupOrder.ts
 interface IAuthenticatedRequest extends express.Request {
@@ -441,72 +442,65 @@ export const getAllOrdersForAdmin = async (
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
-    const userRole = req.query.userRole as string; // 'customer' or 'buyer'
-    
-    const skip = (page - 1) * limit;
+    const status = req.query.status as string;
+    const date = req.query.date as string;
+    const userRole = req.query.userRole as string;
 
-    // Build the aggregation pipeline
-    const pipeline: any[] = [
-      {
-        $lookup: {
-          from: "users", // MongoDB collection name (usually plural)
-          localField: "user.userId",
-          foreignField: "_id",
-          as: "userDetails"
-        }
-      },
-      {
-        $addFields: {
-          "user.role": {
-            $arrayElemAt: ["$userDetails.role", 0]
-          }
-        }
-      }
-    ];
+    const filters: any = {};
 
-    // Add role filter if specified
-    if (userRole && (userRole === 'customer' || userRole === 'buyer')) {
-      pipeline.push({
-        $match: {
-          "user.role": userRole
-        }
-      });
+    if (userRole === "customer" || userRole === "buyer") {
+      filters["user.role"] = userRole;
     }
 
-    // Add sorting, pagination, and cleanup
-    pipeline.push(
+    if (status) {
+      filters.status = { $in: status.split(",").map((s) => s.trim()) };
+    }
+
+    if (date) {
+      const start = new Date(date);
+      const end = new Date(date);
+      end.setDate(end.getDate() + 1);
+      filters.createdAt = { $gte: start, $lt: end };
+    }
+
+    const lookups = [
       {
-        $project: {
-          userDetails: 0 // Remove the userDetails array to clean up the response
-        }
+        $lookup: {
+          from: "users",
+          localField: "user.userId",
+          foreignField: "_id",
+          as: "userDetails",
+        },
       },
-      {
-        $sort: { createdAt: -1 }
-      }
-    );
+    ];
 
-    // Get total count for pagination
-    const countPipeline = [...pipeline];
-    countPipeline.push({ $count: "total" });
-    
-    const totalResult = await Order.aggregate(countPipeline);
-    const totalOrders = totalResult[0]?.total || 0;
+    const addFields = {
+      "user.role": { $arrayElemAt: ["$userDetails.role", 0] },
+      "user.name": { $arrayElemAt: ["$userDetails.name", 0] },
+      "user.email": { $arrayElemAt: ["$userDetails.email", 0] },
+    };
 
-    // Add pagination to main pipeline
-    pipeline.push(
-      { $skip: skip },
-      { $limit: limit }
-    );
+    const project = {
+      userDetails: 0 as 0,
+    };
 
-    const ordersWithUserRoles = await Order.aggregate(pipeline);
+    const result = await runAggregation(Order, {
+      filters,
+      lookups,
+      addFields,
+      project,
+      sort: { createdAt: -1 as -1 },
+      page,
+      limit,
+    });
 
     res.json({
       success: true,
-      count: ordersWithUserRoles.length,
-      totalOrders,
-      totalPages: Math.ceil(totalOrders / limit),
-      currentPage: page,
-      data: ordersWithUserRoles,
+      count: result.data.length,
+      totalOrders: result.total,
+      totalPages: result.totalPages,
+      currentPage: result.currentPage,
+      data: result.data,
     });
   } catch (error) {
     console.error("Admin - Error fetching all orders:", error);
@@ -802,46 +796,48 @@ export const getOrderAnalytics = async (
     const getCurrentWeekBounds = () => {
       const now = new Date();
       // Convert to Egypt timezone
-      const egyptNow = new Date(now.toLocaleString("en-US", {timeZone: "Africa/Cairo"}));
-      
+      const egyptNow = new Date(
+        now.toLocaleString("en-US", { timeZone: "Africa/Cairo" })
+      );
+
       // Get current day of week (0 = Sunday, 1 = Monday, etc.)
       const currentDay = egyptNow.getDay();
-      
+
       // Calculate days since Monday (Monday = 0, Tuesday = 1, etc.)
       const daysSinceMonday = currentDay === 0 ? 6 : currentDay - 1;
-      
+
       // Get Monday of current week
       const startOfWeek = new Date(egyptNow);
       startOfWeek.setDate(egyptNow.getDate() - daysSinceMonday);
       startOfWeek.setHours(0, 0, 0, 0);
-      
+
       // Get Sunday of current week (end of week)
       const endOfWeek = new Date(startOfWeek);
       endOfWeek.setDate(startOfWeek.getDate() + 6);
       endOfWeek.setHours(23, 59, 59, 999);
-      
+
       // Convert back to UTC for MongoDB query
       const startOfWeekUTC = new Date(startOfWeek.toISOString());
       const endOfWeekUTC = new Date(endOfWeek.toISOString());
-      
-      console.log('Current week bounds:');
-      console.log('Egypt Now:', egyptNow);
-      console.log('Start of week (Egypt):', startOfWeek);
-      console.log('End of week (Egypt):', endOfWeek);
-      console.log('Start of week (UTC):', startOfWeekUTC);
-      console.log('End of week (UTC):', endOfWeekUTC);
-      
+
+      console.log("Current week bounds:");
+      console.log("Egypt Now:", egyptNow);
+      console.log("Start of week (Egypt):", startOfWeek);
+      console.log("End of week (Egypt):", endOfWeek);
+      console.log("Start of week (UTC):", startOfWeekUTC);
+      console.log("End of week (UTC):", endOfWeekUTC);
+
       return { startOfWeekUTC, endOfWeekUTC };
     };
-    
+
     const { startOfWeekUTC, endOfWeekUTC } = getCurrentWeekBounds();
-    
+
     // Current week filter
     const currentWeekFilter = {
       createdAt: {
         $gte: startOfWeekUTC,
-        $lte: endOfWeekUTC
-      }
+        $lte: endOfWeekUTC,
+      },
     };
 
     // Total orders (all time for overall stats)
@@ -871,7 +867,7 @@ export const getOrderAnalytics = async (
     // Daily orders for CURRENT WEEK ONLY
     const dailyOrdersRaw = await Order.aggregate([
       {
-        $match: currentWeekFilter // Only current week orders
+        $match: currentWeekFilter, // Only current week orders
       },
       {
         $group: {
@@ -885,11 +881,11 @@ export const getOrderAnalytics = async (
       },
     ]);
 
-    console.log('Daily orders raw (current week only):', dailyOrdersRaw);
+    console.log("Daily orders raw (current week only):", dailyOrdersRaw);
 
     // Initialize array for 7 days (Monday = index 0, Sunday = index 6)
     const dailyOrders = Array(7).fill(0);
-    
+
     for (const item of dailyOrdersRaw) {
       // MongoDB dayOfWeek: 1 = Sunday, 2 = Monday, ..., 7 = Saturday
       // We want: Monday = 0, Tuesday = 1, ..., Sunday = 6
@@ -898,10 +894,12 @@ export const getOrderAnalytics = async (
       dailyOrders[arrayIndex] = item.count;
     }
 
-    console.log('Processed daily orders array:', dailyOrders);
+    console.log("Processed daily orders array:", dailyOrders);
 
     // Also get current week's orders for additional debugging
-    const currentWeekOrdersCount = await Order.countDocuments(currentWeekFilter);
+    const currentWeekOrdersCount = await Order.countDocuments(
+      currentWeekFilter
+    );
     console.log(`Total orders in current week: ${currentWeekOrdersCount}`);
 
     res.json({
@@ -928,11 +926,11 @@ export const getOrderAnalytics = async (
         debug: {
           currentWeekBounds: {
             start: startOfWeekUTC,
-            end: endOfWeekUTC
+            end: endOfWeekUTC,
           },
           currentWeekOrdersCount,
-          dailyOrdersRaw
-        }
+          dailyOrdersRaw,
+        },
       },
     });
   } catch (error) {
@@ -958,9 +956,9 @@ export const getTopMaterialsRecycled = async (
           "items.quantity": { $toDouble: "$items.quantity" },
           "items.points": { $toDouble: "$items.points" },
           // Normalize item names to lowercase for grouping
-          "items.normalizedItemName": { $toLower: "$items.itemName" }
-        }
-      }
+          "items.normalizedItemName": { $toLower: "$items.itemName" },
+        },
+      },
     ];
 
     if (category) {
@@ -972,7 +970,7 @@ export const getTopMaterialsRecycled = async (
         $group: {
           _id: {
             // Group by normalized (lowercase) name to combine case variations
-            itemName: "$items.normalizedItemName"
+            itemName: "$items.normalizedItemName",
           },
           totalQuantity: { $sum: "$items.quantity" },
           totalPoints: { $sum: "$items.points" },
@@ -982,14 +980,17 @@ export const getTopMaterialsRecycled = async (
           categoryName: { $first: "$items.categoryName" },
           documentCount: { $sum: 1 },
           // Debug: show all the different case variations found
-          nameVariations: { $addToSet: "$items.itemName" }
+          nameVariations: { $addToSet: "$items.itemName" },
         },
       },
       { $sort: { totalQuantity: -1 } },
       { $limit: 4 }
     );
 
-    console.log("Case-insensitive Pipeline:", JSON.stringify(pipeline, null, 2));
+    console.log(
+      "Case-insensitive Pipeline:",
+      JSON.stringify(pipeline, null, 2)
+    );
 
     const materials = await Order.aggregate(pipeline);
 
@@ -1001,12 +1002,12 @@ export const getTopMaterialsRecycled = async (
       console.log(`Total Quantity: ${material.totalQuantity}`);
       console.log(`Document Count: ${material.documentCount}`);
       console.log(`Name Variations Found:`, material.nameVariations);
-      
-      if (material._id.itemName === 'cooking pan') {
+
+      if (material._id.itemName === "cooking pan") {
         console.log(`🍳 COOKING PAN CONSOLIDATED:`);
         console.log(`- Combined total: ${material.totalQuantity}`);
         console.log(`- From ${material.documentCount} entries`);
-        console.log(`- Variations: ${material.nameVariations.join(', ')}`);
+        console.log(`- Variations: ${material.nameVariations.join(", ")}`);
       }
     });
 
@@ -1019,9 +1020,9 @@ export const getTopMaterialsRecycled = async (
           _id: null,
           totalQuantity: { $sum: { $toDouble: "$items.quantity" } },
           totalDocs: { $sum: 1 },
-          variations: { $addToSet: "$items.itemName" }
-        }
-      }
+          variations: { $addToSet: "$items.itemName" },
+        },
+      },
     ]);
 
     console.log("\n🔍 COOKING PAN VERIFICATION:", cookingPanTotal);
@@ -1031,8 +1032,8 @@ export const getTopMaterialsRecycled = async (
       data: materials,
       debug: {
         cookingPanTotal,
-        timestamp: new Date().toISOString()
-      }
+        timestamp: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error("Error getting top materials recycled:", error);
