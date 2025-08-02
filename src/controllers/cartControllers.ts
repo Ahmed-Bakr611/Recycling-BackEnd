@@ -166,7 +166,7 @@ export const removeCartItem = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
-    const id = req.params.id?.trim();
+    const id = req.params._id?.trim();
 
     if (!id) {
       return res.status(400).json({ message: "id is required" });
