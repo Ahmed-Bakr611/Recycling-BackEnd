@@ -63,15 +63,15 @@ export const addItemToCart = async (req: Request, res: Response) => {
   const userId = req.user?.userId;
   const sessionId = req.sessionId;
   const {
+    _id,
     categoryId,
     categoryName,
-    itemName,
+    name,
     image,
     points,
     price,
     measurement_unit,
     quantity,
-    originalCategoryId,
   } = req.body;
 
   if (!userId && !sessionId) {
@@ -90,9 +90,7 @@ export const addItemToCart = async (req: Request, res: Response) => {
   }
 
   // Find item by categoryId
-  const existingItem = cart.items.find(
-    (item) => item.categoryId === categoryId
-  );
+  const existingItem = cart.items.find((item) => item._id === _id);
   if (existingItem) {
     const newQuantity = existingItem.quantity + quantity;
     // Validate the new total quantity
@@ -105,22 +103,22 @@ export const addItemToCart = async (req: Request, res: Response) => {
     }
     existingItem.quantity = newQuantity;
     // Optionally update other fields if needed
-    if (itemName) existingItem.itemName = itemName;
+    if (name) existingItem.name = name;
     if (image) existingItem.image = image;
     if (points) existingItem.points = points;
     if (price) existingItem.price = price;
     if (measurement_unit) existingItem.measurement_unit = measurement_unit;
   } else {
     cart.items.push({
+      _id,
       categoryId,
       categoryName,
-      itemName,
+      name,
       image,
       points,
       price,
       measurement_unit,
       quantity,
-      originalCategoryId,
     });
   }
 
@@ -132,12 +130,12 @@ export const updateCartItem = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
-    const { categoryId, quantity } = req.body;
+    const { _id, quantity } = req.body;
 
-    if (!categoryId || typeof quantity !== "number") {
+    if (!_id || typeof quantity !== "number") {
       return res
         .status(400)
-        .json({ message: "Valid categoryId and quantity are required" });
+        .json({ message: "Valid _id and quantity are required" });
     }
 
     let cart = await Cart.findOne(userId ? { userId } : { sessionId });
@@ -146,7 +144,7 @@ export const updateCartItem = async (req: Request, res: Response) => {
       await cart.save();
     }
 
-    const item = cart.items.find((i) => i.categoryId === categoryId);
+    const item = cart.items.find((i) => i._id === _id);
     if (!item)
       return res.status(404).json({ message: "Item not found in cart" });
 
@@ -168,10 +166,10 @@ export const removeCartItem = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
-    const categoryId = req.params.categoryId?.trim();
+    const id = req.params._id?.trim();
 
-    if (!categoryId) {
-      return res.status(400).json({ message: "categoryId is required" });
+    if (!id) {
+      return res.status(400).json({ message: "id is required" });
     }
 
     let cart = await Cart.findOne(userId ? { userId } : { sessionId });
@@ -179,9 +177,7 @@ export const removeCartItem = async (req: Request, res: Response) => {
       cart = new Cart({ ...(userId ? { userId } : { sessionId }), items: [] });
       await cart.save();
     }
-    cart.items = cart.items.filter(
-      (item) => item.categoryId.toString().trim() !== categoryId
-    );
+    cart.items = cart.items.filter((item) => item._id.toString().trim() !== id);
     await cart.save();
     return res.status(200).json(cart);
   } catch (error) {
