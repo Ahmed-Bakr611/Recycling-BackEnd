@@ -208,3 +208,38 @@ export const clearCart = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Failed to clear cart", error });
   }
 };
+
+export const saveCart = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const sessionId = req.sessionId;
+    const items = req.body.items;
+
+    if (!userId && !sessionId) {
+      return res.status(400).json({ message: "Missing user or session" });
+    }
+
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ message: "Invalid cart items" });
+    }
+
+    // Find or create cart
+    let cart = await Cart.findOne(userId ? { userId } : { sessionId });
+
+    if (!cart) {
+      cart = new Cart({
+        ...(userId ? { userId } : { sessionId }),
+        items: [],
+      });
+    }
+
+    // Replace entire cart with incoming items
+    cart.items = items;
+    await cart.save();
+
+    return res.status(200).json({ message: "Cart saved successfully" });
+  } catch (error) {
+    console.error("Error saving cart:", error);
+    return res.status(500).json({ message: "Failed to save cart", error });
+  }
+};

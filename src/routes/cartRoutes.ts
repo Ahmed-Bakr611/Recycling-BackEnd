@@ -5,6 +5,7 @@ import {
   updateCartItem,
   removeCartItem,
   clearCart,
+  saveCart,
 } from "../controllers/cartControllers";
 import { optionalAuthenticate } from "../middlewares/authenticate";
 
@@ -14,4 +15,5 @@ export default (router: express.Router) => {
   router.put("/cart", optionalAuthenticate, updateCartItem);
   router.delete("/cart/:_id", optionalAuthenticate, removeCartItem);
   router.delete("/cart/", optionalAuthenticate, clearCart);
+  router.post("/cart/save", optionalAuthenticate, saveCart);
 };
