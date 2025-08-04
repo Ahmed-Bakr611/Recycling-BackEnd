@@ -12,7 +12,6 @@ import { sessionMiddleware } from "./middlewares/sessionMiddleware";
 const app = express();
 
 app.use((req, _res, next) => {
-  console.log(`🔥 Request received: ${req.method} ${req.originalUrl}`);
   next();
 });
 
