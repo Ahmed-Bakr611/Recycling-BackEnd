@@ -90,7 +90,6 @@ interface PaymentsQueryParams {
 
 export const getAllPayments = async (req: Request, res: Response) => {
   try {
-    console.log('🔥 Request received:', req.method, req.originalUrl);
     console.log('Query params:', req.query);
 
     const {
