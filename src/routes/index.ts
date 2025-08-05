@@ -12,6 +12,7 @@ import session from "./sessionRoutes";
 import delivery from "./delivery";
 import subscribe from "../routes/subscribe";
 import payment from "./payment";
+import contactus from './contact-us'
 const router = express.Router();
 
 export default (): express.Router => {
@@ -28,6 +29,7 @@ export default (): express.Router => {
   delivery(router);
   courierRoutes(router);
   subscribe(router);
+  contactus(router);
   payment(router);
   router.use("/notifications", notificationRoutes);
   return router;

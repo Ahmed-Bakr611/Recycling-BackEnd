@@ -9,6 +9,11 @@ import {
   validateToken,
   verifyOtpSentToUser,
   RegisterNewUser,
+  getDeliveryAttachments,
+  declineDeliveryUser,
+  approveDeliveryUser,
+  getDeliveryStatus,
+  checkDeliveryStatusByEmail,
 } from "../controllers/auth";
 import { refreshAccessToken } from "../controllers/token";
 import { authenticate } from "../middlewares/authenticate";
@@ -27,8 +32,12 @@ export default (router: express.Router) => {
   router.post("/auth/logout", logout);
   router.get("/auth/validate", authenticate, validateToken);
   router.post("/auth/provider/google", googleCheckFirstTime);
-
+router.get('/delivery-attachments', getDeliveryAttachments);
+router.patch("/delivery/approve/:userId", approveDeliveryUser);
+router.patch("/delivery/decline/:userId", declineDeliveryUser);
+router.get("/delivery-status", authenticate, getDeliveryStatus);
   // router.post("/auth/refreshToken", refreshToken);
+router.post('/auth/check-delivery-status', checkDeliveryStatusByEmail);
 
   return router;
 };

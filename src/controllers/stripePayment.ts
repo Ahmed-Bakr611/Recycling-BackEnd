@@ -90,7 +90,6 @@ interface PaymentsQueryParams {
 
 export const getAllPayments = async (req: Request, res: Response) => {
   try {
-    console.log('🔥 Request received:', req.method, req.originalUrl);
     console.log('Query params:', req.query);
 
     const {
@@ -567,7 +566,7 @@ export const refundPayment = async (req: Request, res: Response) => {
     const { amount, reason } = req.body;
 
     console.log('=== BACKEND REFUND DEBUG ===');
-    console.log('Received ID:', id);
+    console.log('Received ID:', id);  
     console.log('ID type:', typeof id);
     console.log('ID length:', id.length);
     console.log('ID starts with:', id.substring(0, 3));
