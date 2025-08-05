@@ -17,7 +17,7 @@ app.use((req, _res, next) => {
 
 
 
-const allowedOrigins = ["http://localhost:3000", "http://www.localhost:3000"];
+const allowedOrigins = ["http://localhost:3000","http://localhost:8081","http://localhost:8082", "http://www.localhost:3000"];
 
 app.use(
   cors({

@@ -245,8 +245,9 @@ export const login = async (req: Request, res: Response) => {
         );
       } else {
         for (const sessionItem of sessionCart.items) {
+          // Check if this item already exists in user cart (by _id)
           const existingItemIndex = userCart.items.findIndex(
-            (item) => item.categoryId === sessionItem.categoryId
+            (item) => String(item._id) === String(sessionItem._id)
           );
 
           if (existingItemIndex !== -1) {
@@ -283,7 +284,7 @@ export const login = async (req: Request, res: Response) => {
             }
           } else {
             userCart.items.push({
-              // _id:sessionItem._id,
+              _id: sessionItem._id,
               categoryId: sessionItem.categoryId,
               categoryName: sessionItem.categoryName,
               name: sessionItem.name,
