@@ -1,15 +1,12 @@
 import { Request, Response } from "express";
 import Cart from "../models/cart";
 
-// Helper function to validate quantity based on measurement unit
 const validateQuantity = (
   quantity: number,
   measurement_unit: number
 ): { isValid: boolean; message?: string } => {
   if (measurement_unit === 1) {
-    // KG items
-    // Allow 0.25 increments: 0.25, 0.5, 0.75, 1.0, 1.25, etc.
-    // Use Math.round to handle floating point precision issues
+
     const multiplied = Math.round(quantity * 4);
     const isValid =
       multiplied >= 1 && Math.abs(quantity * 4 - multiplied) < 0.0001;
@@ -35,6 +32,14 @@ const validateQuantity = (
 export const getCart = async (req: Request, res: Response) => {
   const userId = req.user?.userId;
   const sessionId = req.sessionId;
+  // DEBUG: Log the request details
+  console.log("=== GET CART DEBUG ===");
+  console.log("User ID:", userId);
+  console.log("Session ID:", sessionId);
+  console.log("Request headers:", {
+    authorization: req.headers.authorization,
+    cookie: req.headers.cookie
+  });
 
   if (!userId && !sessionId) {
     return res.status(400).json({ message: "Missing user or session" });
@@ -208,12 +213,23 @@ export const clearCart = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Failed to clear cart", error });
   }
 };
-
 export const saveCart = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
-    const items = req.body.items;
+    const { items } = req.body;
+
+    // DEBUG: Log the request details
+    console.log("=== SAVE CART DEBUG ===");
+    console.log("User ID:", userId);
+    console.log("Session ID:", sessionId);
+    console.log("Items count:", items?.length);
+    console.log("Request headers:", {
+      authorization: req.headers.authorization,
+      cookie: req.headers.cookie,
+      'user-agent': req.headers['user-agent']
+    });
+    console.log("========================");
 
     if (!userId && !sessionId) {
       return res.status(400).json({ message: "Missing user or session" });
@@ -223,21 +239,62 @@ export const saveCart = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid cart items" });
     }
 
-    // Find or create cart
+    // Validate all items before saving
+    const validationErrors: string[] = [];
+    for (const item of items) {
+      if (!item._id || !item.measurement_unit || typeof item.quantity !== "number") {
+        validationErrors.push(`Invalid item structure: ${JSON.stringify(item)}`);
+        continue;
+      }
+
+      const validation = validateQuantity(item.quantity, item.measurement_unit);
+      if (!validation.isValid) {
+        validationErrors.push(`${item.name || item._id}: ${validation.message}`);
+      }
+    }
+
+    if (validationErrors.length > 0) {
+      return res.status(400).json({ 
+        message: "Validation failed", 
+        errors: validationErrors 
+      });
+    }
+
+    // Find cart using same logic as getCart
     let cart = await Cart.findOne(userId ? { userId } : { sessionId });
 
+    // DEBUG: Log the cart search
+    console.log("Found existing cart:", cart ? cart._id : "None");
+    if (cart) {
+      console.log("Cart belongs to:", cart.userId ? `User ${cart.userId}` : `Session ${cart.sessionId}`);
+      console.log("Current items in cart:", cart.items.length);
+    }
+
     if (!cart) {
+      // Create new cart with proper userId or sessionId
       cart = new Cart({
         ...(userId ? { userId } : { sessionId }),
         items: [],
       });
+      console.log("Created new cart for:", userId ? `User ${userId}` : `Session ${sessionId}`);
     }
 
     // Replace entire cart with incoming items
     cart.items = items;
     await cart.save();
 
-    return res.status(200).json({ message: "Cart saved successfully" });
+    console.log(`Cart saved successfully - ${cart.items.length} items saved`);
+    
+    return res.status(200).json({ 
+      message: "Cart saved successfully", 
+      debug: {
+        userId,
+        sessionId,
+        cartId: cart._id,
+        itemCount: cart.items.length
+      }
+    });
+    
   } catch (error) {
     console.error("Error saving cart:", error);
     return res.status(500).json({ message: "Failed to save cart", error });
