@@ -35,7 +35,9 @@ const validateQuantity = (
 export const getCart = async (req: Request, res: Response) => {
   const userId = req.user?.userId;
   const sessionId = req.sessionId;
-
+  console.log("INSIDE Loading CART ..............");
+  console.log(`userID = ${userId} , sessionId = ${sessionId}`);
+  console.log("---------------------------------------------------");
   if (!userId && !sessionId) {
     return res.status(400).json({ message: "Missing user or session" });
   }
@@ -214,7 +216,9 @@ export const saveCart = async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
     const items = req.body.items;
-
+    console.log("INSIDE SAVE CART");
+    console.log(`userID = ${userId} , sessionId = ${sessionId}`);
+    console.log("---------------------------------------------------");
     if (!userId && !sessionId) {
       return res.status(400).json({ message: "Missing user or session" });
     }
