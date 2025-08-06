@@ -14,13 +14,13 @@ import {
 } from "../services/notificationService";
 import { updateItemQuantities } from "../utils/stockHelper";
 
-// Define valid order statuses
-type OrderStatus = "pending" | "assigntocourier" | "completed" | "cancelled";
+// Updated to include 'collected' status
+type OrderStatus = "pending" | "assigntocourier" | "collected" | "completed" | "cancelled";
 
 interface StatusHistoryEntry {
   status: OrderStatus;
   timestamp: Date;
-  updatedBy?: string; // Admin/system who made the change
+  updatedBy?: string;
 }
 
 export const assignCourierToOrder = async (req: Request, res: Response) => {
@@ -33,14 +33,12 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
     console.log("Courier ID:", courierId);
     console.log("New Status:", status);
 
-    // 1. Validate required fields
     if (!courierId || !status) {
       return res.status(400).json({
         message: "Courier ID and status are required",
       });
     }
 
-    // 2. Validate order exists
     const order = await Order.findById(orderId);
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
@@ -48,7 +46,6 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
 
     console.log("Current Order Status:", order.status);
 
-    // 3. Validate courier exists and has delivery role
     const courier = await User.findById(courierId);
     if (!courier || courier.role !== "delivery") {
       return res.status(400).json({
@@ -58,13 +55,34 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
 
     console.log("✅ Courier validated:", courier.name);
 
-    // 4. Validate status transition
-    const validTransitions: Record<OrderStatus, OrderStatus[]> = {
-      pending: ["assigntocourier", "cancelled"],
-      assigntocourier: ["completed", "cancelled"],
-      completed: [],
-      cancelled: [],
+    // Updated status transitions to include 'collected' and handle buyer logic
+    const getValidTransitions = (userRole: string): Record<OrderStatus, OrderStatus[]> => {
+      if (userRole === "buyer") {
+        // Buyers skip collected status - can complete directly from assigntocourier
+        return {
+          pending: ["assigntocourier", "cancelled"],
+          assigntocourier: ["completed", "cancelled"], // Buyers can complete directly
+          collected: ["completed", "cancelled"], // Should not occur for buyers but handle it
+          completed: [],
+          cancelled: [],
+        };
+      } else {
+        // Customers use collected status flow
+        return {
+          pending: ["assigntocourier", "cancelled"],
+          assigntocourier: ["collected", "cancelled"], // Must go to collected first
+          collected: ["completed", "cancelled"], // Only admins can complete from collected
+          completed: [],
+          cancelled: [],
+        };
+      }
     };
+
+    // Get user role to determine valid transitions
+    const user = await User.findById(order.user.userId);
+    const userRole = user?.role || "customer";
+    
+    const validTransitions = getValidTransitions(userRole);
 
     const currentStatus = order.status.toLowerCase() as OrderStatus;
     const newStatus = status.toLowerCase() as OrderStatus;
@@ -75,7 +93,6 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
       });
     }
 
-    // 5. Update order with proper ObjectId conversion
     order.courier = new mongoose.Types.ObjectId(courierId);
     order.status = newStatus;
 
@@ -84,7 +101,6 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
       courier: order.courier,
     });
 
-    // Initialize statusHistory if it doesn't exist and add current status
     if (!order.statusHistory || order.statusHistory.length === 0) {
       order.statusHistory = [
         {
@@ -95,14 +111,12 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
       ];
     }
 
-    // Add new status to history
     order.statusHistory.push({
       status: newStatus,
       timestamp: new Date(),
       updatedBy: req.user?.userId || "admin",
     });
 
-    // Save the order
     const savedOrder = await order.save();
 
     console.log("After Save → Saved Order:", {
@@ -110,7 +124,6 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
       courier: savedOrder.courier,
     });
 
-    // Create notification if order is assigned to courier
     if (newStatus === "assigntocourier") {
       try {
         const userId = order.user.userId.toString();
@@ -120,16 +133,14 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
         );
       } catch (notificationError) {
         console.error("❌ Error creating notification:", notificationError);
-        // Don't fail the request if notification fails
       }
     }
 
-    // 6. Try to populate courier info for response (with error handling)
     let populatedOrder = savedOrder;
     try {
       populatedOrder = await Order.findById(savedOrder._id)
-        .populate("courier", "name phoneNumber email imgUrl") // User schema fields
-        .populate("user.userId", "name phoneNumber email imgUrl"); // User schema fields
+        .populate("courier", "name phoneNumber email imgUrl")
+        .populate("user.userId", "name phoneNumber email imgUrl");
 
       console.log("✅ Order populated successfully");
     } catch (populateError) {
@@ -137,7 +148,6 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
         "⚠️ Population failed, using unpopulated order:",
         populateError.message
       );
-      // Continue without population
     }
 
     res.status(200).json({
@@ -165,8 +175,8 @@ const cloudinaryStorage = new CloudinaryStorage({
   cloudinary,
   params: async (req, file) => {
     return {
-      folder: "delivery-proofs", // ✅ This goes inside the async return
-      format: "png", // or 'jpeg' / 'jpg' based on file
+      folder: "delivery-proofs",
+      format: "png",
       public_id: `delivery-proof-${Date.now()}-${Math.round(
         Math.random() * 1e9
       )}`,
@@ -175,7 +185,6 @@ const cloudinaryStorage = new CloudinaryStorage({
 });
 
 const fileFilter = (req: any, file: any, cb: any) => {
-  // Accept only image files
   if (file.mimetype.startsWith("image/")) {
     cb(null, true);
   } else {
@@ -200,7 +209,6 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    // Debug: Check total orders with this courier (any status)
     const totalOrdersWithCourier = await Order.countDocuments({
       courier: courierId,
     });
@@ -209,25 +217,22 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
       totalOrdersWithCourier
     );
 
-    // Debug: Check orders with specific status
     const ordersWithStatus = await Order.countDocuments({
       courier: courierId,
       status: "assigntocourier",
     });
     console.log("📋 Orders with assigntocourier status:", ordersWithStatus);
 
-    // Get the actual orders
     const orders = await Order.find({
       courier: courierId,
       status: "assigntocourier",
     })
-      .populate("user.userId", "name phoneNumber email imgUrl role") // Added 'role' field
-      .populate("courier", "name phoneNumber email imgUrl role") // Added 'role' field for courier too
+      .populate("user.userId", "name phoneNumber email imgUrl role")
+      .populate("courier", "name phoneNumber email imgUrl role")
       .sort({ createdAt: -1 });
 
     console.log("✅ Found orders for courier:", orders.length);
 
-    // Debug: Log first order details if exists
     if (orders.length > 0) {
       console.log("First order details:", {
         id: orders[0]._id,
@@ -236,38 +241,30 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
       });
     }
 
-    // Clean up the response to avoid duplication and match Order schema structure
     const cleanedOrders = orders.map((order) => {
       const orderObj = order.toObject();
 
-      // If user.userId is populated, update the user object with populated data
       if (orderObj.user?.userId && typeof orderObj.user.userId === "object") {
-        const populatedUser = orderObj.user.userId as any; // Type assertion for populated fields
+        const populatedUser = orderObj.user.userId as any;
 
-        // Debug: Log the populated user data
         console.log("Populated user data:", populatedUser);
         console.log("User imgUrl:", populatedUser.imgUrl);
-        console.log("User role:", populatedUser.role); // Debug log for role
+        console.log("User role:", populatedUser.role);
 
-        // Create a clean user object with only the fields we need (no nested userId)
         orderObj.user = {
-          userId: populatedUser._id, // Use the _id as a string, not the full object
+          userId: populatedUser._id,
           phoneNumber: populatedUser.phoneNumber || orderObj.user.phoneNumber,
-          userName: populatedUser.name || orderObj.user.userName, // Map 'name' to 'userName'
+          userName: populatedUser.name || orderObj.user.userName,
           email: populatedUser.email || orderObj.user.email,
-          image: populatedUser.imgUrl || orderObj.user.image || null, // Map 'imgUrl' to 'image'
-          role: populatedUser.role || orderObj.user.role || null, // Include user role
+          image: populatedUser.imgUrl || orderObj.user.image || null,
+          role: populatedUser.role || orderObj.user.role || null,
         };
 
-        // Debug: Log the final user object
         console.log("Final user object:", orderObj.user);
       }
 
-      // Also handle courier role if needed (since we're populating it too)
       if (orderObj.courier && typeof orderObj.courier === "object") {
         const populatedCourier = orderObj.courier as any;
-        
-        // If you want to include courier role in the response, you can add it here
         console.log("Courier role:", populatedCourier.role);
       }
 
@@ -283,42 +280,36 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
     });
   }
 };
-export const completeOrderWithProof = async (req: Request, res: Response) => {
+
+// UPDATED: This function now handles quantity updates and estimated weight for customers
+export const markOrderAsCollected = async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
-    const { notes } = req.body;
+    const { notes, updatedQuantities, quantityNotes } = req.body;
     const proofPhoto = req.file as Express.Multer.File;
 
-    console.log("📸 Completing order with photo proof...");
+    console.log("📦 Processing order completion/collection...");
     console.log("Order ID:", orderId);
     console.log("Courier ID:", req.user?.userId);
     console.log("Photo:", proofPhoto?.filename);
+    console.log("Updated Quantities:", updatedQuantities);
+    console.log("Quantity Notes:", quantityNotes);
 
     if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
       return res.status(400).json({ message: "Invalid or missing order ID" });
     }
 
-    // 1. Validate photo is provided
-    if (!proofPhoto) {
-      return res.status(400).json({
-        message: "Delivery proof photo is required",
-      });
-    }
-
-    // 2. Find and validate order
     const order = await Order.findById(orderId);
     if (!order) {
-      // Clean up uploaded file if order not found
-      if (proofPhoto.path && fs.existsSync(proofPhoto.path)) {
+      if (proofPhoto?.path && fs.existsSync(proofPhoto.path)) {
         fs.unlinkSync(proofPhoto.path);
       }
       return res.status(404).json({ message: "Order not found" });
     }
 
-    // 3. Validate courier is assigned to this order
+    // Validate courier is assigned to this order
     if (!order.courier || order.courier.toString() !== req.user?.userId) {
-      // Clean up uploaded file
-      if (proofPhoto.path && fs.existsSync(proofPhoto.path)) {
+      if (proofPhoto?.path && fs.existsSync(proofPhoto.path)) {
         fs.unlinkSync(proofPhoto.path);
       }
       return res.status(403).json({
@@ -326,135 +317,180 @@ export const completeOrderWithProof = async (req: Request, res: Response) => {
       });
     }
 
-    // 4. Validate current status
+    // Validate current status
     if (order.status.toLowerCase() !== "assigntocourier") {
-      // Clean up uploaded file
-      if (proofPhoto.path && fs.existsSync(proofPhoto.path)) {
+      if (proofPhoto?.path && fs.existsSync(proofPhoto.path)) {
         fs.unlinkSync(proofPhoto.path);
       }
       return res.status(400).json({
-        message: "Order cannot be completed from current status",
+        message: "Order cannot be processed from current status",
       });
     }
 
-    // 5. Update order status and add delivery proof
-    order.status = "completed";
-    order.deliveryProof = {
-      photoPath: proofPhoto.filename,
-      photoUrl: proofPhoto.path,
-      uploadedAt: new Date(),
-      notes: notes || "",
-      completedBy: new mongoose.Types.ObjectId(req.user?.userId),
-    };
+    // Get user role to determine flow
+    const user = await User.findById(order.user.userId);
+    const userRole = user?.role || "customer";
 
-    // 6. Add to status history
+    console.log(`📋 Processing ${userRole} order`);
+
+    // Handle quantity updates for customer orders
+    if (userRole === "customer" && updatedQuantities) {
+      try {
+        const parsedQuantities = typeof updatedQuantities === 'string' 
+          ? JSON.parse(updatedQuantities) 
+          : updatedQuantities;
+
+        console.log("📊 Processing quantity updates for customer order");
+        
+        // Update item quantities based on actual measurements
+        order.items = order.items.map((item) => {
+          const itemId = item._id.toString();
+          if (parsedQuantities[itemId]) {
+            const quantityData = parsedQuantities[itemId];
+            const originalQuantity = item.quantity;
+            const actualQuantity = quantityData.actualQuantity;
+            
+            console.log(`📏 Item ${item.itemName}: ${originalQuantity} → ${actualQuantity}`);
+            
+            // Store original quantity if not already stored
+            if (!item.originalQuantity) {
+              item.originalQuantity = originalQuantity;
+            }
+            
+            // Update to actual quantity
+            item.quantity = actualQuantity;
+            item.quantityAdjusted = originalQuantity !== actualQuantity;
+          }
+          return item;
+        });
+
+        // Store quantity adjustment notes
+        if (quantityNotes) {
+          order.quantityAdjustmentNotes = quantityNotes;
+        }
+
+        console.log("✅ Item quantities updated based on actual measurements");
+      } catch (quantityError) {
+        console.error("❌ Error processing quantity updates:", quantityError);
+        // Continue processing even if quantity update fails
+      }
+    }
+
+    if (userRole === "buyer") {
+      // BUYER FLOW: Complete directly (skip collected status)
+      console.log("🏢 Buyer order - completing directly");
+      
+      order.status = "completed";
+      order.completedAt = new Date();
+
+      // Store estimated weight for buyers in notes
+      if (notes) {
+        order.estimatedWeight = notes;
+      }
+
+      // Award points immediately for buyer orders
+      try {
+        const totalPointsToAward = order.items.reduce((sum, item) => {
+          return sum + item.points * item.quantity;
+        }, 0);
+
+        if (user && totalPointsToAward > 0) {
+          user.totalPoints = (user.totalPoints || 0) + totalPointsToAward;
+
+          if (!user.pointsHistory) {
+            user.pointsHistory = [];
+          }
+
+          user.pointsHistory.push({
+            orderId: order._id.toString(),
+            points: totalPointsToAward,
+            type: "earned",
+            reason: "Buyer order completion",
+            timestamp: new Date(),
+          });
+
+          await user.save();
+          console.log(`✅ Awarded ${totalPointsToAward} points to buyer ${user._id}`);
+        }
+      } catch (pointsError) {
+        console.error("❌ Error awarding points to buyer:", pointsError);
+      }
+
+      // Update stock for buyer orders
+      try {
+        await updateItemQuantities(order.items, "increase");
+        console.log("✅ Restocked item quantities for buyer order.");
+      } catch (restockError) {
+        console.error("❌ Failed to restock items:", restockError);
+      }
+
+      // Create completion notification for buyers
+      try {
+        await createOrderCompletedNotification(order.user.userId.toString(), orderId);
+        console.log(`✅ Completion notification sent to buyer`);
+      } catch (notificationError) {
+        console.error("❌ Error creating completion notification:", notificationError);
+      }
+
+    } else {
+      // CUSTOMER FLOW: Mark as collected (admin will complete later)
+      console.log("👤 Customer order - marking as collected");
+      order.status = "collected";
+      order.collectedAt = new Date();
+
+      // Store estimated weight for customer orders
+      if (notes) {
+        order.estimatedWeight = notes;
+      }
+    }
+
+    // Add delivery proof if photo provided
+    if (proofPhoto) {
+      order.deliveryProof = {
+        photoPath: proofPhoto.filename,
+        photoUrl: proofPhoto.path,
+        uploadedAt: new Date(),
+        notes: notes || "",
+        completedBy: new mongoose.Types.ObjectId(req.user?.userId),
+      };
+    }
+
+    // Add to status history
     if (!order.statusHistory) {
       order.statusHistory = [];
     }
 
+    const historyNotes = [];
+    if (userRole === "customer" && order.quantityAdjustmentNotes) {
+      historyNotes.push(`Quantity adjustments: ${order.quantityAdjustmentNotes}`);
+    }
+    if (notes) {
+      historyNotes.push(`Estimated weight: ${notes}`);
+    }
+
     order.statusHistory.push({
-      status: "completed",
+      status: userRole === "buyer" ? "completed" : "collected",
       timestamp: new Date(),
       updatedBy: req.user?.userId || "courier",
-      notes: `Order completed with delivery proof${notes ? `: ${notes}` : ""}`,
+      notes: `${userRole === "buyer" ? "Order completed" : "Order collected"} by courier${historyNotes.length > 0 ? `. ${historyNotes.join('. ')}` : ""}`,
     });
 
-    // 7. Set completion timestamp
-    order.completedAt = new Date();
-
-    // 8. Save the order
     const savedOrder = await order.save();
 
-    // 🎯 NEW: AWARD POINTS TO THE USER
-    try {
-      // Calculate total points from items array (points * quantity for each item)
-      const totalPointsToAward = order.items.reduce((sum, item) => {
-        return sum + item.points * item.quantity;
-      }, 0);
-
-      console.log(
-        "Items breakdown:",
-        order.items.map((item) => ({
-          itemName: item.itemName,
-          points: item.points,
-          quantity: item.quantity,
-          totalPoints: item.points * item.quantity,
-        }))
-      );
-      console.log("Total points to award:", totalPointsToAward);
-
-      // Award points using your existing function logic
-      const user = await User.findById(order.user.userId);
-      if (user && totalPointsToAward > 0) {
-        // Update user's total points
-        user.totalPoints = (user.totalPoints || 0) + totalPointsToAward;
-
-        // Add to points history
-        if (!user.pointsHistory) {
-          user.pointsHistory = [];
-        }
-
-        user.pointsHistory.push({
-          orderId: savedOrder._id.toString(),
-          points: totalPointsToAward,
-          type: "earned",
-          reason: "Order completion",
-          timestamp: new Date(),
-        });
-
-        // Save user with updated points
-        await user.save();
-
-        console.log(
-          `✅ Awarded ${totalPointsToAward} points to user ${user._id} for order ${savedOrder._id}`
-        );
-      }
-    } catch (pointsError) {
-      console.error("❌ Error awarding points:", pointsError);
-      // Don't fail the entire operation if points fail
-    }
-
-    console.log("✅ Order completed with proof:", {
+    console.log(`✅ Order ${userRole === "buyer" ? "completed" : "collected"}:`, {
       orderId: savedOrder._id,
-      proofPhoto: proofPhoto.filename,
-      completedAt: savedOrder.completedAt,
+      status: savedOrder.status,
+      userRole,
+      quantityAdjusted: userRole === "customer" ? savedOrder.items.some(item => item.quantityAdjusted) : false,
     });
 
-    // Create completion notification
-    try {
-      const userId = order.user.userId.toString();
-      const totalPointsToAward = order.items.reduce(
-        (sum, item) => sum + item.points * item.quantity,
-        0
-      );
-      await createOrderCompletedNotification(userId, orderId);
-      console.log(`✅ Completion notification created for user ${userId}`);
-    } catch (notificationError) {
-      console.error(
-        "❌ Error creating completion notification:",
-        notificationError
-      );
-      // Don't fail the request if notification fails
-    }
-
-    // 9. Populate and return response
+    // Populate and return response
     const populatedOrder = await Order.findById(savedOrder._id)
-      .populate("courier", "name phoneNumber email imgUrl") // User schema fields
-      .populate("user.userId", "name phoneNumber email imgUrl"); // User schema fields
-
-    //10. update stock with new Quantities
-    try {
-      await updateItemQuantities(savedOrder.items, "increase");
-      console.log("✅ Restocked item quantities for completed order.");
-    } catch (restockError) {
-      console.error("❌ Failed to restock items:", restockError);
-      return res.status(404).json({
-        message: "Failed to restock items",
-      });
-    }
+      .populate("courier", "name phoneNumber email imgUrl")
+      .populate("user.userId", "name phoneNumber email imgUrl");
 
     res.status(200).json({
-      message: "Order completed successfully with delivery proof",
+      message: `Order ${userRole === "buyer" ? "completed" : "marked as collected"} successfully`,
       order: {
         id: populatedOrder._id,
         status: populatedOrder.status,
@@ -463,12 +499,15 @@ export const completeOrderWithProof = async (req: Request, res: Response) => {
         items: populatedOrder.items,
         address: populatedOrder.address,
         deliveryProof: populatedOrder.deliveryProof,
+        collectedAt: populatedOrder.collectedAt,
         completedAt: populatedOrder.completedAt,
+        estimatedWeight: populatedOrder.estimatedWeight,
+        quantityAdjustmentNotes: populatedOrder.quantityAdjustmentNotes,
         createdAt: populatedOrder.createdAt,
       },
     });
   } catch (error) {
-    console.error("❌ Complete order with proof error:", error);
+    console.error("❌ Process order error:", error);
 
     // Clean up uploaded file on error
     if (req.file?.path && fs.existsSync(req.file.path)) {
@@ -481,3 +520,190 @@ export const completeOrderWithProof = async (req: Request, res: Response) => {
     });
   }
 };
+
+// NEW: Admin function to complete orders from collected status (with points)
+export const completeOrderFromCollected = async (req: Request, res: Response) => {
+  try {
+    const { orderId } = req.params;
+    const { adminNotes } = req.body;
+
+    console.log("✅ Admin completing order from collected status...");
+    console.log("Order ID:", orderId);
+    console.log("Admin ID:", req.user?.userId);
+
+    if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ message: "Invalid or missing order ID" });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // Validate current status is collected
+    if (order.status.toLowerCase() !== "collected") {
+      return res.status(400).json({
+        message: "Order must be in 'collected' status to be completed by admin",
+      });
+    }
+
+    // Update order status to completed
+    order.status = "completed";
+
+    // Add to status history
+    if (!order.statusHistory) {
+      order.statusHistory = [];
+    }
+
+    order.statusHistory.push({
+      status: "completed",
+      timestamp: new Date(),
+      updatedBy: req.user?.userId || "admin",
+      notes: `Order completed by admin${adminNotes ? `: ${adminNotes}` : ""}`,
+    });
+
+    // Set completion timestamp
+    order.completedAt = new Date();
+
+    const savedOrder = await order.save();
+
+    // 🎯 AWARD POINTS TO THE USER (using updated quantities)
+    try {
+      const totalPointsToAward = order.items.reduce((sum, item) => {
+        return sum + item.points * item.quantity; // This now uses the adjusted quantity
+      }, 0);
+
+      console.log(
+        "Items breakdown:",
+        order.items.map((item) => ({
+          itemName: item.itemName,
+          points: item.points,
+          quantity: item.quantity, // Now shows adjusted quantity
+          originalQuantity: item.originalQuantity,
+          quantityAdjusted: item.quantityAdjusted,
+          totalPoints: item.points * item.quantity,
+        }))
+      );
+      console.log("Total points to award (based on actual quantities):", totalPointsToAward);
+
+      const user = await User.findById(order.user.userId);
+      if (user && totalPointsToAward > 0) {
+        user.totalPoints = (user.totalPoints || 0) + totalPointsToAward;
+
+        if (!user.pointsHistory) {
+          user.pointsHistory = [];
+        }
+
+        user.pointsHistory.push({
+          orderId: savedOrder._id.toString(),
+          points: totalPointsToAward,
+          type: "earned",
+          reason: "Order completion by admin (actual quantities)",
+          timestamp: new Date(),
+        });
+
+        await user.save();
+
+        console.log(
+          `✅ Awarded ${totalPointsToAward} points to user ${user._id} for order ${savedOrder._id} (based on actual quantities)`
+        );
+      }
+    } catch (pointsError) {
+      console.error("❌ Error awarding points:", pointsError);
+    }
+
+    console.log("✅ Order completed by admin:", {
+      orderId: savedOrder._id,
+      completedAt: savedOrder.completedAt,
+    });
+
+    // Create completion notification
+    try {
+      const userId = order.user.userId.toString();
+      await createOrderCompletedNotification(userId, orderId);
+      console.log(`✅ Completion notification created for user ${userId}`);
+    } catch (notificationError) {
+      console.error(
+        "❌ Error creating completion notification:",
+        notificationError
+      );
+    }
+
+    // Update stock quantities (using actual quantities)
+    try {
+      await updateItemQuantities(savedOrder.items, "increase");
+      console.log("✅ Restocked item quantities for completed order (actual quantities).");
+    } catch (restockError) {
+      console.error("❌ Failed to restock items:", restockError);
+      return res.status(400).json({
+        message: "Order completed but failed to restock items",
+      });
+    }
+
+    // Populate and return response
+    const populatedOrder = await Order.findById(savedOrder._id)
+      .populate("courier", "name phoneNumber email imgUrl")
+      .populate("user.userId", "name phoneNumber email imgUrl");
+
+    res.status(200).json({
+      message: "Order completed successfully by admin with points awarded based on actual quantities",
+      order: {
+        id: populatedOrder._id,
+        status: populatedOrder.status,
+        courier: populatedOrder.courier,
+        user: populatedOrder.user,
+        items: populatedOrder.items,
+        address: populatedOrder.address,
+        deliveryProof: populatedOrder.deliveryProof,
+        collectedAt: populatedOrder.collectedAt,
+        completedAt: populatedOrder.completedAt,
+        estimatedWeight: populatedOrder.estimatedWeight,
+        quantityAdjustmentNotes: populatedOrder.quantityAdjustmentNotes,
+        createdAt: populatedOrder.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Complete order from collected error:", error);
+    res.status(500).json({
+      message: "Internal server error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+// NEW: Get collected orders for admin to complete
+export const getCollectedOrdersForAdmin = async (req: Request, res: Response) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const orders = await Order.find({ status: "collected" })
+      .populate("user.userId", "name phoneNumber email imgUrl")
+      .populate("courier", "name phoneNumber email imgUrl")
+      .sort({ collectedAt: -1 }) // Sort by collection time
+      .skip(skip)
+      .limit(Number(limit));
+
+    const totalOrders = await Order.countDocuments({ status: "collected" });
+    const totalPages = Math.ceil(totalOrders / Number(limit));
+
+    res.status(200).json({
+      success: true,
+      message: "Collected orders retrieved successfully",
+      count: orders.length,
+      totalOrders,
+      totalPages,
+      currentPage: Number(page),
+      data: orders,
+    });
+  } catch (error) {
+    console.error("❌ Get collected orders error:", error);
+    res.status(500).json({
+      message: "Internal server error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+// Keep the original function name for backward compatibility but point to markOrderAsCollected
+export const completeOrderWithProof = markOrderAsCollected;
