@@ -2,11 +2,11 @@
   "name": "recycling-backend",
   "version": "1.0.0",
   "description": "BackEnd Repo To act as Public EndPoints For Ui Clients",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon --config nodemon.json",
-    "build": "tsc",
-    "start": "nodemon"
+    "build": "tsc --noEmitOnError false",
+    "start": "node dist/index.js"
   },
   "repository": {
     "type": "git",
