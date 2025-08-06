@@ -1,4 +1,4 @@
-// models/pickupOrder.ts
+// models/pickupOrder.ts - Updated with collected status support and quantity management
 import mongoose, { Document, Model, Types } from "mongoose";
 
 const AddressSchema = new mongoose.Schema({
@@ -26,6 +26,7 @@ const UserSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// UPDATED: Enhanced ItemSchema with quantity management fields
 const ItemSchema = new mongoose.Schema({
   categoryId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -37,21 +38,36 @@ const ItemSchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
-    lowercase: true, // store lowercase version
+    lowercase: true,
     trim: true,
   },
   measurement_unit: { type: Number, enum: [1, 2], required: true },
   points: { type: Number, required: true },
   price: { type: Number, required: true },
-  quantity: { type: Number, required: true },
+  quantity: { type: Number, required: true }, // This becomes the actual/adjusted quantity
   categoryName: String,
+  
+  // NEW: Quantity management fields
+  originalQuantity: { 
+    type: Number, 
+    default: null 
+  }, // Original quantity before adjustment
+  quantityAdjusted: { 
+    type: Boolean, 
+    default: false 
+  }, // Flag indicating if quantity was adjusted
+  unit: {
+    type: String,
+    default: "kg"
+  }, // Unit for quantity measurement (kg, pieces, etc.)
 });
 
+// UPDATED: Add 'collected' to StatusHistorySchema enum
 const StatusHistorySchema = new mongoose.Schema(
   {
     status: {
       type: String,
-      enum: ["pending", "assigntocourier", "completed", "cancelled"],
+      enum: ["pending", "assigntocourier", "collected", "completed", "cancelled"], // Added 'collected'
       required: true,
     },
     timestamp: { type: Date, default: Date.now },
@@ -62,7 +78,6 @@ const StatusHistorySchema = new mongoose.Schema(
   { _id: false }
 );
 
-// NEW: Delivery Proof Schema
 const DeliveryProofSchema = new mongoose.Schema(
   {
     photoPath: {
@@ -107,30 +122,64 @@ const OrderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["pending", "assigntocourier", "completed", "cancelled"],
+    enum: ["pending", "assigntocourier", "collected", "completed", "cancelled"], // Added 'collected'
     default: "pending",
   },
   statusHistory: {
     type: [StatusHistorySchema],
     default: [],
   },
-  // NEW: Delivery proof field
   deliveryProof: {
     type: DeliveryProofSchema,
     default: null,
   },
-  // NEW: Completion timestamp
+  
+  // NEW: Collection timestamp (when courier marks as collected)
+  collectedAt: {
+    type: Date,
+    default: null,
+  },
+  
+  // Completion timestamp (when admin marks as completed)
   completedAt: {
     type: Date,
     default: null,
   },
+  
+  // NEW: Estimated weight field (for both customers and buyers)
+  estimatedWeight: {
+    type: String,
+    default: null,
+  },
+  
+  // NEW: Quantity adjustment notes (for customer orders only)
+  quantityAdjustmentNotes: {
+    type: String,
+    default: null,
+  },
+  
+  // NEW: Flag to indicate if any quantities were adjusted
+  hasQuantityAdjustments: {
+    type: Boolean,
+    default: false,
+  },
+  
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
 
-// Add pre-save middleware to update the updatedAt field
+// UPDATED: Enhanced pre-save middleware with quantity adjustment detection
 OrderSchema.pre("save", function (next) {
   this.updatedAt = new Date();
+
+  // Set collectedAt when status changes to collected
+  if (
+    this.isModified("status") &&
+    this.status === "collected" &&
+    !this.collectedAt
+  ) {
+    this.collectedAt = new Date();
+  }
 
   // Set completedAt when status changes to completed
   if (
@@ -141,6 +190,11 @@ OrderSchema.pre("save", function (next) {
     this.completedAt = new Date();
   }
 
+  // Check if any items have quantity adjustments
+  if (this.isModified("items")) {
+    this.hasQuantityAdjustments = this.items.some((item: any) => item.quantityAdjusted);
+  }
+
   next();
 });
 
@@ -149,6 +203,8 @@ OrderSchema.index({ courier: 1, status: 1 });
 OrderSchema.index({ "user.userId": 1 });
 OrderSchema.index({ status: 1 });
 OrderSchema.index({ createdAt: -1 });
+OrderSchema.index({ hasQuantityAdjustments: 1 }); // NEW: Index for quantity adjustments
+OrderSchema.index({ collectedAt: -1 }); // NEW: Index for collection time sorting
 
 // Define TypeScript interfaces
 export interface IAddress {
@@ -162,28 +218,33 @@ export interface IAddress {
   isDefault?: boolean;
 }
 
+// UPDATED: Enhanced IItem interface with quantity management
 export interface IItem {
-  _id: Types.ObjectId; // optional to support pre-insertion or flexibility
+  _id: Types.ObjectId;
   categoryId: mongoose.Types.ObjectId;
-
   image: string;
   itemName: string;
   measurement_unit: 1 | 2;
   points: number;
   price: number;
-  quantity: number;
+  quantity: number; // Actual/adjusted quantity
   categoryName?: string;
+  
+  // NEW: Quantity management fields
+  originalQuantity?: number; // Original quantity before adjustment
+  quantityAdjusted?: boolean; // Whether quantity was adjusted
+  unit?: string; // Unit of measurement
 }
 
+// UPDATED: Add 'collected' to IStatusHistory interface
 export interface IStatusHistory {
-  status: "pending" | "assigntocourier" | "completed" | "cancelled";
+  status: "pending" | "assigntocourier" | "collected" | "completed" | "cancelled"; // Added 'collected'
   timestamp: Date;
   updatedBy?: string;
   reason?: string;
   notes?: string;
 }
 
-// NEW: Delivery Proof interface
 export interface IDeliveryProof {
   photoPath: string;
   photoUrl: string;
@@ -198,20 +259,29 @@ export interface IOrderUser {
   userName?: string;
   email?: string;
   image?: string;
-  role?:string
+  role?: string;
 }
 
+// UPDATED: Enhanced IOrder interface with new fields
 export interface IOrder extends Document {
   user: IOrderUser;
   address: IAddress;
   items: IItem[];
   courier?: mongoose.Types.ObjectId;
-  status: "pending" | "assigntocourier" | "completed" | "cancelled";
+  status: "pending" | "assigntocourier" | "collected" | "completed" | "cancelled"; // Added 'collected'
   statusHistory: IStatusHistory[];
-  deliveryProof?: IDeliveryProof; // NEW
-  completedAt?: Date; // NEW
+  deliveryProof?: IDeliveryProof;
+  
+  // Timestamp fields
+  collectedAt?: Date; // When courier marks as collected
+  completedAt?: Date; // When admin marks as completed
   createdAt: Date;
   updatedAt: Date;
+  
+  // NEW: Additional fields for enhanced functionality
+  estimatedWeight?: string; // Estimated weight provided by courier
+  quantityAdjustmentNotes?: string; // Notes explaining quantity changes
+  hasQuantityAdjustments?: boolean; // Quick flag for orders with quantity changes
 }
 
 // Clear the model cache and recreate it to ensure schema changes are applied
