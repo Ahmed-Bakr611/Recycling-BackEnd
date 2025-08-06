@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import Order, { IOrder, IItem, IStatusHistory } from "../models/pickupOrder"; // Use the comprehensive schema
 import Category from "../models/category";
 import User from "../models/users";
+import Cart from "../models/cart";
 import {
   createOrderAssignedNotification,
   createOrderCancelledNotification,
@@ -98,6 +99,21 @@ export const createOrder = async (
       await updateItemQuantities(savedOrder.items, "decrease");
     }
 
+    // 🛒 Clear the cart items array for this user after order creation
+    try {
+      const userCart = await Cart.findOne({ userId });
+      if (userCart) {
+        userCart.items = [];
+        await userCart.save();
+        console.log("✅ Cart items cleared for user:", userId);
+      } else {
+        console.log("ℹ️ No cart found for user:", userId);
+      }
+    } catch (cartClearError) {
+      console.error("❌ Error clearing cart items:", cartClearError);
+      // Do not fail the order creation if cart clearing fails
+    }
+
     res.status(201).json({
       success: true,
       message: "Order created successfully",
@@ -118,15 +134,61 @@ export const getAllOrders = async (
 ): Promise<void> => {
   try {
     const userId = req.user.userId;
+    
+    // Get pagination parameters from query string
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 5;
+    const skip = (page - 1) * limit;
+    
+    // Get status filter from query string
+    const status = req.query.status as string;
+    
+    // Build query filter
+    let filter: any = { "user.userId": userId };
+    
+    if (status) {
+      if (status === "incoming") {
+        filter.status = { $in: ["pending", "assigntocourier"] };
+      } else if (status === "completed") {
+        filter.status = "completed";
+      } else if (status === "cancelled") {
+        filter.status = "cancelled";
+      }
+    }
 
-    const orders = await Order.find({ "user.userId": userId }).sort({
-      createdAt: -1,
+    // Get total count for pagination info (with filter)
+    const totalOrders = await Order.countDocuments(filter);
+    
+    // Get total completed orders count for stats (always for all user orders)
+    const totalCompletedOrders = await Order.countDocuments({ 
+      "user.userId": userId, 
+      status: "completed" 
     });
+    
+    // Get paginated orders with filter
+    const orders = await Order.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    // Calculate pagination info
+    const totalPages = Math.ceil(totalOrders / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
 
     res.json({
       success: true,
       count: orders.length,
+      totalCount: totalOrders,
+      totalCompletedOrders,
       data: orders,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        hasNextPage,
+        hasPrevPage,
+        limit
+      }
     });
   } catch (error) {
     console.error("Error fetching orders:", error);
@@ -136,7 +198,6 @@ export const getAllOrders = async (
     });
   }
 };
-
 export const deleteOrderById = async (
   req: IAuthenticatedRequest,
   res: express.Response
@@ -978,10 +1039,44 @@ export const getTopMaterialsRecycled = async (
           // Use the first occurrence's original name (you can change this logic)
           itemName: { $first: "$items.itemName" },
           categoryName: { $first: "$items.categoryName" },
+          // Add unit field - get the first unit found for this item
+          unit: { $first: "$items.unit" },
           documentCount: { $sum: 1 },
           // Debug: show all the different case variations found
           nameVariations: { $addToSet: "$items.itemName" },
+          // Debug: show all units found for this item (in case there are variations)
+          unitVariations: { $addToSet: "$items.unit" }
         },
+      },
+      {
+        $addFields: {
+          // Convert measurement_unit integer to readable unit string
+          unit: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$measurementUnit", 1] }, then: "kg" },
+                { case: { $eq: ["$measurementUnit", 2] }, then: "pieces" }
+              ],
+              default: "pieces" // Default fallback
+            }
+          },
+          // Add a formatted display string for quantity with unit
+          quantityWithUnit: {
+            $concat: [
+              { $toString: "$totalQuantity" },
+              " ",
+              {
+                $switch: {
+                  branches: [
+                    { case: { $eq: ["$measurementUnit", 1] }, then: "kg" },
+                    { case: { $eq: ["$measurementUnit", 2] }, then: "pieces" }
+                  ],
+                  default: "pieces"
+                }
+              }
+            ]
+          }
+        }
       },
       { $sort: { totalQuantity: -1 } },
       { $limit: 4 }
@@ -994,20 +1089,24 @@ export const getTopMaterialsRecycled = async (
 
     const materials = await Order.aggregate(pipeline);
 
-    // Enhanced logging to show the case consolidation
+    // Enhanced logging to show the case consolidation and units
     console.log("Case-insensitive Results:");
     materials.forEach((material, index) => {
       console.log(`\n--- Material ${index + 1} ---`);
       console.log(`Display Name: ${material.itemName}`);
       console.log(`Total Quantity: ${material.totalQuantity}`);
+      console.log(`Unit: ${material.unit || 'pieces'} (${material.measurementUnit})`);
+      console.log(`Quantity with Unit: ${material.quantityWithUnit}`);
       console.log(`Document Count: ${material.documentCount}`);
       console.log(`Name Variations Found:`, material.nameVariations);
-
-      if (material._id.itemName === "cooking pan") {
+      console.log(`Unit Variations Found:`, material.unitVariations);
+      
+      if (material._id.itemName === 'cooking pan') {
         console.log(`🍳 COOKING PAN CONSOLIDATED:`);
-        console.log(`- Combined total: ${material.totalQuantity}`);
+        console.log(`- Combined total: ${material.totalQuantity} ${material.unit || 'pieces'}`);
         console.log(`- From ${material.documentCount} entries`);
-        console.log(`- Variations: ${material.nameVariations.join(", ")}`);
+        console.log(`- Variations: ${material.nameVariations.join(', ')}`);
+        console.log(`- Unit code: ${material.measurementUnit}`);
       }
     });
 
@@ -1021,8 +1120,9 @@ export const getTopMaterialsRecycled = async (
           totalQuantity: { $sum: { $toDouble: "$items.quantity" } },
           totalDocs: { $sum: 1 },
           variations: { $addToSet: "$items.itemName" },
-        },
-      },
+          units: { $addToSet: "$items.measurement_unit" }
+        }
+      }
     ]);
 
     console.log("\n🔍 COOKING PAN VERIFICATION:", cookingPanTotal);

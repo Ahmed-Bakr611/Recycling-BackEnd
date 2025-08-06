@@ -48,19 +48,28 @@ export const getAllItems = async (
   try {
     const { skip, limit } = req.pagination;
     const role = req.query.role;
+    const categoryName = req.query.category as string;
 
-    // 1. First get total item count
-    const totalResult = await Category.aggregate([
+    let matchStage = {};
+
+    if (categoryName && categoryName !== 'all') {
+      matchStage = { name: categoryName };
+    }
+
+    // 1. Count total items
+    const totalAggregation = await Category.aggregate([
+      { $match: matchStage },
       { $project: { itemCount: { $size: "$items" } } },
       { $group: { _id: null, totalItems: { $sum: "$itemCount" } } },
     ]);
-    const totalItems = totalResult[0]?.totalItems || 0;
+    const totalItems = totalAggregation[0]?.totalItems || 0;
 
-    // 2. Get paginated items with category info
+    // 2. Paginate items within matched categories
     let items = await Category.aggregate([
-      { $unwind: "$items" }, // Flatten items
-      { $skip: skip }, // Skip at item level
-      { $limit: limit }, // Limit at item level
+      { $match: matchStage },
+      { $unwind: "$items" },
+      { $skip: skip },
+      { $limit: limit },
       {
         $project: {
           _id: "$items._id",
@@ -70,16 +79,13 @@ export const getAllItems = async (
           measurement_unit: "$items.measurement_unit",
           image: "$items.image",
           quantity: "$items.quantity",
-          // Add any other item fields you have
-
-          // Add category info
           categoryName: "$name",
           categoryId: "$_id",
         },
       },
     ]) as Array<Record<string, any>>;
 
-    // If role is buyer, increase price by 50%
+    // 3. Adjust price if role is buyer
     if (role === "buyer") {
       items = items.map(item => ({
         ...item,
@@ -89,9 +95,11 @@ export const getAllItems = async (
 
     res.paginated(items, totalItems);
   } catch (err) {
+    console.error("getAllItems error:", err);
     res.status(500).json({ message: (err as Error).message });
   }
 };
+
 export const getItems = async (req: Request, res: Response): Promise<void> => {
   try {
     const { categoryName } = req.params;
@@ -113,7 +121,14 @@ export const getItems = async (req: Request, res: Response): Promise<void> => {
     const totalItems = fullCategory?.items.length || 0;
 
     let items = Array.isArray(category.items)
-      ? category.items.map(item => item.toObject ? item.toObject() : { ...item })
+      ? category.items.map(item => {
+          const obj = item.toObject ? item.toObject() : { ...item };
+          return {
+            ...obj,
+            categoryId: category._id, // Add categoryId here
+            categoryName: category.name, // Add categoryName here
+          };
+        })
       : [];
     if (role === "buyer") {
       items = items.map(item => ({
