@@ -229,82 +229,91 @@ export const login = async (req: Request, res: Response) => {
     const sessionId = req.sessionId;
     const userId = user._id;
 
-    // Cart merging logic (unchanged)
+    // Cart merging logic: skip merging if user is a buyer, but always clear session cart if it exists
     const sessionCart = await Cart.findOne({ sessionId });
-    let userCart = await Cart.findOne({ userId });
+    if (user.role !== "buyer") {
+      let userCart = await Cart.findOne({ userId });
 
-    if (sessionCart && sessionCart.items.length > 0) {
-      if (!userCart) {
-        userCart = new Cart({
-          userId: userId,
-          items: sessionCart.items,
-        });
-        await userCart.save();
-        console.log(
-          `Created new user cart with ${sessionCart.items.length} items from session`
-        );
-      } else {
-        for (const sessionItem of sessionCart.items) {
-          const existingItemIndex = userCart.items.findIndex(
-            (item) => item.categoryId === sessionItem.categoryId
+      if (sessionCart && sessionCart.items.length > 0) {
+        if (!userCart) {
+          userCart = new Cart({
+            userId: userId,
+            items: sessionCart.items,
+          });
+          await userCart.save();
+          console.log(
+            `Created new user cart with ${sessionCart.items.length} items from session`
           );
+        } else {
+          for (const sessionItem of sessionCart.items) {
+            // Check if this item already exists in user cart (by _id)
+            const existingItemIndex = userCart.items.findIndex(
+              (item) => String(item._id) === String(sessionItem._id)
+            );
 
-          if (existingItemIndex !== -1) {
-            const existingItem = userCart.items[existingItemIndex];
-            const newQuantity = existingItem.quantity + sessionItem.quantity;
+            if (existingItemIndex !== -1) {
+              const existingItem = userCart.items[existingItemIndex];
+              const newQuantity = existingItem.quantity + sessionItem.quantity;
 
-            const validateQuantity = (
-              quantity: number,
-              measurement_unit: number
-            ) => {
-              if (measurement_unit === 1) {
-                const multiplied = Math.round(quantity * 4);
-                return (
-                  multiplied >= 1 &&
-                  Math.abs(quantity * 4 - multiplied) < 0.0001
-                );
+              const validateQuantity = (
+                quantity: number,
+                measurement_unit: number
+              ) => {
+                if (measurement_unit === 1) {
+                  const multiplied = Math.round(quantity * 4);
+                  return (
+                    multiplied >= 1 &&
+                    Math.abs(quantity * 4 - multiplied) < 0.0001
+                  );
+                } else {
+                  return Number.isInteger(quantity) && quantity >= 1;
+                }
+              };
+
+              if (validateQuantity(newQuantity, existingItem.measurement_unit)) {
+                existingItem.quantity = newQuantity;
+                // Update other fields from session item if needed
+                existingItem.name = sessionItem.name;
+                existingItem.image = sessionItem.image;
+                existingItem.points = sessionItem.points;
+                existingItem.price = sessionItem.price;
+                existingItem.categoryName = sessionItem.categoryName;
               } else {
-                return Number.isInteger(quantity) && quantity >= 1;
+                console.warn(
+                  `Cannot merge item ${sessionItem.name}: invalid quantity ${newQuantity}`
+                );
               }
-            };
-
-            if (validateQuantity(newQuantity, existingItem.measurement_unit)) {
-              existingItem.quantity = newQuantity;
-              // Update other fields from session item if needed
-              existingItem.name = sessionItem.name;
-              existingItem.image = sessionItem.image;
-              existingItem.points = sessionItem.points;
-              existingItem.price = sessionItem.price;
-              existingItem.categoryName = sessionItem.categoryName;
             } else {
-              console.warn(
-                `Cannot merge item ${sessionItem.name}: invalid quantity ${newQuantity}`
-              );
+              userCart.items.push({
+                _id: sessionItem._id,
+                categoryId: sessionItem.categoryId,
+                categoryName: sessionItem.categoryName,
+                name: sessionItem.name,
+                image: sessionItem.image,
+                points: sessionItem.points,
+                price: sessionItem.price,
+                measurement_unit: sessionItem.measurement_unit,
+                quantity: sessionItem.quantity,
+              });
             }
-          } else {
-            userCart.items.push({
-              // _id:sessionItem._id,
-              categoryId: sessionItem.categoryId,
-              categoryName: sessionItem.categoryName,
-              name: sessionItem.name,
-              image: sessionItem.image,
-              points: sessionItem.points,
-              price: sessionItem.price,
-              measurement_unit: sessionItem.measurement_unit,
-              quantity: sessionItem.quantity,
-            });
           }
+          await userCart.save();
+          console.log(
+            `Merged ${sessionCart.items.length} session items with existing user cart`
+          );
         }
-        await userCart.save();
-        console.log(
-          `Merged ${sessionCart.items.length} session items with existing user cart`
-        );
-      }
 
-      await Cart.deleteOne({ sessionId });
+        await Cart.deleteOne({ sessionId });
+      } else {
+        if (userCart) {
+          console.log(`User cart preserved with ${userCart.items.length} items`);
+        }
+      }
     } else {
-      if (userCart) {
-        console.log(`User cart preserved with ${userCart.items.length} items`);
+      // If user is a buyer, just clear the session cart if it exists
+      if (sessionCart) {
+        await Cart.deleteOne({ sessionId });
+        console.log("Session cart cleared for buyer login");
       }
     }
 

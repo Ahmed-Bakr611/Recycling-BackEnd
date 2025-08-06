@@ -576,7 +576,7 @@ export const completeOrderFromCollected = async (req: Request, res: Response) =>
       console.log(
         "Items breakdown:",
         order.items.map((item) => ({
-          itemName: item.itemName,
+          name: item.itemName,
           points: item.points,
           quantity: item.quantity, // Now shows adjusted quantity
           originalQuantity: item.originalQuantity,

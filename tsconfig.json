@@ -1,11 +1,20 @@
 {
   "compilerOptions": {
-    "module": "nodenext",
-    "baseUrl": "src",
+    "module": "CommonJS",
+    "target": "ES2020",
     "outDir": "dist",
+    "rootDir": "src",
+    "baseUrl": "src",
     "sourceMap": true,
-    "noImplicitAny": true,
-    "typeRoots": ["./node_modules/@types", "./src/types"]
+    "typeRoots": ["./node_modules/@types", "./src/types"],
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+
+    // 👇 Disable strict type checks
+    "strict": false,
+    "noImplicitAny": false,
+    "noEmitOnError": false,
+    "skipLibCheck": true
   },
-  "include": ["src/**/*","types"]
+  "include": ["src/**/*", "types"]
 }

@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import Order, { IOrder, IItem, IStatusHistory } from "../models/pickupOrder"; // Use the comprehensive schema
 import Category from "../models/category";
 import User from "../models/users";
+import Cart from "../models/cart";
 import {
   createOrderAssignedNotification,
   createOrderCancelledNotification,
@@ -96,6 +97,21 @@ export const createOrder = async (
 
     if (user.role === "buyer") {
       await updateItemQuantities(savedOrder.items, "decrease");
+    }
+
+    // 🛒 Clear the cart items array for this user after order creation
+    try {
+      const userCart = await Cart.findOne({ userId });
+      if (userCart) {
+        userCart.items = [];
+        await userCart.save();
+        console.log("✅ Cart items cleared for user:", userId);
+      } else {
+        console.log("ℹ️ No cart found for user:", userId);
+      }
+    } catch (cartClearError) {
+      console.error("❌ Error clearing cart items:", cartClearError);
+      // Do not fail the order creation if cart clearing fails
     }
 
     res.status(201).json({

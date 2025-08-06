@@ -6,7 +6,6 @@ const validateQuantity = (
   measurement_unit: number
 ): { isValid: boolean; message?: string } => {
   if (measurement_unit === 1) {
-
     const multiplied = Math.round(quantity * 4);
     const isValid =
       multiplied >= 1 && Math.abs(quantity * 4 - multiplied) < 0.0001;
@@ -38,7 +37,7 @@ export const getCart = async (req: Request, res: Response) => {
   console.log("Session ID:", sessionId);
   console.log("Request headers:", {
     authorization: req.headers.authorization,
-    cookie: req.headers.cookie
+    cookie: req.headers.cookie,
   });
 
   if (!userId && !sessionId) {
@@ -172,7 +171,7 @@ export const removeCartItem = async (req: Request, res: Response) => {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
     const id = req.params._id?.trim();
-
+    console.log("Removing item with id:", id);
     if (!id) {
       return res.status(400).json({ message: "id is required" });
     }
@@ -227,7 +226,7 @@ export const saveCart = async (req: Request, res: Response) => {
     console.log("Request headers:", {
       authorization: req.headers.authorization,
       cookie: req.headers.cookie,
-      'user-agent': req.headers['user-agent']
+      "user-agent": req.headers["user-agent"],
     });
     console.log("========================");
 
@@ -242,21 +241,29 @@ export const saveCart = async (req: Request, res: Response) => {
     // Validate all items before saving
     const validationErrors: string[] = [];
     for (const item of items) {
-      if (!item._id || !item.measurement_unit || typeof item.quantity !== "number") {
-        validationErrors.push(`Invalid item structure: ${JSON.stringify(item)}`);
+      if (
+        !item._id ||
+        !item.measurement_unit ||
+        typeof item.quantity !== "number"
+      ) {
+        validationErrors.push(
+          `Invalid item structure: ${JSON.stringify(item)}`
+        );
         continue;
       }
 
       const validation = validateQuantity(item.quantity, item.measurement_unit);
       if (!validation.isValid) {
-        validationErrors.push(`${item.name || item._id}: ${validation.message}`);
+        validationErrors.push(
+          `${item.name || item._id}: ${validation.message}`
+        );
       }
     }
 
     if (validationErrors.length > 0) {
-      return res.status(400).json({ 
-        message: "Validation failed", 
-        errors: validationErrors 
+      return res.status(400).json({
+        message: "Validation failed",
+        errors: validationErrors,
       });
     }
 
@@ -266,7 +273,10 @@ export const saveCart = async (req: Request, res: Response) => {
     // DEBUG: Log the cart search
     console.log("Found existing cart:", cart ? cart._id : "None");
     if (cart) {
-      console.log("Cart belongs to:", cart.userId ? `User ${cart.userId}` : `Session ${cart.sessionId}`);
+      console.log(
+        "Cart belongs to:",
+        cart.userId ? `User ${cart.userId}` : `Session ${cart.sessionId}`
+      );
       console.log("Current items in cart:", cart.items.length);
     }
 
@@ -276,7 +286,10 @@ export const saveCart = async (req: Request, res: Response) => {
         ...(userId ? { userId } : { sessionId }),
         items: [],
       });
-      console.log("Created new cart for:", userId ? `User ${userId}` : `Session ${sessionId}`);
+      console.log(
+        "Created new cart for:",
+        userId ? `User ${userId}` : `Session ${sessionId}`
+      );
     }
 
     // Replace entire cart with incoming items
@@ -284,17 +297,16 @@ export const saveCart = async (req: Request, res: Response) => {
     await cart.save();
 
     console.log(`Cart saved successfully - ${cart.items.length} items saved`);
-    
-    return res.status(200).json({ 
-      message: "Cart saved successfully", 
+
+    return res.status(200).json({
+      message: "Cart saved successfully",
       debug: {
         userId,
         sessionId,
         cartId: cart._id,
-        itemCount: cart.items.length
-      }
+        itemCount: cart.items.length,
+      },
     });
-    
   } catch (error) {
     console.error("Error saving cart:", error);
     return res.status(500).json({ message: "Failed to save cart", error });
