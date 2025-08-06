@@ -13,7 +13,8 @@
     // 👇 Disable strict type checks
     "strict": false,
     "noImplicitAny": false,
-    "noEmitOnError": false
+    "noEmitOnError": false,
+    "skipLibCheck": true
   },
   "include": ["src/**/*", "types"]
 }
