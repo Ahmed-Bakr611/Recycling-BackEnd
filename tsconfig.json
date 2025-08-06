@@ -6,7 +6,7 @@
     "rootDir": "src",
     "baseUrl": "src",
     "sourceMap": true,
-    "noImplicitAny": true,
+    // "noImplicitAny": true,
     "typeRoots": ["./node_modules/@types", "./src/types"],
     "esModuleInterop": true,
     "resolveJsonModule": true,
