@@ -132,11 +132,15 @@ export const getAllOrders = async (
     
     if (status) {
       if (status === "incoming") {
-        filter.status = { $in: ["pending", "assigntocourier"] };
+        // Include "collected" in incoming since it's still in progress
+        filter.status = { $in: ["pending", "assigntocourier", "collected"] };
       } else if (status === "completed") {
         filter.status = "completed";
       } else if (status === "cancelled") {
         filter.status = "cancelled";
+      } else if (status === "collected") {
+        // Allow filtering specifically for collected orders
+        filter.status = "collected";
       }
     }
 
@@ -424,12 +428,13 @@ export const updateOrderStatus = async (
       return;
     }
 
-    const validStatuses = [
-      "pending",
-      "assigntocourier",
-      "completed",
-      "cancelled",
-    ];
+ const validStatuses = [
+  "pending",
+  "assigntocourier",
+  "collected", 
+  "completed",
+  "cancelled",
+];
     if (!validStatuses.includes(status)) {
       res.status(400).json({
         success: false,
@@ -619,6 +624,10 @@ export const cancelOrder = async (
   }
 };
 
+// Add this updated function to your existing orderController.ts
+
+// Add this to your existing orderController.ts - updateOrderStatusByAdmin function
+
 export const updateOrderStatusByAdmin = async (
   req: express.Request,
   res: express.Response
@@ -638,9 +647,11 @@ export const updateOrderStatusByAdmin = async (
     const validStatuses = [
       "pending",
       "assigntocourier",
+      "collected",
       "completed",
       "cancelled",
     ];
+    
     if (!validStatuses.includes(status)) {
       res.status(400).json({
         success: false,
@@ -666,6 +677,42 @@ export const updateOrderStatusByAdmin = async (
       return;
     }
 
+    // Get user role to determine valid transitions
+    const user = await User.findById(currentOrder.user.userId);
+    const userRole = user?.role || "customer";
+
+    // Define status transitions based on user role
+    const getValidTransitions = (role: string): Record<string, string[]> => {
+      if (role === "buyer") {
+        return {
+          pending: ["assigntocourier", "cancelled"],
+          assigntocourier: ["completed", "cancelled"], // Buyers can complete directly
+          collected: ["completed", "cancelled"], // Handle edge case
+          completed: [],
+          cancelled: [],
+        };
+      } else {
+        return {
+          pending: ["assigntocourier", "cancelled"],
+          assigntocourier: ["collected", "cancelled"], // Must go to collected first
+          collected: ["completed", "cancelled"], // Only admins can complete from collected
+          completed: [],
+          cancelled: [],
+        };
+      }
+    };
+
+    const validTransitions = getValidTransitions(userRole);
+    const currentStatus = currentOrder.status.toLowerCase();
+
+    if (!validTransitions[currentStatus]?.includes(status)) {
+      res.status(400).json({
+        success: false,
+        message: `Invalid status transition from ${currentStatus} to ${status} for ${userRole}`,
+      });
+      return;
+    }
+
     const previousStatus = currentOrder.status;
     currentOrder.status = status;
 
@@ -684,10 +731,7 @@ export const updateOrderStatusByAdmin = async (
     const userId = currentOrder.user.userId.toString();
 
     try {
-      if (
-        status === "assigntocourier" &&
-        previousStatus !== "assigntocourier"
-      ) {
+      if (status === "assigntocourier" && previousStatus !== "assigntocourier") {
         await createOrderAssignedNotification(userId, orderId);
       } else if (status === "cancelled" && previousStatus !== "cancelled") {
         await createOrderCancelledNotification(
@@ -707,16 +751,14 @@ export const updateOrderStatusByAdmin = async (
       }
     } catch (notificationError) {
       console.error("❌ Error creating notification:", notificationError);
-      // Don't fail the request if notification fails
     }
 
-    // If order is being marked as completed, add points to user
+    // Award points and update stock when order is completed
     if (status === "completed" && previousStatus !== "completed") {
       try {
         const totalPoints = calculateOrderPoints(updatedOrder.items);
 
-        const user = await User.findById(currentOrder.user.userId);
-        if (user) {
+        if (user && totalPoints > 0) {
           user.totalPoints = (user.totalPoints || 0) + totalPoints;
 
           if (!user.pointsHistory) {
@@ -727,18 +769,30 @@ export const updateOrderStatusByAdmin = async (
             orderId: orderId,
             points: totalPoints,
             type: "earned",
-            reason: `Order completed - Recycling items`,
+            reason: `Order completed by admin - ${userRole} order`,
             timestamp: new Date(),
           });
 
           await user.save();
 
           console.log(
-            `✅ Added ${totalPoints} points to user ${user._id} for completed order ${orderId}`
+            `✅ Added ${totalPoints} points to ${userRole} ${user._id} for completed order ${orderId}`
           );
         }
+
+        // 🎯 ADD STOCK UPDATE HERE - This was missing!
+        await updateItemQuantities(updatedOrder.items, "increase");
+        console.log("✅ Restocked item quantities for admin-completed order.");
+
       } catch (pointsError) {
-        console.error("❌ Error adding points to user:", pointsError);
+        console.error("❌ Error adding points or updating stock:", pointsError);
+        // Don't fail the entire operation, but log the error
+        res.status(200).json({
+          success: true,
+          message: `Order status updated to ${status} successfully, but there was an issue with points/stock update`,
+          data: updatedOrder,
+        });
+        return;
       }
     }
 
@@ -755,6 +809,7 @@ export const updateOrderStatusByAdmin = async (
     });
   }
 };
+
 export const getOrderAnalyticsWithPoints = async (
   _req: express.Request,
   res: express.Response
