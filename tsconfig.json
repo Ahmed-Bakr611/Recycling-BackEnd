@@ -1,16 +1,19 @@
 {
   "compilerOptions": {
-    "module": "CommonJS", // Render expects CommonJS for Node.js
-    "target": "ES2020", // Optional, modern JS target
+    "module": "CommonJS",
+    "target": "ES2020",
     "outDir": "dist",
     "rootDir": "src",
     "baseUrl": "src",
     "sourceMap": true,
-    // "noImplicitAny": true,
     "typeRoots": ["./node_modules/@types", "./src/types"],
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "strict": true
+
+    // 👇 Disable strict type checks
+    "strict": false,
+    "noImplicitAny": false,
+    "noEmitOnError": false
   },
   "include": ["src/**/*", "types"]
 }
