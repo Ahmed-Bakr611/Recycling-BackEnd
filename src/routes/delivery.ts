@@ -11,6 +11,7 @@ import {
 } from "../controllers/deliveryController";
 import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
+import { reapplyDeliveryUser, revokeDeliveryUser } from "../controllers/auth";
 const upload = multer({ storage: deliveryAttachmentStorage });
 
 export default (appRouter: express.Router) => {
@@ -54,4 +55,11 @@ export default (appRouter: express.Router) => {
     authorize(["admin"]),
     updateDelivery
   );
+
+  appRouter.post("/delivery/reapply", 
+
+  reapplyDeliveryUser
+);
+appRouter.patch("/delivery/revoke/:userId", authenticate, authorize(['admin']), revokeDeliveryUser);
+
 };

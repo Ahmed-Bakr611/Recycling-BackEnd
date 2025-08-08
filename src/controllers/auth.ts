@@ -10,6 +10,8 @@ import {
 import jwt from "jsonwebtoken";
 import Cart from "../models/cart";
 import { OAuth2Client } from "google-auth-library";
+import { getDeliveryUserStatus } from "../utils/getDeliveryStatus";
+import Order from "../models/pickupOrder";
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 ////////////////////////////////////////////////
@@ -567,7 +569,7 @@ export const validateToken = async (req: Request, res: Response) => {
 
 // Add this endpoint to your auth controller
 
-export const getDeliveryAttachments = async (req: Request, res: Response) => {
+export const getDeliveryAttachmentsEnhanced = async (req: Request, res: Response) => {
   try {
     const deliveryUsers = await User.find({
       role: "delivery",
@@ -579,25 +581,9 @@ export const getDeliveryAttachments = async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ IMPROVED: Better status determination for admin view
+    // Enhanced status determination for admin view
     const deliveryAttachments = deliveryUsers.map((user) => {
-      const declineReason = user.attachments?.declineReason || null;
-      const declinedAt = user.attachments?.declinedAt || null;
-      const approvedAt = user.attachments?.approvedAt || null;
-
-      let currentStatus = "pending"; // Default
-
-      const declineTimestamp = declinedAt ? new Date(declinedAt).getTime() : 0;
-      const approveTimestamp = approvedAt ? new Date(approvedAt).getTime() : 0;
-
-      if (declineTimestamp > 0 && approveTimestamp > 0) {
-        currentStatus =
-          declineTimestamp > approveTimestamp ? "declined" : "approved";
-      } else if (user.isApproved && approvedAt) {
-        currentStatus = "approved";
-      } else if (declineReason && declinedAt) {
-        currentStatus = "declined";
-      }
+      const currentStatus = getDeliveryUserStatus(user);
 
       return {
         userId: user._id,
@@ -605,9 +591,10 @@ export const getDeliveryAttachments = async (req: Request, res: Response) => {
         email: user.email,
         phoneNumber: user.phoneNumber,
         isApproved: user.isApproved,
-        currentStatus, // This will show the actual current status
+        currentStatus, // This will show the actual current status including 'revoked'
         createdAt: user.createdAt,
         attachments: user.attachments,
+        canReapply: currentStatus === "declined" || currentStatus === "revoked",
       };
     });
 
@@ -939,5 +926,132 @@ export const checkDeliveryStatusByEmail = async (
     res.status(500).json({
       message: "Failed to check delivery status",
     });
+  }
+};
+export const revokeDeliveryUser = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const { reason } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        message: "User ID is required",
+      });
+    }
+
+    const deliveryUser = await User.findById(userId);
+
+    if (!deliveryUser) {
+      return res.status(404).json({
+        message: "Delivery user not found",
+      });
+    }
+
+    if (deliveryUser.role !== "delivery") {
+      return res.status(400).json({
+        message: "User is not a delivery person",
+      });
+    }
+
+    if (!deliveryUser.isApproved) {
+      return res.status(400).json({
+        message: "Cannot revoke - user is not currently approved",
+      });
+    }
+
+    // Check if user has active orders (but don't prevent revocation)
+    const activeOrders = await Order.find({
+      courier: userId,
+      status: { $in: ["assigntocourier", "collected"] }
+    });
+
+    console.log(`🔍 Found ${activeOrders.length} active orders for user ${userId}`);
+
+    // Set approval status to false and store revoke information
+    deliveryUser.isApproved = false;
+
+    // Store revoke reason and timestamp (keep approval history)
+    deliveryUser.attachments = {
+      ...deliveryUser.attachments,
+      revokeReason: reason || "Access revoked by admin",
+      revokedAt: new Date(),
+      status: "revoked",
+      // Keep approval date for history
+      // approvedAt: existing value preserved
+    };
+
+    // Clear refresh tokens to force re-login
+    deliveryUser.refreshToken = "";
+
+    await deliveryUser.save();
+
+    console.log(`✅ User revoked successfully: ${deliveryUser.email}`);
+    console.log(`📦 Active orders preserved: ${activeOrders.length}`);
+
+    res.status(200).json({
+      message: "Delivery user access revoked successfully",
+      user: {
+        userId: deliveryUser._id,
+        name: deliveryUser.name,
+        email: deliveryUser.email,
+        phoneNumber: deliveryUser.phoneNumber,
+        isApproved: deliveryUser.isApproved,
+        role: deliveryUser.role,
+        revokeReason: reason || "Access revoked by admin",
+        revokedAt: new Date(),
+      },
+      activeOrdersCount: activeOrders.length,
+      note: activeOrders.length > 0 ? "User has active orders that will be preserved" : "No active orders found"
+    });
+  } catch (err) {
+    console.error("Error revoking delivery user:", err);
+    res.status(500).json({
+      message: "Failed to revoke delivery user",
+    });
+  }
+};
+
+export const reapplyDeliveryUser = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+
+    // Find existing delivery user
+    const existingUser = await User.findOne({ email, role: "delivery" });
+
+    if (!existingUser) {
+      return res.status(404).json({ 
+        message: "Original delivery application not found" 
+      });
+    }
+
+    // Check if user is eligible for reapplication
+    const currentStatus = getDeliveryUserStatus(existingUser);
+
+    if (currentStatus === "approved") {
+      return res.status(400).json({ 
+        message: "Cannot reapply - user is already approved" 
+      });
+    }
+
+    if (currentStatus === "pending") {
+      return res.status(400).json({ 
+        message: "Cannot reapply - application is still pending review" 
+      });
+    }
+
+    // Delete the user
+    await User.deleteOne({ _id: existingUser._id });
+
+    console.log(`❌ Deleted delivery user ${existingUser.email} for reapplication`);
+    console.log(`📋 Status was: ${currentStatus}`);
+
+    return res.status(200).json({ 
+      message: "Previous application deleted successfully. You can now reapply.",
+      previousStatus: currentStatus
+    });
+
+  } catch (err) {
+    console.error("Reapply delivery error:", err);
+    return res.status(500).json({ message: err.message || "Delivery reapplication failed" });
   }
 };
