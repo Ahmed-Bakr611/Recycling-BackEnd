@@ -163,6 +163,19 @@ const OrderSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  paymentMethod: {
+    type: String,
+    enum: ["cash", "credit-card"],
+    default: null,
+  },
+  deliveryFee: {
+    type: Number,
+    default: 0,
+  },
+  totalAmount: {
+    type: Number,
+    default: 0,
+  },
   
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
@@ -282,6 +295,10 @@ export interface IOrder extends Document {
   estimatedWeight?: string; // Estimated weight provided by courier
   quantityAdjustmentNotes?: string; // Notes explaining quantity changes
   hasQuantityAdjustments?: boolean; // Quick flag for orders with quantity changes
+
+  paymentMethod?: "cash"| "credit-card"; 
+  deliveryFee?: number; 
+  totalAmount?: number; 
 }
 
 // Clear the model cache and recreate it to ensure schema changes are applied
