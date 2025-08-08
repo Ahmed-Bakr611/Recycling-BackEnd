@@ -2,6 +2,7 @@ import { ICartItem } from "models/cart";
 import Category from "../models/category";
 import { IItem } from "../models/pickupOrder";
 import mongoose, { Types } from "mongoose";
+import { getSocketIO } from "../socket/socketServer"; // adjust path to your socket setup
 
 type Operation = "increase" | "decrease";
 
@@ -15,7 +16,9 @@ export const updateItemQuantities = async (
   );
   console.log("------------START DISPLAY INCOMING ITEMS---------------------");
   console.log(orderItems);
-  console.log("-------------END DISPLAY INCOMINE ITEMS-----------------");
+  console.log("-------------END DISPLAY INCOMING ITEMS-----------------");
+
+  const io = getSocketIO();
 
   await Promise.all(
     orderItems.map(async (orderItem, index) => {
@@ -35,14 +38,25 @@ export const updateItemQuantities = async (
           );
         }
 
-        // ✅ Atomic quantity update
         const quantityChange =
           operation === "increase" ? orderItem.quantity : -orderItem.quantity;
 
+        // Apply the change
         await Category.updateOne(
           { _id: categoryId, "items._id": itemId },
           { $inc: { "items.$.quantity": quantityChange } }
         );
+
+        // Emit real-time update
+        if (io) {
+          console.log("SOKET SENDING NOW FROM SERVER 👋👋👋👋👋👋👋👋");
+          const newQuantity = item.quantity + quantityChange;
+          io.emit("itemUpdated", {
+            itemId: item._id,
+            categoryId: category._id,
+            quantity: newQuantity,
+          });
+        }
 
         console.log(
           `✅ ${operation === "increase" ? "Added" : "Subtracted"} ${
@@ -61,6 +75,7 @@ export const updateItemQuantities = async (
 
   console.log(`\n✅ All ${orderItems.length} items processed successfully.`);
 };
+
 export function mapCartItemsToOrderItems(cartItems: ICartItem[]): IItem[] {
   return cartItems.map((item) => ({
     _id: new mongoose.Types.ObjectId(item._id),
