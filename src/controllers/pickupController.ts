@@ -36,7 +36,7 @@ export const createOrder = async (
 ): Promise<void> => {
   try {
     const userId = req.user.userId;
-    const { address, items, phoneNumber, userName, imageUrl, email } = req.body;
+    const { address, items, phoneNumber, userName, imageUrl, email , paymentMethod, deliveryFee, totalAmount } = req.body;
     console.log("🔍 Incoming order request:", req.body);
 
     console.log("--------------INSIDE CREATE ORDER-------------");
@@ -89,6 +89,9 @@ export const createOrder = async (
       address,
       items: newOrderItems,
       status: "pending",
+      paymentMethod,
+      deliveryFee,
+      totalAmount
     });
 
     const savedOrder = await newOrder.save();
