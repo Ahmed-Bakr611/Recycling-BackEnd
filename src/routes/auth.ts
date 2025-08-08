@@ -9,7 +9,7 @@ import {
   validateToken,
   verifyOtpSentToUser,
   RegisterNewUser,
-  getDeliveryAttachments,
+  getDeliveryAttachmentsEnhanced,
   declineDeliveryUser,
   approveDeliveryUser,
   getDeliveryStatus,
@@ -32,7 +32,7 @@ export default (router: express.Router) => {
   router.post("/auth/logout", logout);
   router.get("/auth/validate", authenticate, validateToken);
   router.post("/auth/provider/google", googleCheckFirstTime);
-  router.get("/delivery-attachments", getDeliveryAttachments);
+  router.get("/delivery-attachments", getDeliveryAttachmentsEnhanced);
   router.patch("/delivery/approve/:userId", approveDeliveryUser);
   router.patch("/delivery/decline/:userId", declineDeliveryUser);
   router.get("/delivery-status", authenticate, getDeliveryStatus);
