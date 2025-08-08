@@ -281,6 +281,108 @@ export const getCourierAssignedOrders = async (req: Request, res: Response) => {
   }
 };
 
+export const getOrdersByCourier = async (req: Request, res: Response) => {
+  try {
+    const { courierId } = req.params; // Gets courier ID from URL parameter
+    console.log("🔍 Getting orders for courier:", courierId);
+
+    if (!courierId || !mongoose.Types.ObjectId.isValid(courierId)) {
+      return res.status(400).json({ message: "Invalid courier ID" });
+    }
+
+    // Find all orders assigned to the specified courier
+    const orders = await Order.find({
+      courier: courierId,
+      $or: [
+        { status: "assigntocourier" },
+        { status: "assignedtocourier" }
+      ]
+    })
+      .populate("user.userId", "name phoneNumber email imgUrl role")
+      .populate("courier", "name phoneNumber email imgUrl role")
+      .sort({ createdAt: -1 });
+
+    console.log(`✅ Found ${orders.length} assigned orders for courier ${courierId}`);
+
+    // Clean up the order data (same as your existing function)
+    const cleanedOrders = orders.map((order) => {
+      const orderObj = order.toObject();
+
+      if (orderObj.user?.userId && typeof orderObj.user.userId === "object") {
+        const populatedUser = orderObj.user.userId as any;
+        orderObj.user = {
+          userId: populatedUser._id,
+          phoneNumber: populatedUser.phoneNumber || orderObj.user.phoneNumber,
+          userName: populatedUser.name || orderObj.user.userName,
+          email: populatedUser.email || orderObj.user.email,
+          image: populatedUser.imgUrl || orderObj.user.image || null,
+          role: populatedUser.role || orderObj.user.role || null,
+        };
+      }
+
+      return orderObj;
+    });
+
+    res.status(200).json(cleanedOrders); // Note: return array directly, not wrapped in { orders: }
+  } catch (error) {
+    console.error("❌ Get orders by courier error:", error);
+    res.status(500).json({
+      message: "Internal server error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+
+export const updateOrdersForCourierStatusChange = async (courierId: string, isApproved: boolean) => {
+  try {
+    if (!isApproved) {
+      console.log(`🔄 Courier ${courierId} is no longer approved, updating assigned orders...`);
+      
+      // Find all orders assigned to this courier that are still in assigntocourier status
+      const assignedOrders = await Order.find({
+        courier: courierId,
+        $or: [
+          { status: "assigntocourier" },
+          { status: "assignedtocourier" }
+        ]
+      });
+
+      console.log(`📋 Found ${assignedOrders.length} orders to update for courier ${courierId}`);
+
+      // Update all these orders back to pending
+      const updatePromises = assignedOrders.map(async (order) => {
+        // Add to status history
+        if (!order.statusHistory) {
+          order.statusHistory = [];
+        }
+
+        order.statusHistory.push({
+          status: "pending",
+          timestamp: new Date(),
+          updatedBy: "system",
+          notes: "Courier status changed to not approved - order returned to pending"
+        });
+
+        // Update status and remove courier assignment
+        order.status = "pending";
+        order.courier = undefined;
+
+        return order.save();
+      });
+
+      await Promise.all(updatePromises);
+
+      console.log(`✅ Updated ${assignedOrders.length} orders back to pending for courier ${courierId}`);
+      return assignedOrders.length;
+    }
+    return 0;
+  } catch (error) {
+    console.error(`❌ Error updating orders for courier ${courierId}:`, error);
+    throw error;
+  }
+};
+
 // UPDATED: This function now handles quantity updates and estimated weight for customers
 export const markOrderAsCollected = async (req: Request, res: Response) => {
   try {

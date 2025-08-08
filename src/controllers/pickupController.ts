@@ -701,25 +701,25 @@ export const updateOrderStatusByAdmin = async (
     const userRole = user?.role || "customer";
 
     // Define status transitions based on user role
-    const getValidTransitions = (role: string): Record<string, string[]> => {
-      if (role === "buyer") {
-        return {
-          pending: ["assigntocourier", "cancelled"],
-          assigntocourier: ["completed", "cancelled"], // Buyers can complete directly
-          collected: ["completed", "cancelled"], // Handle edge case
-          completed: [],
-          cancelled: [],
-        };
-      } else {
-        return {
-          pending: ["assigntocourier", "cancelled"],
-          assigntocourier: ["collected", "cancelled"], // Must go to collected first
-          collected: ["completed", "cancelled"], // Only admins can complete from collected
-          completed: [],
-          cancelled: [],
-        };
-      }
+ const getValidTransitions = (role: string): Record<string, string[]> => {
+  if (role === "buyer") {
+    return {
+      pending: ["assigntocourier", "cancelled"],
+      assigntocourier: ["completed", "cancelled", "pending"], // ADD "pending" here for courier revocation
+      collected: ["completed", "cancelled"], 
+      completed: [],
+      cancelled: [],
     };
+  } else {
+    return {
+      pending: ["assigntocourier", "cancelled"],
+      assigntocourier: ["collected", "cancelled", "pending"], // ADD "pending" here for courier revocation
+      collected: ["completed", "cancelled"], 
+      completed: [],
+      cancelled: [],
+    };
+  }
+};
 
     const validTransitions = getValidTransitions(userRole);
     const currentStatus = currentOrder.status.toLowerCase();
