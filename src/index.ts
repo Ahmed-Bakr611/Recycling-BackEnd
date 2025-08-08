@@ -4,7 +4,7 @@ import { createServer } from "http";
 import app from "./app";
 import connectDB from "./config/db";
 import router from "./routes";
-import { initializeSocketIO } from "./socket/socketServer";
+import { getSocketIO, initializeSocketIO } from "./socket/socketServer";
 
 dotenv.config();
 

@@ -58,6 +58,10 @@ export const getCart = async (req: Request, res: Response) => {
       await cart.save();
     }
   }
+  // console.log("😜😜😜😜😜😜😜😜😜😜😜😜");
+  // console.log(`userId = ${userId} , sessionID = ${sessionId}`);
+  // console.log("😜😜😜😜😜😜😜😜😜😜😜😜");
+
   return res.status(200).json(cart);
 };
 

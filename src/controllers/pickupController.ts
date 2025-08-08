@@ -134,18 +134,18 @@ export const getAllOrders = async (
 ): Promise<void> => {
   try {
     const userId = req.user.userId;
-    
+
     // Get pagination parameters from query string
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 5;
     const skip = (page - 1) * limit;
-    
+
     // Get status filter from query string
     const status = req.query.status as string;
-    
+
     // Build query filter
     let filter: any = { "user.userId": userId };
-    
+
     if (status) {
       if (status === "incoming") {
         // Include "collected" in incoming since it's still in progress
@@ -162,13 +162,13 @@ export const getAllOrders = async (
 
     // Get total count for pagination info (with filter)
     const totalOrders = await Order.countDocuments(filter);
-    
+
     // Get total completed orders count for stats (always for all user orders)
-    const totalCompletedOrders = await Order.countDocuments({ 
-      "user.userId": userId, 
-      status: "completed" 
+    const totalCompletedOrders = await Order.countDocuments({
+      "user.userId": userId,
+      status: "completed",
     });
-    
+
     // Get paginated orders with filter
     const orders = await Order.find(filter)
       .sort({ createdAt: -1 })
@@ -191,8 +191,8 @@ export const getAllOrders = async (
         totalPages,
         hasNextPage,
         hasPrevPage,
-        limit
-      }
+        limit,
+      },
     });
   } catch (error) {
     console.error("Error fetching orders:", error);
@@ -444,13 +444,13 @@ export const updateOrderStatus = async (
       return;
     }
 
- const validStatuses = [
-  "pending",
-  "assigntocourier",
-  "collected", 
-  "completed",
-  "cancelled",
-];
+    const validStatuses = [
+      "pending",
+      "assigntocourier",
+      "collected",
+      "completed",
+      "cancelled",
+    ];
     if (!validStatuses.includes(status)) {
       res.status(400).json({
         success: false,
@@ -667,7 +667,7 @@ export const updateOrderStatusByAdmin = async (
       "completed",
       "cancelled",
     ];
-    
+
     if (!validStatuses.includes(status)) {
       res.status(400).json({
         success: false,
@@ -747,7 +747,10 @@ export const updateOrderStatusByAdmin = async (
     const userId = currentOrder.user.userId.toString();
 
     try {
-      if (status === "assigntocourier" && previousStatus !== "assigntocourier") {
+      if (
+        status === "assigntocourier" &&
+        previousStatus !== "assigntocourier"
+      ) {
         await createOrderAssignedNotification(userId, orderId);
       } else if (status === "cancelled" && previousStatus !== "cancelled") {
         await createOrderCancelledNotification(
@@ -799,7 +802,6 @@ export const updateOrderStatusByAdmin = async (
         // 🎯 ADD STOCK UPDATE HERE - This was missing!
         await updateItemQuantities(updatedOrder.items, "increase");
         console.log("✅ Restocked item quantities for admin-completed order.");
-
       } catch (pointsError) {
         console.error("❌ Error adding points or updating stock:", pointsError);
         // Don't fail the entire operation, but log the error
@@ -1100,7 +1102,7 @@ export const getTopMaterialsRecycled = async (
           // Debug: show all the different case variations found
           nameVariations: { $addToSet: "$items.itemName" },
           // Debug: show all units found for this item (in case there are variations)
-          unitVariations: { $addToSet: "$items.unit" }
+          unitVariations: { $addToSet: "$items.unit" },
         },
       },
       {
@@ -1110,10 +1112,10 @@ export const getTopMaterialsRecycled = async (
             $switch: {
               branches: [
                 { case: { $eq: ["$measurementUnit", 1] }, then: "kg" },
-                { case: { $eq: ["$measurementUnit", 2] }, then: "pieces" }
+                { case: { $eq: ["$measurementUnit", 2] }, then: "pieces" },
               ],
-              default: "pieces" // Default fallback
-            }
+              default: "pieces", // Default fallback
+            },
           },
           // Add a formatted display string for quantity with unit
           quantityWithUnit: {
@@ -1124,14 +1126,14 @@ export const getTopMaterialsRecycled = async (
                 $switch: {
                   branches: [
                     { case: { $eq: ["$measurementUnit", 1] }, then: "kg" },
-                    { case: { $eq: ["$measurementUnit", 2] }, then: "pieces" }
+                    { case: { $eq: ["$measurementUnit", 2] }, then: "pieces" },
                   ],
-                  default: "pieces"
-                }
-              }
-            ]
-          }
-        }
+                  default: "pieces",
+                },
+              },
+            ],
+          },
+        },
       },
       { $sort: { totalQuantity: -1 } },
       { $limit: 4 }
@@ -1150,17 +1152,23 @@ export const getTopMaterialsRecycled = async (
       console.log(`\n--- Material ${index + 1} ---`);
       console.log(`Display Name: ${material.itemName}`);
       console.log(`Total Quantity: ${material.totalQuantity}`);
-      console.log(`Unit: ${material.unit || 'pieces'} (${material.measurementUnit})`);
+      console.log(
+        `Unit: ${material.unit || "pieces"} (${material.measurementUnit})`
+      );
       console.log(`Quantity with Unit: ${material.quantityWithUnit}`);
       console.log(`Document Count: ${material.documentCount}`);
       console.log(`Name Variations Found:`, material.nameVariations);
       console.log(`Unit Variations Found:`, material.unitVariations);
-      
-      if (material._id.itemName === 'cooking pan') {
+
+      if (material._id.itemName === "cooking pan") {
         console.log(`🍳 COOKING PAN CONSOLIDATED:`);
-        console.log(`- Combined total: ${material.totalQuantity} ${material.unit || 'pieces'}`);
+        console.log(
+          `- Combined total: ${material.totalQuantity} ${
+            material.unit || "pieces"
+          }`
+        );
         console.log(`- From ${material.documentCount} entries`);
-        console.log(`- Variations: ${material.nameVariations.join(', ')}`);
+        console.log(`- Variations: ${material.nameVariations.join(", ")}`);
         console.log(`- Unit code: ${material.measurementUnit}`);
       }
     });
@@ -1175,9 +1183,9 @@ export const getTopMaterialsRecycled = async (
           totalQuantity: { $sum: { $toDouble: "$items.quantity" } },
           totalDocs: { $sum: 1 },
           variations: { $addToSet: "$items.itemName" },
-          units: { $addToSet: "$items.measurement_unit" }
-        }
-      }
+          units: { $addToSet: "$items.measurement_unit" },
+        },
+      },
     ]);
 
     console.log("\n🔍 COOKING PAN VERIFICATION:", cookingPanTotal);
