@@ -23,6 +23,9 @@ export interface SafeUser {
   updatedAt?: Date;
   lastActiveAt?: Date;
   stripeCustomerId?: string;
+  // Add rating fields to SafeUser interface - only for delivery users
+  rating?: number;
+  totalReviews?: number;
 }
 
 // 1. Interface representing a User document
@@ -44,6 +47,10 @@ export interface IUser extends Document {
   updatedAt?: Date;
   lastActiveAt?: Date;
   stripeCustomerId?: string;
+  
+  // Add rating fields for delivery users only
+  rating?: number;
+  totalReviews?: number;
 
   comparePassword(candidate: string): Promise<boolean>;
   toSafeObject(): SafeUser;
@@ -99,13 +106,76 @@ const userSchema = new Schema<IUser>(
       default: {},
     },
     lastActiveAt: { type: Date },
+    
+    // Rating fields - only for delivery users
+    rating: {
+      type: Number,
+      default: function(this: IUser) {
+        return this.role === "delivery" ? 0 : undefined;
+      },
+      min: 0,
+      max: 5,
+      // Only validate if role is delivery
+      validate: {
+        validator: function(this: IUser, value: number) {
+          if (this.role !== "delivery") {
+            return value === undefined;
+          }
+          return true;
+        },
+        message: "Rating field is only allowed for delivery users"
+      }
+    },
+    totalReviews: {
+      type: Number,
+      default: function(this: IUser) {
+        return this.role === "delivery" ? 0 : undefined;
+      },
+      min: 0,
+      // Only validate if role is delivery
+      validate: {
+        validator: function(this: IUser, value: number) {
+          if (this.role !== "delivery") {
+            return value === undefined;
+          }
+          return true;
+        },
+        message: "TotalReviews field is only allowed for delivery users"
+      }
+    }
   },
   { timestamps: true }
 );
 
+// Pre-save middleware to handle rating fields based on role
+userSchema.pre("save", async function (next) {
+  const user = this as IUser;
+  
+  // Handle password hashing
+  if (user.isModified("password") && user.password) {
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(user.password, salt);
+  }
+  
+  // Handle rating fields based on role
+  if (user.isModified("role")) {
+    if (user.role === "delivery") {
+      // Initialize rating fields for delivery users if not set
+      if (user.rating === undefined) user.rating = 0;
+      if (user.totalReviews === undefined) user.totalReviews = 0;
+    } else {
+      // Remove rating fields for non-delivery users
+      user.rating = undefined;
+      user.totalReviews = undefined;
+    }
+  }
+  
+  next();
+});
+
 // 3. Instance method: return safe user object
 userSchema.methods.toSafeObject = function (): SafeUser {
-  return {
+  const safeUser: SafeUser = {
     id: this._id.toString(),
     name: this.name,
     email: this.email,
@@ -120,21 +190,29 @@ userSchema.methods.toSafeObject = function (): SafeUser {
     lastActiveAt: this.lastActiveAt,
     stripeCustomerId: this.stripeCustomerId,
   };
+
+  // Only include rating fields for delivery users
+  if (this.role === "delivery") {
+    safeUser.rating = this.rating;
+    safeUser.totalReviews = this.totalReviews;
+  }
+
+  return safeUser;
 };
 
-// 4. Pre-save: hash password if modified
-userSchema.pre("save", async function (next) {
-  const user = this as IUser;
-  if (user.isModified("password") && user.password) {
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(user.password, salt);
-  }
-  next();
-});
-
-// 5. Password compare method
+// 4. Password compare method
 userSchema.methods.comparePassword = async function (candidate: string) {
   return bcrypt.compare(candidate, this.password || "");
+};
+
+// 5. Static method to create delivery user with rating fields
+userSchema.statics.createDeliveryUser = function(userData: Partial<IUser>) {
+  return new this({
+    ...userData,
+    role: "delivery",
+    rating: 0,
+    totalReviews: 0
+  });
 };
 
 // 6. Export model
