@@ -8,16 +8,18 @@ import {
   searchUsers,
   updateUserByAdmin,
   // Add these new imports for points management
+} from "../controllers/userController";
+import {
   addUserPoints,
   deductUserPoints,
   getUserPoints,
   getPointsLeaderboard,
-} from "../controllers/userController";
+  getUserOrdersWithPoints,
+} from "../controllers/pointsController";
 import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
 import {
   getOrderAnalyticsWithPoints,
-  getUserOrdersWithPoints,
   recalculateUserPointsFromOrders,
 } from "../controllers/pickupController";
 import {

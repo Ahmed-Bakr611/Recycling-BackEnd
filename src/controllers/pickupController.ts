@@ -15,9 +15,10 @@ import {
   updateItemQuantities,
 } from "../utils/stockHelper";
 import { runAggregation } from "../utils/FilterHelper";
+import { processUserPoints } from "../utils/tireHelpe";
 
 // Use interfaces from pickupOrder.ts
-interface IAuthenticatedRequest extends express.Request {
+export interface IAuthenticatedRequest extends express.Request {
   user: {
     userId: string;
     role: string;
@@ -26,7 +27,7 @@ interface IAuthenticatedRequest extends express.Request {
   };
 }
 
-const calculateOrderPoints = (items: IItem[]): number => {
+export const calculateOrderPoints = (items: IItem[]): number => {
   return items.reduce((total, item) => total + item.points * item.quantity, 0);
 };
 
@@ -36,7 +37,17 @@ export const createOrder = async (
 ): Promise<void> => {
   try {
     const userId = req.user.userId;
-    const { address, items, phoneNumber, userName, imageUrl, email , paymentMethod, deliveryFee, totalAmount } = req.body;
+    const {
+      address,
+      items,
+      phoneNumber,
+      userName,
+      imageUrl,
+      email,
+      paymentMethod,
+      deliveryFee,
+      totalAmount,
+    } = req.body;
     console.log("🔍 Incoming order request:", req.body);
 
     console.log("--------------INSIDE CREATE ORDER-------------");
@@ -91,7 +102,7 @@ export const createOrder = async (
       status: "pending",
       paymentMethod,
       deliveryFee,
-      totalAmount
+      totalAmount,
     });
 
     const savedOrder = await newOrder.save();
@@ -579,6 +590,7 @@ export const getAllOrdersForAdmin = async (
     });
   }
 };
+
 export const cancelOrder = async (
   req: IAuthenticatedRequest,
   res: express.Response
@@ -617,6 +629,11 @@ export const cancelOrder = async (
       return;
     }
 
+    // Calculate points to deduct (same logic as awarding but negative)
+    const totalPointsToDeduct = order.items.reduce((sum, item) => {
+      return sum + item.points * item.quantity;
+    }, 0);
+
     order.status = "cancelled";
 
     order.statusHistory.push({
@@ -628,6 +645,18 @@ export const cancelOrder = async (
     });
 
     await order.save();
+
+    // Deduct points after order cancellation
+    if (totalPointsToDeduct > 0) {
+      try {
+        await processUserPoints(userId, -totalPointsToDeduct);
+        console.log(
+          `Deducted ${totalPointsToDeduct} points from user ${userId} due to order cancellation`
+        );
+      } catch (err) {
+        console.error("Failed to deduct points on order cancellation:", err);
+      }
+    }
 
     res.json({
       success: true,
@@ -701,25 +730,25 @@ export const updateOrderStatusByAdmin = async (
     const userRole = user?.role || "customer";
 
     // Define status transitions based on user role
- const getValidTransitions = (role: string): Record<string, string[]> => {
-  if (role === "buyer") {
-    return {
-      pending: ["assigntocourier", "cancelled"],
-      assigntocourier: ["completed", "cancelled", "pending"], // ADD "pending" here for courier revocation
-      collected: ["completed", "cancelled"], 
-      completed: [],
-      cancelled: [],
+    const getValidTransitions = (role: string): Record<string, string[]> => {
+      if (role === "buyer") {
+        return {
+          pending: ["assigntocourier", "cancelled"],
+          assigntocourier: ["completed", "cancelled", "pending"], // ADD "pending" here for courier revocation
+          collected: ["completed", "cancelled"],
+          completed: [],
+          cancelled: [],
+        };
+      } else {
+        return {
+          pending: ["assigntocourier", "cancelled"],
+          assigntocourier: ["collected", "cancelled", "pending"], // ADD "pending" here for courier revocation
+          collected: ["completed", "cancelled"],
+          completed: [],
+          cancelled: [],
+        };
+      }
     };
-  } else {
-    return {
-      pending: ["assigntocourier", "cancelled"],
-      assigntocourier: ["collected", "cancelled", "pending"], // ADD "pending" here for courier revocation
-      collected: ["completed", "cancelled"], 
-      completed: [],
-      cancelled: [],
-    };
-  }
-};
 
     const validTransitions = getValidTransitions(userRole);
     const currentStatus = currentOrder.status.toLowerCase();
@@ -1306,38 +1335,6 @@ export const recalculateUserPointsFromOrders = async (
     });
   } catch (error) {
     console.error("Error recalculating user points:", error);
-    res.status(500).json({
-      success: false,
-      message: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
-};
-
-export const getUserOrdersWithPoints = async (
-  req: IAuthenticatedRequest,
-  res: express.Response
-): Promise<void> => {
-  try {
-    const userId = req.user.userId;
-
-    const orders = await Order.find({ "user.userId": userId }).sort({
-      createdAt: -1,
-    });
-
-    const ordersWithPoints = orders.map((order) => ({
-      ...order.toObject(),
-      pointsEarned:
-        order.status === "completed" ? calculateOrderPoints(order.items) : 0,
-      potentialPoints: calculateOrderPoints(order.items),
-    }));
-
-    res.json({
-      success: true,
-      count: ordersWithPoints.length,
-      data: ordersWithPoints,
-    });
-  } catch (error) {
-    console.error("Error fetching user orders with points:", error);
     res.status(500).json({
       success: false,
       message: error instanceof Error ? error.message : "Unknown error",
