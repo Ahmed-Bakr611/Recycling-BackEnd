@@ -162,14 +162,12 @@ export const getAllOrders = async (
 
     if (status) {
       if (status === "incoming") {
-        // Include "collected" in incoming since it's still in progress
         filter.status = { $in: ["pending", "assigntocourier", "collected"] };
       } else if (status === "completed") {
         filter.status = "completed";
       } else if (status === "cancelled") {
         filter.status = "cancelled";
       } else if (status === "collected") {
-        // Allow filtering specifically for collected orders
         filter.status = "collected";
       }
     }
@@ -177,17 +175,71 @@ export const getAllOrders = async (
     // Get total count for pagination info (with filter)
     const totalOrders = await Order.countDocuments(filter);
 
-    // Get total completed orders count for stats (always for all user orders)
+    // Get total completed orders count for stats
     const totalCompletedOrders = await Order.countDocuments({
       "user.userId": userId,
       status: "completed",
     });
 
-    // Get paginated orders with filter
+    // FIX: Use correct field names from User schema
     const orders = await Order.find(filter)
+      .populate({
+        path: "courier",
+        select: "name email phoneNumber rating totalReviews", // Use 'name' instead of 'userName'
+      })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
+
+    // Transform orders to include review information
+    const ordersWithReviewData = orders.map((order) => {
+      const orderObj: any = order.toObject();
+
+      // FIX: Normalize courier data to ensure consistent field names
+      if (orderObj.courier) {
+        orderObj.courier = {
+          _id: orderObj.courier._id,
+          email: orderObj.courier.email,
+          phoneNumber: orderObj.courier.phoneNumber,
+          name: orderObj.courier.name || "Unknown Courier", // Use the correct 'name' field
+          rating: orderObj.courier.rating,
+          totalReviews: orderObj.courier.totalReviews,
+        };
+      }
+
+      // For completed orders, add review status information
+      if (order.status === "completed") {
+        if (order.deliveryReview) {
+          // Order has a review
+          orderObj.review = {
+            _id: order._id.toString(),
+            orderId: order._id.toString(),
+            stars: order.deliveryReview.stars,
+            comment: order.deliveryReview.comment,
+            reviewedAt: order.deliveryReview.reviewedAt,
+            courier: {
+              id:
+                (order.courier as any)?._id?.toString() ||
+                order.deliveryReview.reviewedBy.toString(),
+              name: (order.courier as any)?.name || "Unknown Courier", // Use 'name' instead of 'userName'
+            },
+            hasReview: true,
+          };
+          orderObj.canBeReviewed = false;
+          orderObj.hasReview = true;
+        } else {
+          // Order can be reviewed
+          orderObj.canBeReviewed = true;
+          orderObj.hasReview = false;
+        }
+      } else {
+        // Non-completed orders cannot be reviewed
+        orderObj.canBeReviewed = false;
+        orderObj.hasReview = false;
+      }
+
+      return orderObj;
+    });
 
     // Calculate pagination info
     const totalPages = Math.ceil(totalOrders / limit);
@@ -196,10 +248,10 @@ export const getAllOrders = async (
 
     res.json({
       success: true,
-      count: orders.length,
+      count: ordersWithReviewData.length,
       totalCount: totalOrders,
       totalCompletedOrders,
-      data: orders,
+      data: ordersWithReviewData,
       pagination: {
         currentPage: page,
         totalPages,
