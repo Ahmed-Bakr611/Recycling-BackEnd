@@ -1,4 +1,4 @@
-// models/pickupOrder.ts - Updated with collected status support and quantity management
+// models/pickupOrder.ts - Updated with collected status support, quantity management, and delivery reviews
 import mongoose, { Document, Model, Types } from "mongoose";
 
 const AddressSchema = new mongoose.Schema({
@@ -102,6 +102,35 @@ const DeliveryProofSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// NEW: Delivery Review Schema
+const DeliveryReviewSchema = new mongoose.Schema(
+  {
+    stars: {
+      type: Number,
+      required: true,
+      min: 1,
+      max: 5
+    },
+    comment: {
+      type: String,
+      required: false, // Comments are optional to match your frontend
+      trim: true,
+      maxlength: 1000, // Match your frontend validation (1000 chars)
+      default: ""
+    },
+    reviewedAt: {
+      type: Date,
+      default: Date.now
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    }
+  },
+  { _id: false }
+);
+
 const OrderSchema = new mongoose.Schema({
   user: {
     userId: {
@@ -131,6 +160,12 @@ const OrderSchema = new mongoose.Schema({
   },
   deliveryProof: {
     type: DeliveryProofSchema,
+    default: null,
+  },
+  
+  // NEW: Delivery Review field
+  deliveryReview: {
+    type: DeliveryReviewSchema,
     default: null,
   },
   
@@ -218,6 +253,7 @@ OrderSchema.index({ status: 1 });
 OrderSchema.index({ createdAt: -1 });
 OrderSchema.index({ hasQuantityAdjustments: 1 }); // NEW: Index for quantity adjustments
 OrderSchema.index({ collectedAt: -1 }); // NEW: Index for collection time sorting
+OrderSchema.index({ "deliveryReview.reviewedAt": -1 }); // NEW: Index for review queries
 
 // Define TypeScript interfaces
 export interface IAddress {
@@ -266,6 +302,14 @@ export interface IDeliveryProof {
   completedBy: mongoose.Types.ObjectId;
 }
 
+// NEW: Delivery Review interface
+export interface IDeliveryReview {
+  stars: number;
+  comment: string;
+  reviewedAt: Date;
+  reviewedBy: mongoose.Types.ObjectId;
+}
+
 export interface IOrderUser {
   userId: mongoose.Types.ObjectId;
   phoneNumber?: string;
@@ -275,7 +319,7 @@ export interface IOrderUser {
   role?: string;
 }
 
-// UPDATED: Enhanced IOrder interface with new fields
+// UPDATED: Enhanced IOrder interface with delivery review field
 export interface IOrder extends Document {
   user: IOrderUser;
   address: IAddress;
@@ -284,6 +328,9 @@ export interface IOrder extends Document {
   status: "pending" | "assigntocourier" | "collected" | "completed" | "cancelled"; // Added 'collected'
   statusHistory: IStatusHistory[];
   deliveryProof?: IDeliveryProof;
+  
+  // NEW: Delivery Review field
+  deliveryReview?: IDeliveryReview;
   
   // Timestamp fields
   collectedAt?: Date; // When courier marks as collected
