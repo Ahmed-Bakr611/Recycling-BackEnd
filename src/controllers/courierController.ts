@@ -13,9 +13,15 @@ import {
   createOrderCompletedNotification,
 } from "../services/notificationService";
 import { updateItemQuantities } from "../utils/stockHelper";
+import { processUserPoints } from "../utils/tireHelpe";
 
 // Updated to include 'collected' status
-type OrderStatus = "pending" | "assigntocourier" | "collected" | "completed" | "cancelled";
+type OrderStatus =
+  | "pending"
+  | "assigntocourier"
+  | "collected"
+  | "completed"
+  | "cancelled";
 
 interface StatusHistoryEntry {
   status: OrderStatus;
@@ -56,7 +62,9 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
     console.log("✅ Courier validated:", courier.name);
 
     // Updated status transitions to include 'collected' and handle buyer logic
-    const getValidTransitions = (userRole: string): Record<OrderStatus, OrderStatus[]> => {
+    const getValidTransitions = (
+      userRole: string
+    ): Record<OrderStatus, OrderStatus[]> => {
       if (userRole === "buyer") {
         // Buyers skip collected status - can complete directly from assigntocourier
         return {
@@ -81,7 +89,7 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
     // Get user role to determine valid transitions
     const user = await User.findById(order.user.userId);
     const userRole = user?.role || "customer";
-    
+
     const validTransitions = getValidTransitions(userRole);
 
     const currentStatus = order.status.toLowerCase() as OrderStatus;
@@ -293,16 +301,15 @@ export const getOrdersByCourier = async (req: Request, res: Response) => {
     // Find all orders assigned to the specified courier
     const orders = await Order.find({
       courier: courierId,
-      $or: [
-        { status: "assigntocourier" },
-        { status: "assignedtocourier" }
-      ]
+      $or: [{ status: "assigntocourier" }, { status: "assignedtocourier" }],
     })
       .populate("user.userId", "name phoneNumber email imgUrl role")
       .populate("courier", "name phoneNumber email imgUrl role")
       .sort({ createdAt: -1 });
 
-    console.log(`✅ Found ${orders.length} assigned orders for courier ${courierId}`);
+    console.log(
+      `✅ Found ${orders.length} assigned orders for courier ${courierId}`
+    );
 
     // Clean up the order data (same as your existing function)
     const cleanedOrders = orders.map((order) => {
@@ -333,22 +340,25 @@ export const getOrdersByCourier = async (req: Request, res: Response) => {
   }
 };
 
-
-export const updateOrdersForCourierStatusChange = async (courierId: string, isApproved: boolean) => {
+export const updateOrdersForCourierStatusChange = async (
+  courierId: string,
+  isApproved: boolean
+) => {
   try {
     if (!isApproved) {
-      console.log(`🔄 Courier ${courierId} is no longer approved, updating assigned orders...`);
-      
+      console.log(
+        `🔄 Courier ${courierId} is no longer approved, updating assigned orders...`
+      );
+
       // Find all orders assigned to this courier that are still in assigntocourier status
       const assignedOrders = await Order.find({
         courier: courierId,
-        $or: [
-          { status: "assigntocourier" },
-          { status: "assignedtocourier" }
-        ]
+        $or: [{ status: "assigntocourier" }, { status: "assignedtocourier" }],
       });
 
-      console.log(`📋 Found ${assignedOrders.length} orders to update for courier ${courierId}`);
+      console.log(
+        `📋 Found ${assignedOrders.length} orders to update for courier ${courierId}`
+      );
 
       // Update all these orders back to pending
       const updatePromises = assignedOrders.map(async (order) => {
@@ -361,7 +371,8 @@ export const updateOrdersForCourierStatusChange = async (courierId: string, isAp
           status: "pending",
           timestamp: new Date(),
           updatedBy: "system",
-          notes: "Courier status changed to not approved - order returned to pending"
+          notes:
+            "Courier status changed to not approved - order returned to pending",
         });
 
         // Update status and remove courier assignment
@@ -373,7 +384,9 @@ export const updateOrdersForCourierStatusChange = async (courierId: string, isAp
 
       await Promise.all(updatePromises);
 
-      console.log(`✅ Updated ${assignedOrders.length} orders back to pending for courier ${courierId}`);
+      console.log(
+        `✅ Updated ${assignedOrders.length} orders back to pending for courier ${courierId}`
+      );
       return assignedOrders.length;
     }
     return 0;
@@ -438,12 +451,13 @@ export const markOrderAsCollected = async (req: Request, res: Response) => {
     // Handle quantity updates for customer orders
     if (userRole === "customer" && updatedQuantities) {
       try {
-        const parsedQuantities = typeof updatedQuantities === 'string' 
-          ? JSON.parse(updatedQuantities) 
-          : updatedQuantities;
+        const parsedQuantities =
+          typeof updatedQuantities === "string"
+            ? JSON.parse(updatedQuantities)
+            : updatedQuantities;
 
         console.log("📊 Processing quantity updates for customer order");
-        
+
         // Update item quantities based on actual measurements
         order.items = order.items.map((item) => {
           const itemId = item._id.toString();
@@ -451,14 +465,16 @@ export const markOrderAsCollected = async (req: Request, res: Response) => {
             const quantityData = parsedQuantities[itemId];
             const originalQuantity = item.quantity;
             const actualQuantity = quantityData.actualQuantity;
-            
-            console.log(`📏 Item ${item.itemName}: ${originalQuantity} → ${actualQuantity}`);
-            
+
+            console.log(
+              `📏 Item ${item.itemName}: ${originalQuantity} → ${actualQuantity}`
+            );
+
             // Store original quantity if not already stored
             if (!item.originalQuantity) {
               item.originalQuantity = originalQuantity;
             }
-            
+
             // Update to actual quantity
             item.quantity = actualQuantity;
             item.quantityAdjusted = originalQuantity !== actualQuantity;
@@ -481,7 +497,7 @@ export const markOrderAsCollected = async (req: Request, res: Response) => {
     if (userRole === "buyer") {
       // BUYER FLOW: Complete directly (skip collected status)
       console.log("🏢 Buyer order - completing directly");
-      
+
       order.status = "completed";
       order.completedAt = new Date();
 
@@ -512,7 +528,9 @@ export const markOrderAsCollected = async (req: Request, res: Response) => {
           });
 
           await user.save();
-          console.log(`✅ Awarded ${totalPointsToAward} points to buyer ${user._id}`);
+          console.log(
+            `✅ Awarded ${totalPointsToAward} points to buyer ${user._id}`
+          );
         }
       } catch (pointsError) {
         console.error("❌ Error awarding points to buyer:", pointsError);
@@ -528,12 +546,17 @@ export const markOrderAsCollected = async (req: Request, res: Response) => {
 
       // Create completion notification for buyers
       try {
-        await createOrderCompletedNotification(order.user.userId.toString(), orderId);
+        await createOrderCompletedNotification(
+          order.user.userId.toString(),
+          orderId
+        );
         console.log(`✅ Completion notification sent to buyer`);
       } catch (notificationError) {
-        console.error("❌ Error creating completion notification:", notificationError);
+        console.error(
+          "❌ Error creating completion notification:",
+          notificationError
+        );
       }
-
     } else {
       // CUSTOMER FLOW: Mark as collected (admin will complete later)
       console.log("👤 Customer order - marking as collected");
@@ -564,7 +587,9 @@ export const markOrderAsCollected = async (req: Request, res: Response) => {
 
     const historyNotes = [];
     if (userRole === "customer" && order.quantityAdjustmentNotes) {
-      historyNotes.push(`Quantity adjustments: ${order.quantityAdjustmentNotes}`);
+      historyNotes.push(
+        `Quantity adjustments: ${order.quantityAdjustmentNotes}`
+      );
     }
     if (notes) {
       historyNotes.push(`Estimated weight: ${notes}`);
@@ -574,17 +599,27 @@ export const markOrderAsCollected = async (req: Request, res: Response) => {
       status: userRole === "buyer" ? "completed" : "collected",
       timestamp: new Date(),
       updatedBy: req.user?.userId || "courier",
-      notes: `${userRole === "buyer" ? "Order completed" : "Order collected"} by courier${historyNotes.length > 0 ? `. ${historyNotes.join('. ')}` : ""}`,
+      notes: `${
+        userRole === "buyer" ? "Order completed" : "Order collected"
+      } by courier${
+        historyNotes.length > 0 ? `. ${historyNotes.join(". ")}` : ""
+      }`,
     });
 
     const savedOrder = await order.save();
 
-    console.log(`✅ Order ${userRole === "buyer" ? "completed" : "collected"}:`, {
-      orderId: savedOrder._id,
-      status: savedOrder.status,
-      userRole,
-      quantityAdjusted: userRole === "customer" ? savedOrder.items.some(item => item.quantityAdjusted) : false,
-    });
+    console.log(
+      `✅ Order ${userRole === "buyer" ? "completed" : "collected"}:`,
+      {
+        orderId: savedOrder._id,
+        status: savedOrder.status,
+        userRole,
+        quantityAdjusted:
+          userRole === "customer"
+            ? savedOrder.items.some((item) => item.quantityAdjusted)
+            : false,
+      }
+    );
 
     // Populate and return response
     const populatedOrder = await Order.findById(savedOrder._id)
@@ -592,7 +627,9 @@ export const markOrderAsCollected = async (req: Request, res: Response) => {
       .populate("user.userId", "name phoneNumber email imgUrl");
 
     res.status(200).json({
-      message: `Order ${userRole === "buyer" ? "completed" : "marked as collected"} successfully`,
+      message: `Order ${
+        userRole === "buyer" ? "completed" : "marked as collected"
+      } successfully`,
       order: {
         id: populatedOrder._id,
         status: populatedOrder.status,
@@ -624,7 +661,10 @@ export const markOrderAsCollected = async (req: Request, res: Response) => {
 };
 
 // NEW: Admin function to complete orders from collected status (with points)
-export const completeOrderFromCollected = async (req: Request, res: Response) => {
+export const completeOrderFromCollected = async (
+  req: Request,
+  res: Response
+) => {
   try {
     const { orderId } = req.params;
     const { adminNotes } = req.body;
@@ -672,43 +712,19 @@ export const completeOrderFromCollected = async (req: Request, res: Response) =>
     // 🎯 AWARD POINTS TO THE USER (using updated quantities)
     try {
       const totalPointsToAward = order.items.reduce((sum, item) => {
-        return sum + item.points * item.quantity; // This now uses the adjusted quantity
+        return sum + item.points * item.quantity;
       }, 0);
 
-      console.log(
-        "Items breakdown:",
-        order.items.map((item) => ({
-          itemName: item.itemName,
-          points: item.points,
-          quantity: item.quantity, // Now shows adjusted quantity
-          originalQuantity: item.originalQuantity,
-          quantityAdjusted: item.quantityAdjusted,
-          totalPoints: item.points * item.quantity,
-        }))
-      );
-      console.log("Total points to award (based on actual quantities):", totalPointsToAward);
-
-      const user = await User.findById(order.user.userId);
-      if (user && totalPointsToAward > 0) {
-        user.totalPoints = (user.totalPoints || 0) + totalPointsToAward;
-
-        if (!user.pointsHistory) {
-          user.pointsHistory = [];
-        }
-
-        user.pointsHistory.push({
-          orderId: savedOrder._id.toString(),
-          points: totalPointsToAward,
-          type: "earned",
-          reason: "Order completion by admin (actual quantities)",
-          timestamp: new Date(),
-        });
-
-        await user.save();
+      if (totalPointsToAward > 0) {
+        const { newTotalPoints, bonusPointsAdded } = await processUserPoints(
+          order.user.userId.toString(),
+          totalPointsToAward
+        );
 
         console.log(
-          `✅ Awarded ${totalPointsToAward} points to user ${user._id} for order ${savedOrder._id} (based on actual quantities)`
+          `✅ Awarded ${totalPointsToAward} points (+${bonusPointsAdded} bonus) to user ${order.user.userId} for order ${savedOrder._id}`
         );
+        console.log("New total points:😁😁🤞", newTotalPoints);
       }
     } catch (pointsError) {
       console.error("❌ Error awarding points:", pointsError);
@@ -734,7 +750,9 @@ export const completeOrderFromCollected = async (req: Request, res: Response) =>
     // Update stock quantities (using actual quantities)
     try {
       await updateItemQuantities(savedOrder.items, "increase");
-      console.log("✅ Restocked item quantities for completed order (actual quantities).");
+      console.log(
+        "✅ Restocked item quantities for completed order (actual quantities)."
+      );
     } catch (restockError) {
       console.error("❌ Failed to restock items:", restockError);
       return res.status(400).json({
@@ -748,7 +766,8 @@ export const completeOrderFromCollected = async (req: Request, res: Response) =>
       .populate("user.userId", "name phoneNumber email imgUrl");
 
     res.status(200).json({
-      message: "Order completed successfully by admin with points awarded based on actual quantities",
+      message:
+        "Order completed successfully by admin with points awarded based on actual quantities",
       order: {
         id: populatedOrder._id,
         status: populatedOrder.status,
@@ -774,7 +793,10 @@ export const completeOrderFromCollected = async (req: Request, res: Response) =>
 };
 
 // NEW: Get collected orders for admin to complete
-export const getCollectedOrdersForAdmin = async (req: Request, res: Response) => {
+export const getCollectedOrdersForAdmin = async (
+  req: Request,
+  res: Response
+) => {
   try {
     const { page = 1, limit = 10 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
