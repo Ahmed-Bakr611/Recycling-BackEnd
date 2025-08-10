@@ -117,4 +117,5 @@ export default (appRouter: express.Router) => {
     authorize(["admin"]),
     getAllPayments
   );
+  
 };
