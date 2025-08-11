@@ -14,6 +14,8 @@ import {
 } from "../services/notificationService";
 import { updateItemQuantities } from "../utils/stockHelper";
 import { processUserPoints } from "../utils/tireHelpe";
+import { getSocketIO } from "../socket/socketServer";
+import { calculateOrderPoints } from "./pickupController";
 
 // Updated to include 'collected' status
 type OrderStatus =
@@ -710,79 +712,69 @@ export const completeOrderFromCollected = async (
     const savedOrder = await order.save();
 
     // 🎯 AWARD POINTS TO THE USER (using updated quantities)
-    try {
-      const totalPointsToAward = order.items.reduce((sum, item) => {
-        return sum + item.points * item.quantity;
-      }, 0);
 
-      if (totalPointsToAward > 0) {
-        const { newTotalPoints, bonusPointsAdded } = await processUserPoints(
-          order.user.userId.toString(),
-          totalPointsToAward
-        );
+    const totalPointsToAward = calculateOrderPoints(order.items);
+    if (totalPointsToAward > 0) {
+      console.log("🎯 Awarding points to user for completed order...");
+      const { newTotalPoints, bonusPointsAdded } = await processUserPoints(
+        order.user.userId.toString(),
+        totalPointsToAward
+      );
 
-        console.log(
-          `✅ Awarded ${totalPointsToAward} points (+${bonusPointsAdded} bonus) to user ${order.user.userId} for order ${savedOrder._id}`
+      console.log("✅ Order completed by admin:", {
+        orderId: savedOrder._id,
+        completedAt: savedOrder.completedAt,
+      });
+
+      // Create completion notification
+      try {
+        const userId = order.user.userId.toString();
+        await createOrderCompletedNotification(userId, orderId);
+        console.log(`✅ Completion notification created for user ${userId}`);
+      } catch (notificationError) {
+        console.error(
+          "❌ Error creating completion notification:",
+          notificationError
         );
-        console.log("New total points:😁😁🤞", newTotalPoints);
       }
-    } catch (pointsError) {
-      console.error("❌ Error awarding points:", pointsError);
-    }
 
-    console.log("✅ Order completed by admin:", {
-      orderId: savedOrder._id,
-      completedAt: savedOrder.completedAt,
-    });
+      // Update stock quantities (using actual quantities)
+      try {
+        await updateItemQuantities(savedOrder.items, "increase");
+        console.log(
+          "✅ Restocked item quantities for completed order (actual quantities)."
+        );
+      } catch (restockError) {
+        console.error("❌ Failed to restock items:", restockError);
+        return res.status(400).json({
+          message: "Order completed but failed to restock items",
+        });
+      }
 
-    // Create completion notification
-    try {
-      const userId = order.user.userId.toString();
-      await createOrderCompletedNotification(userId, orderId);
-      console.log(`✅ Completion notification created for user ${userId}`);
-    } catch (notificationError) {
-      console.error(
-        "❌ Error creating completion notification:",
-        notificationError
-      );
-    }
+      // Populate and return response
+      const populatedOrder = await Order.findById(savedOrder._id)
+        .populate("courier", "name phoneNumber email imgUrl")
+        .populate("user.userId", "name phoneNumber email imgUrl");
 
-    // Update stock quantities (using actual quantities)
-    try {
-      await updateItemQuantities(savedOrder.items, "increase");
-      console.log(
-        "✅ Restocked item quantities for completed order (actual quantities)."
-      );
-    } catch (restockError) {
-      console.error("❌ Failed to restock items:", restockError);
-      return res.status(400).json({
-        message: "Order completed but failed to restock items",
+      res.status(200).json({
+        message:
+          "Order completed successfully by admin with points awarded based on actual quantities",
+        order: {
+          id: populatedOrder._id,
+          status: populatedOrder.status,
+          courier: populatedOrder.courier,
+          user: populatedOrder.user,
+          items: populatedOrder.items,
+          address: populatedOrder.address,
+          deliveryProof: populatedOrder.deliveryProof,
+          collectedAt: populatedOrder.collectedAt,
+          completedAt: populatedOrder.completedAt,
+          estimatedWeight: populatedOrder.estimatedWeight,
+          quantityAdjustmentNotes: populatedOrder.quantityAdjustmentNotes,
+          createdAt: populatedOrder.createdAt,
+        },
       });
     }
-
-    // Populate and return response
-    const populatedOrder = await Order.findById(savedOrder._id)
-      .populate("courier", "name phoneNumber email imgUrl")
-      .populate("user.userId", "name phoneNumber email imgUrl");
-
-    res.status(200).json({
-      message:
-        "Order completed successfully by admin with points awarded based on actual quantities",
-      order: {
-        id: populatedOrder._id,
-        status: populatedOrder.status,
-        courier: populatedOrder.courier,
-        user: populatedOrder.user,
-        items: populatedOrder.items,
-        address: populatedOrder.address,
-        deliveryProof: populatedOrder.deliveryProof,
-        collectedAt: populatedOrder.collectedAt,
-        completedAt: populatedOrder.completedAt,
-        estimatedWeight: populatedOrder.estimatedWeight,
-        quantityAdjustmentNotes: populatedOrder.quantityAdjustmentNotes,
-        createdAt: populatedOrder.createdAt,
-      },
-    });
   } catch (error) {
     console.error("❌ Complete order from collected error:", error);
     res.status(500).json({

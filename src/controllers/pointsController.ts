@@ -8,6 +8,7 @@ import {
   getTierByPoints,
   notifyTierChange,
   calculatePointsWithBonus,
+  processUserPoints,
 } from "../utils/tireHelpe";
 
 export const addUserPoints = async (req: Request, res: Response) => {
@@ -28,41 +29,19 @@ export const addUserPoints = async (req: Request, res: Response) => {
         .json({ success: false, message: "User not found" });
     }
 
-    const oldPoints = user.totalPoints || 0;
+    // const oldPoints = user.totalPoints || 0;
 
     // Calculate new total points and bonus
-    const { newTotalPoints, bonusPointsAdded } = calculatePointsWithBonus(
-      oldPoints,
+    const { newTotalPoints, bonusPointsAdded } = await processUserPoints(
+      userId,
       points
     );
 
-    user.totalPoints = newTotalPoints;
+    // user.totalPoints = newTotalPoints;
 
-    if (!user.pointsHistory) user.pointsHistory = [];
+    // // Add base points entry
 
-    // Add base points entry
-    user.pointsHistory.push({
-      orderId,
-      points,
-      type: "earned",
-      reason,
-      timestamp: new Date(),
-    });
-
-    // Add bonus points entry if any
-    if (bonusPointsAdded > 0) {
-      user.pointsHistory.push({
-        orderId: null,
-        points: user.totalPoints,
-        type: "earned",
-        reason: `Bonus points for reaching new tier`,
-        timestamp: new Date(),
-      });
-    }
-
-    await user.save();
-
-    notifyTierChange(userId, oldPoints, newTotalPoints);
+    // await user.save();
 
     return res.status(200).json({
       success: true,
@@ -110,21 +89,14 @@ export const deductUserPoints = async (req: Request, res: Response) => {
       });
     }
 
-    const newTotalPoints = oldPoints - points;
-    user.totalPoints = newTotalPoints;
+    const { newTotalPoints, bonusPointsAdded } = await processUserPoints(
+      userId,
+      -points
+    );
+    // // const newTotalPoints = oldPoints - points;
+    // user.totalPoints = newTotalPoints;
 
-    if (!user.pointsHistory) user.pointsHistory = [];
-
-    user.pointsHistory.push({
-      points: -points,
-      type: "deducted",
-      reason,
-      timestamp: new Date(),
-    });
-
-    await user.save();
-
-    notifyTierChange(userId, oldPoints, newTotalPoints);
+    // await user.save();
 
     return res.status(200).json({
       success: true,
