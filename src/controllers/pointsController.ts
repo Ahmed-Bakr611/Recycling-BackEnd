@@ -66,6 +66,10 @@ export const deductUserPoints = async (req: Request, res: Response) => {
     const { userId } = req.params;
     const { points, reason = "Points deduction" } = req.body;
 
+    console.log(
+      "-----------------------kkkkkkkk-------------------------------------"
+    );
+    console.log(reason);
     if (!points || points <= 0) {
       return res
         .status(400)
@@ -91,7 +95,8 @@ export const deductUserPoints = async (req: Request, res: Response) => {
 
     const { newTotalPoints, bonusPointsAdded } = await processUserPoints(
       userId,
-      -points
+      -points,
+      reason
     );
     // // const newTotalPoints = oldPoints - points;
     // user.totalPoints = newTotalPoints;

@@ -80,7 +80,8 @@ export function calculatePointsWithBonus(
 
 export async function processUserPoints(
   userId: string,
-  points: number // positive to add, negative to deduct
+  points: number, // positive to add, negative to deduct
+  reason?: string
 ): Promise<ProcessPointsResult> {
   console.log(
     "-------------------- 🤦‍♂️🤦‍♂️🤦‍♂️🤦‍♂️🤦‍♂️PROCESSING USER POINTS 🤦‍♂️🤦‍♂️🤦‍♂️🤦‍♂️🤦‍♂️-------------------------------"
@@ -117,10 +118,12 @@ export async function processUserPoints(
 
   if (!user.pointsHistory) user.pointsHistory = [];
 
+  const def = points > 0 ? "Points awarded" : "Points deducted";
+  const msg = reason ? reason : def;
   user.pointsHistory.push({
     points,
     type: points > 0 ? "earned" : "deducted",
-    reason: points > 0 ? "Points awarded" : "Points deducted",
+    reason: msg,
     timestamp: new Date(),
   });
 
