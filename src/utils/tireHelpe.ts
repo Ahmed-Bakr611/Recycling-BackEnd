@@ -1,5 +1,6 @@
 import { getSocketIO } from "../socket/socketServer";
 import User from "../models/users"; // adjust import path
+import { createAndEmitNotification } from "../services/notificationService";
 
 export const rewardLevels = [
   {
@@ -81,9 +82,18 @@ export async function processUserPoints(
   userId: string,
   points: number // positive to add, negative to deduct
 ): Promise<ProcessPointsResult> {
+  console.log(
+    "-------------------- 🤦‍♂️🤦‍♂️🤦‍♂️🤦‍♂️🤦‍♂️PROCESSING USER POINTS 🤦‍♂️🤦‍♂️🤦‍♂️🤦‍♂️🤦‍♂️-------------------------------"
+  );
   const user = await User.findById(userId);
   if (!user) throw new Error("User not found");
 
+  const io = getSocketIO();
+  if (!io) {
+    console.error("Socket.IO not initialized");
+    return;
+  }
+  // console.log(`Processing points for user ${user}`);
   const oldPoints = user.totalPoints || 0;
   let newTotalPoints = oldPoints + points;
   if (newTotalPoints < 0) newTotalPoints = 0;
@@ -127,40 +137,65 @@ export async function processUserPoints(
   }
 
   await user.save();
+  io.to(`user_${userId}`).emit("points:updated", {
+    totalPoints: newTotalPoints,
+  });
 
   // Notify tier change (up or down)
   notifyTierChange(userId, oldPoints, newTotalPoints);
 
   return { newTotalPoints, bonusPointsAdded };
 }
-
-export function notifyTierChange(
+export const notifyTierChange = async (
   userId: string,
   oldPoints: number,
   newPoints: number
-) {
-  const io = getSocketIO();
-
+): Promise<void> => {
   const oldTier = getTierByPoints(oldPoints);
   const newTier = getTierByPoints(newPoints);
 
+  console.log(
+    `Notifying tier change for user ${userId}: oldTier=${oldTier?.name}, newTier=${newTier?.name}`
+  );
+  console.log(`Old Points: ${oldPoints} Vs  New Points: ${newPoints}`);
+  console.log("-------------------------------------------");
   if (!oldTier || !newTier) return;
+  const io = getSocketIO();
+  if (!io) {
+    console.error("Socket.IO not initialized");
+    return;
+  }
 
   if (newTier.id > oldTier.id) {
     const nextTier = rewardLevels.find((tier) => tier.id === oldTier.id + 1);
-
     if (nextTier && newTier.id >= nextTier.id) {
-      io.to(userId).emit("tier-upgrade", {
-        message: `🎉 Congrats! You reached the ${nextTier.name} tier! Keep it up!`,
-        newTier: nextTier,
-        totalPoints: newPoints,
+      await createAndEmitNotification({
+        userId,
+        title: `Tier Upgrade: ${nextTier.name}`,
+        body: `🎉 Congrats! You reached the ${nextTier.name} tier! Keep it up!`,
+        type: "system",
       });
+      console.log(`🎉 User ${userId} upgraded to ${nextTier.name} tier!`);
     }
   } else if (newTier.id < oldTier.id) {
-    io.to(userId).emit("tier-downgrade", {
-      message: `⚠️ Your points dropped to the ${newTier.name} tier. Keep recycling to climb back up!`,
-      newTier,
-      totalPoints: newPoints,
+    await createAndEmitNotification({
+      userId,
+      title: `Tier Downgrade: ${newTier.name}`,
+      body: `⚠️ Your points dropped to the ${newTier.name} tier. Keep recycling to climb back up!`,
+      type: "system",
+    });
+    console.log(`⚠️ User ${userId} downgraded to ${newTier.name} tier.`);
+  }
+};
+
+export const notifyOrdersUpdates = (userId, updatedOrder) => {
+  const io = getSocketIO();
+
+  if (io) {
+    io.to(`user_${userId}`).emit("order:update", {
+      orderId: updatedOrder._id,
+      status: updatedOrder.status,
+      updatedAt: updatedOrder.updatedAt,
     });
   }
-}
+};

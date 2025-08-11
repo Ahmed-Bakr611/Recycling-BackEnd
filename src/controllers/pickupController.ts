@@ -16,6 +16,7 @@ import {
 } from "../utils/stockHelper";
 import { runAggregation } from "../utils/FilterHelper";
 import { processUserPoints } from "../utils/tireHelpe";
+import { getSocketIO } from "../socket/socketServer";
 
 // Use interfaces from pickupOrder.ts
 export interface IAuthenticatedRequest extends express.Request {
@@ -862,20 +863,20 @@ export const updateOrderStatusByAdmin = async (
         const totalPoints = calculateOrderPoints(updatedOrder.items);
 
         if (user && totalPoints > 0) {
-          user.totalPoints = (user.totalPoints || 0) + totalPoints;
-
-          if (!user.pointsHistory) {
-            user.pointsHistory = [];
-          }
+          const { newTotalPoints, bonusPointsAdded } = await processUserPoints(
+            user._id.toString(),
+            totalPoints
+          );
 
           user.pointsHistory.push({
             orderId: orderId,
-            points: totalPoints,
+            points: newTotalPoints,
             type: "earned",
             reason: `Order completed by admin - ${userRole} order`,
             timestamp: new Date(),
           });
 
+          user.totalPoints = newTotalPoints;
           await user.save();
 
           console.log(
