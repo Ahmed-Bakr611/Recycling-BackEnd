@@ -1,49 +1,66 @@
 import { getSocketIO } from "../socket/socketServer";
-import User from "../models/users"; // adjust import path
+import User, { IUser } from "../models/users"; // adjust import path
 import { createAndEmitNotification } from "../services/notificationService";
+import Order from "../models/pickupOrder";
+import { get } from "http";
 
 export const rewardLevels = [
   {
     id: 1,
-    name: "Eco Starter",
-    minPoints: 0,
-    maxPoints: 1499,
-    bonusPoints: 25,
+    name: "Eco Beginner",
+    minRecycles: 0,
+    maxRecycles: 4,
+    bonusPerOrder: 1,
+    bonusPerReachedTier: 50,
   },
+
   {
     id: 2,
-    name: "Green Helper",
-    minPoints: 1500,
-    maxPoints: 3499,
-    bonusPoints: 50,
+    name: "Eco Starter",
+    minRecycles: 5,
+    maxRecycles: 14,
+    bonusPerOrder: 5,
+    bonusPerReachedTier: 150,
   },
   {
     id: 3,
-    name: "Silver Recycler",
-    minPoints: 3500,
-    maxPoints: 5999,
-    bonusPoints: 75,
+    name: "Green Helper",
+    minRecycles: 15,
+    maxRecycles: 29,
+    bonusPerOrder: 10,
+    bonusPerReachedTier: 300,
   },
   {
     id: 4,
-    name: "Gold Guardian",
-    minPoints: 6000,
-    maxPoints: 8999,
-    bonusPoints: 100,
+    name: "Silver Recycler",
+    minRecycles: 30,
+    maxRecycles: 49,
+    bonusPerOrder: 15,
+    bonusPerReachedTier: 500,
   },
   {
     id: 5,
-    name: "Platinum Pioneer",
-    minPoints: 9000,
-    maxPoints: 12499,
-    bonusPoints: 125,
+    name: "Gold Guardian",
+    minRecycles: 20,
+    maxRecycles: 74,
+    bonusPerOrder: 20,
+    bonusPerReachedTier: 700,
   },
   {
     id: 6,
+    name: "Platinum Pioneer",
+    minRecycles: 75,
+    maxRecycles: 99,
+    bonusPerOrder: 25,
+    bonusPerReachedTier: 850,
+  },
+  {
+    id: 7,
     name: "Diamond Elite",
-    minPoints: 12500,
-    maxPoints: 999999,
-    bonusPoints: 150,
+    minRecycles: 100,
+    maxRecycles: 999999,
+    bonusPerOrder: 30,
+    bonusPerReachedTier: 1000,
   },
 ];
 
@@ -52,30 +69,45 @@ interface ProcessPointsResult {
   bonusPointsAdded: number;
 }
 
-export function getTierByPoints(points: number) {
+export function getTierByTotalRecycles(totalRecycles: number) {
   return rewardLevels.find(
-    (tier) => points >= tier.minPoints && points <= tier.maxPoints
+    (tier) =>
+      totalRecycles >= tier.minRecycles && totalRecycles <= tier.maxRecycles
   );
 }
-export function calculatePointsWithBonus(
-  currentPoints: number,
-  pointsToAdd: number
-) {
-  const oldTier = getTierByPoints(currentPoints);
-  let newTotalPoints = currentPoints + pointsToAdd;
-  const newTier = getTierByPoints(newTotalPoints);
 
-  let bonusPointsAdded = 0;
+export async function getCompletedOrdersCount(userId: string) {
+  try {
+    const count = await Order.countDocuments({
+      "user.userId": userId,
+      status: "completed",
+    });
 
-  if (newTier && oldTier && newTier.id > oldTier.id) {
-    // Example: get bonus from tier, or fixed 100
-    // Assuming rewardLevels have bonusPoints field, otherwise fallback to 100
-    bonusPointsAdded = newTier.bonusPoints ?? 100;
-
-    newTotalPoints += bonusPointsAdded;
+    return count; // will be 0 if none found
+  } catch (err) {
+    console.error("Error fetching completed orders count:", err);
+    throw err;
   }
+}
+export function convertPointsToMoney(points: number): number {
+  return parseFloat((points / 19).toFixed(2));
+}
 
-  return { newTotalPoints, bonusPointsAdded };
+export async function getTierBonusPoints(userId: string) {
+  let completedOrdersCount = await getCompletedOrdersCount(userId);
+  let currentTier = getTierByTotalRecycles(completedOrdersCount);
+  if (!currentTier) return { bonusPoints: 0, reachedNewTier: false };
+
+  // Get previous tier based on (completedOrdersCount - 1)
+  let previousTier = getTierByTotalRecycles(completedOrdersCount - 1);
+
+  const reachedNewTier = !previousTier || previousTier.id !== currentTier.id;
+
+  let bonusPoints =
+    currentTier.bonusPerOrder +
+    (reachedNewTier ? currentTier.bonusPerReachedTier : 0);
+
+  return { bonusPoints, reachedNewTier, tier: currentTier };
 }
 
 export async function processUserPoints(
@@ -83,43 +115,35 @@ export async function processUserPoints(
   points: number, // positive to add, negative to deduct
   reason?: string
 ): Promise<ProcessPointsResult> {
-  console.log(
-    "-------------------- 🤦‍♂️🤦‍♂️🤦‍♂️🤦‍♂️🤦‍♂️PROCESSING USER POINTS 🤦‍♂️🤦‍♂️🤦‍♂️🤦‍♂️🤦‍♂️-------------------------------"
-  );
+  console.log("▶ PROCESSING USER POINTS");
+
   const user = await User.findById(userId);
   if (!user) throw new Error("User not found");
 
-  const io = getSocketIO();
-  if (!io) {
-    console.error("Socket.IO not initialized");
-    return;
-  }
-  // console.log(`Processing points for user ${user}`);
-  const oldPoints = user.totalPoints || 0;
-  let newTotalPoints = oldPoints + points;
+  const msg = reason || (points > 0 ? "Points awarded" : "Points deducted");
+
+  let newTotalPoints = user.totalPoints || 0;
+  newTotalPoints += points;
   if (newTotalPoints < 0) newTotalPoints = 0;
 
   let bonusPointsAdded = 0;
+  let reachedNewTier = false;
+  let tier = null;
 
-  // Handle bonus points only when adding points (points > 0)
   if (points > 0) {
-    const oldTier = getTierByPoints(oldPoints);
-    const nextTier = rewardLevels.find(
-      (tier) => tier.id === (oldTier?.id ?? 0) + 1
-    );
-
-    if (nextTier && newTotalPoints >= nextTier.minPoints) {
-      bonusPointsAdded = nextTier.bonusPoints ?? 0;
-      newTotalPoints += bonusPointsAdded;
-    }
+    const tierBonusData = await getTierBonusPoints(userId);
+    bonusPointsAdded = tierBonusData.bonusPoints;
+    reachedNewTier = tierBonusData.reachedNewTier;
+    tier = tierBonusData.tier;
+    newTotalPoints += bonusPointsAdded;
+  } else if (msg.toLowerCase().startsWith("cashback")) {
+    console.log("Handling cashback deduction");
+    await handleCashBack(userId, -points);
   }
 
   user.totalPoints = newTotalPoints;
 
   if (!user.pointsHistory) user.pointsHistory = [];
-
-  const def = points > 0 ? "Points awarded" : "Points deducted";
-  const msg = reason ? reason : def;
   user.pointsHistory.push({
     points,
     type: points > 0 ? "earned" : "deducted",
@@ -127,78 +151,47 @@ export async function processUserPoints(
     timestamp: new Date(),
   });
 
-  // Add bonus history entry if bonus applied
   if (bonusPointsAdded > 0) {
     user.pointsHistory.push({
       points: bonusPointsAdded,
       type: "earned",
-      reason: `Bonus points for reaching the ${
-        rewardLevels.find((t) => t.bonusPoints === bonusPointsAdded)?.name
-      } tier`,
+      reason: reachedNewTier
+        ? `Bonus points for reaching the ${tier.name} tier`
+        : `Bonus points for completed order`,
       timestamp: new Date(),
     });
   }
 
   await user.save();
-  io.to(`user_${userId}`).emit("points:updated", {
-    totalPoints: newTotalPoints,
-  });
 
-  // Notify tier change (up or down)
-  notifyTierChange(userId, oldPoints, newTotalPoints);
+  // Only notify when the tier was reached now
+  if (reachedNewTier && tier) {
+    await createAndEmitNotification({
+      userId,
+      title: `Tier Upgrade: ${tier.name}`,
+      body: `🎉 Congrats! You reached the ${tier.name} tier! Keep it up!`,
+      type: "system",
+    });
+    console.log(`🎉 User ${userId} upgraded to ${tier.name} tier!`);
+  }
 
   return { newTotalPoints, bonusPointsAdded };
 }
-export const notifyTierChange = async (
-  userId: string,
-  oldPoints: number,
-  newPoints: number
-): Promise<void> => {
-  const oldTier = getTierByPoints(oldPoints);
-  const newTier = getTierByPoints(newPoints);
 
-  console.log(
-    `Notifying tier change for user ${userId}: oldTier=${oldTier?.name}, newTier=${newTier?.name}`
-  );
-  console.log(`Old Points: ${oldPoints} Vs  New Points: ${newPoints}`);
-  console.log("-------------------------------------------");
-  if (!oldTier || !newTier) return;
-  const io = getSocketIO();
-  if (!io) {
-    console.error("Socket.IO not initialized");
-    return;
-  }
+const handleCashBack = async (userId: string, points: number) => {
+  const user = await User.findById(userId);
+  if (!user) throw new Error("User not found");
+  user.attachments = user.attachments || {};
+  user.attachments.balance = user.attachments.balance || 0;
+  user.attachments.transactions = user.attachments.transactions || [];
 
-  if (newTier.id > oldTier.id) {
-    const nextTier = rewardLevels.find((tier) => tier.id === oldTier.id + 1);
-    if (nextTier && newTier.id >= nextTier.id) {
-      await createAndEmitNotification({
-        userId,
-        title: `Tier Upgrade: ${nextTier.name}`,
-        body: `🎉 Congrats! You reached the ${nextTier.name} tier! Keep it up!`,
-        type: "system",
-      });
-      console.log(`🎉 User ${userId} upgraded to ${nextTier.name} tier!`);
-    }
-  } else if (newTier.id < oldTier.id) {
-    await createAndEmitNotification({
-      userId,
-      title: `Tier Downgrade: ${newTier.name}`,
-      body: `⚠️ Your points dropped to the ${newTier.name} tier. Keep recycling to climb back up!`,
-      type: "system",
-    });
-    console.log(`⚠️ User ${userId} downgraded to ${newTier.name} tier.`);
-  }
-};
-
-export const notifyOrdersUpdates = (userId, updatedOrder) => {
-  const io = getSocketIO();
-
-  if (io) {
-    io.to(`user_${userId}`).emit("order:update", {
-      orderId: updatedOrder._id,
-      status: updatedOrder.status,
-      updatedAt: updatedOrder.updatedAt,
-    });
-  }
+  const cashbackAmount = convertPointsToMoney(points);
+  user.attachments.transactions.push({
+    type: "cashback",
+    amount: cashbackAmount,
+    date: new Date(),
+  });
+  user.attachments.balance += cashbackAmount;
+  user.markModified("attachments");
+  await user.save();
 };
