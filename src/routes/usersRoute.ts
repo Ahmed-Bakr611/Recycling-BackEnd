@@ -7,6 +7,8 @@ import {
   getUserStats,
   searchUsers,
   updateUserByAdmin,
+  addUserTransaction,
+  getUserTransactions,
   // Add these new imports for points management
 } from "../controllers/userController";
 import {
@@ -117,5 +119,7 @@ export default (appRouter: express.Router) => {
     authorize(["admin"]),
     getAllPayments
   );
-  
+
+  appRouter.post("/users/:id/transactions", authenticate, addUserTransaction);
+  appRouter.get("/users/:id/transactions", authenticate, getUserTransactions);
 };
