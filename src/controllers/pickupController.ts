@@ -441,17 +441,115 @@ export const getOrderById = async (
     const userId = req.user.userId;
     const orderId = req.params.id;
 
-    const order = await Order.findOne({
-      _id: orderId,
-      "user.userId": userId,
-    });
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid order ID format",
+      });
+      return;
+    }
 
-    if (!order) {
+    // Use aggregation to get order with courier details
+    const orderResult = await Order.aggregate([
+      {
+        $match: {
+          _id: new mongoose.Types.ObjectId(orderId),
+          "user.userId": new mongoose.Types.ObjectId(userId),
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "user.userId",
+          foreignField: "_id",
+          as: "userDetails",
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "courier",
+          foreignField: "_id",
+          as: "courierDetails",
+          pipeline: [
+            { $project: { 
+              attachments: 1, 
+              name: 1, 
+              email: 1, 
+              phoneNumber: 1, 
+              rating: 1, 
+              totalReviews: 1 
+            } },
+          ],
+        },
+      },
+      {
+        $addFields: {
+          "user.role": { $arrayElemAt: ["$userDetails.role", 0] },
+          "user.name": { $arrayElemAt: ["$userDetails.name", 0] },
+          "user.email": { $arrayElemAt: ["$userDetails.email", 0] },
+          courier: { $arrayElemAt: ["$courierDetails", 0] },
+        },
+      },
+      {
+        $project: {
+          userDetails: 0,
+          courierDetails: 0,
+        },
+      },
+    ]);
+
+    if (!orderResult || orderResult.length === 0) {
       res.status(404).json({
         success: false,
         message: "Order not found or access denied",
       });
       return;
+    }
+
+    const order = orderResult[0];
+
+    // Add review information for completed orders (similar to getAllOrders)
+    if (order.status === "completed") {
+      if (order.deliveryReview) {
+        // Order has a review
+        order.review = {
+          _id: order._id.toString(),
+          orderId: order._id.toString(),
+          stars: order.deliveryReview.stars,
+          comment: order.deliveryReview.comment,
+          reviewedAt: order.deliveryReview.reviewedAt,
+          courier: {
+            id: order.courier?._id?.toString() || order.deliveryReview.reviewedBy.toString(),
+            name: order.courier?.name || "Unknown Courier",
+          },
+          hasReview: true,
+        };
+        order.canBeReviewed = false;
+        order.hasReview = true;
+      } else {
+        // Order can be reviewed
+        order.canBeReviewed = true;
+        order.hasReview = false;
+      }
+    } else {
+      // Non-completed orders cannot be reviewed
+      order.canBeReviewed = false;
+      order.hasReview = false;
+    }
+
+    // Normalize courier data to ensure consistent field names (if courier exists)
+    if (order.courier) {
+      order.courier = {
+        _id: order.courier._id,
+        email: order.courier.email,
+        phoneNumber: order.courier.phoneNumber,
+        name: order.courier.name || "Unknown Courier",
+        rating: order.courier.rating,
+        totalReviews: order.courier.totalReviews,
+        attachments: order.courier.attachments,
+      };
     }
 
     res.json({
@@ -578,6 +676,7 @@ export const getAllOrdersForAdmin = async (
     const status = req.query.status as string;
     const date = req.query.date as string;
     const userRole = req.query.userRole as string;
+    const search = req.query.search as string; // Add search parameter
 
     const filters: any = {};
 
@@ -596,36 +695,63 @@ export const getAllOrdersForAdmin = async (
       filters.createdAt = { $gte: start, $lt: end };
     }
 
-    const lookups = [
-      {
-        $lookup: {
-          from: "users",
-          localField: "user.userId",
-          foreignField: "_id",
-          as: "userDetails",
-        },
-      },
-    ];
+    // Add search functionality
+    if (search && search.trim()) {
+      const searchRegex = new RegExp(search.trim(), "i");
+      filters.$or = [
+        { orderId: searchRegex },
+        { status: searchRegex },
+        { "user.name": searchRegex },
+        { "user.email": searchRegex }
+      ];
+    }
 
-    const addFields = {
-      "user.role": { $arrayElemAt: ["$userDetails.role", 0] },
-      "user.name": { $arrayElemAt: ["$userDetails.name", 0] },
-      "user.email": { $arrayElemAt: ["$userDetails.email", 0] },
-    };
+const lookups = [
+  {
+    $lookup: {
+      from: "users",
+      localField: "user.userId",
+      foreignField: "_id",
+      as: "userDetails",
+    },
+  },
+  {
+    $lookup: {
+      from: "users",
+      localField: "courier",
+      foreignField: "_id",
+      as: "courierDetails",
+      pipeline: [
+        { $project: { attachments: 1, name: 1 } }, // only return these fields (+ _id by default)
+      ],
+    },
+  },
+];
 
-    const project = {
-      userDetails: 0 as 0,
-    };
 
-    const result = await runAggregation(Order, {
-      filters,
-      lookups,
-      addFields,
-      project,
-      sort: { createdAt: -1 as -1 },
-      page,
-      limit,
-    });
+const addFields = {
+  "user.role": { $arrayElemAt: ["$userDetails.role", 0] },
+  "user.name": { $arrayElemAt: ["$userDetails.name", 0] },
+  "user.email": { $arrayElemAt: ["$userDetails.email", 0] },
+  courier: { $arrayElemAt: ["$courierDetails", 0] },
+};
+
+const project: Record<string, 0 | 1> = {
+  userDetails: 0,
+  courierDetails: 0,
+};
+
+
+const result = await runAggregation(Order, {
+  filters,
+  lookups,
+  addFields,
+  project,
+  sort: { createdAt: -1 },
+  page,
+  limit,
+});
+
 
     res.json({
       success: true,

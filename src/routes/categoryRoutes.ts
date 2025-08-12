@@ -16,13 +16,18 @@ import {
   getItems,
   updateItem,
 } from "../controllers/itemsController";
-import { categoryStorage, subcategoryStorage } from "../utils/cloudinary";
+import {
+  categoryStorage,
+  subcategoryStorage,
+  fileFilter,
+} from "../utils/cloudinary";
 import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
 import { paginate } from "../middlewares/paginate";
+import { handleMulterError } from "../middlewares/multerError";
 
-const uploadCategory = multer({ storage: categoryStorage });
-const uploadSubcategory = multer({ storage: subcategoryStorage });
+const uploadCategory = multer({ storage: categoryStorage, fileFilter });
+const uploadSubcategory = multer({ storage: subcategoryStorage, fileFilter });
 
 export default (router: express.Router) => {
   router.post(
@@ -45,6 +50,8 @@ export default (router: express.Router) => {
     authenticate,
     authorize(["admin"]),
     uploadSubcategory.single("image"),
+    handleMulterError,
+
     addItem
   );
   router.get("/get-items/:categoryName", getCategoryByName);
@@ -58,6 +65,7 @@ export default (router: express.Router) => {
     authenticate,
     authorize(["admin"]),
     uploadCategory.single("image"),
+    handleMulterError,
     updatedCategory
   );
   router.delete(
@@ -71,6 +79,7 @@ export default (router: express.Router) => {
     authenticate,
     authorize(["admin"]),
     uploadSubcategory.single("image"),
+    handleMulterError,
     updateItem
   );
   router.delete(

@@ -6,19 +6,23 @@ import {
   deleteProfile,
 } from "../controllers/profileController";
 import { authenticate } from "../middlewares/authenticate";
-import { authorize } from "../middlewares/authorize";
-import { userStorage } from "../utils/cloudinary";
 
-const upload = multer({ storage: userStorage });
+import { deliveryStorage,fileFilter } from "../utils/cloudinary";
+import { handleMulterError } from "../middlewares/multerError";
+
+
+
+
+const upload = multer({ storage: deliveryStorage, fileFilter });
 
 export default (appRouter: express.Router) => {
   appRouter.get("/profile", authenticate, getProfile);
 
-  // ✅ Include image upload middleware
   appRouter.put(
     "/profile",
     authenticate,
     upload.single("image"),
+    handleMulterError,
     updateProfile
   );
 
