@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import User from "../models/users";
 
+
 interface AuthenticatedRequest extends Request {
   user: {
     userId: string;
@@ -26,30 +27,46 @@ export const updateProfile = async (
   req: AuthenticatedRequest,
   res: Response
 ) => {
-  const userId = req.user.userId;
+  
+  try {
+    const userId = req.user.userId;
+    console.log("Updating profile for userId:", userId);
+console.log("Body:", req.body);
+console.log("File:", req.file);
+console.log("User role:", req.user.role);
 
-  const updates: any = {
-    name: req.body.name,
-    phoneNumber: req.body.phoneNumber,
-  };
 
-  // ✅ Optional image upload
-  if (req.file?.path) {
-    updates.imgUrl = req.file.path;
+    const updates: any = {
+      name: req.body.name,
+      phoneNumber: req.body.phoneNumber,
+    };
+
+    if (req.file?.path) {
+      if (req.user.role === "delivery") {
+        updates["attachments.deliveryImage"] = req.file.path;
+      } else {
+        updates.imgUrl = req.file.path;
+      }
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: updates },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.json(updatedUser.toSafeObject());
+  } catch (err) {
+    console.error("Update profile error:", err);
+    res.status(500).json({ error: err.message || "Internal server error" });
   }
-
-  const updatedUser = await User.findByIdAndUpdate(
-    userId,
-    { $set: updates },
-    { new: true }
-  );
-
-  if (!updatedUser) {
-    return res.status(404).json({ message: "User not found" });
-  }
-
-  res.json(updatedUser.toSafeObject());
 };
+
+
 
 // === DELETE /profile ===
 export const deleteProfile = async (
