@@ -182,3 +182,81 @@ export const getUserStats = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
+
+export const addUserTransaction = async (req: Request, res: Response) => {
+  try {
+    const userId = req.params.id;
+    const { gateway, type = "withdrawal", amount } = req.body;
+
+    if (type === "withdrawal" && !gateway) {
+      return res
+        .status(400)
+        .json({ message: "Gateway is required with withdrawl Method" });
+    }
+    // Validate type
+    if (!["cashback", "withdrawal"].includes(type)) {
+      return res.status(400).json({ message: "Invalid transaction type" });
+    }
+
+    if (typeof amount !== "number" || isNaN(amount)) {
+      return res.status(400).json({ message: "Invalid amount" });
+    }
+
+    // Fetch user first to get current balance
+    const userDoc = await User.findById(userId);
+    if (!userDoc) return res.status(404).json({ message: "User not found" });
+
+    const currentBalance = userDoc.attachments?.balance || 0;
+
+    // Determine signed amount
+    const signedAmount =
+      type === "withdrawal" ? -Math.abs(amount) : Math.abs(amount);
+
+    // Calculate new balance
+    const newBalance = currentBalance + signedAmount;
+
+    // Create transaction
+    const transaction = {
+      gateway,
+      type,
+      amount,
+      date: new Date(),
+    };
+
+    // Update both balance and transactions
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        $push: { "attachments.transactions": transaction },
+        $set: { "attachments.balance": newBalance },
+      },
+      { new: true }
+    ).select("-password -refreshToken");
+
+    res.status(201).json({
+      message: "Transaction added successfully",
+      transaction,
+      newBalance,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+// GET: Fetch all transactions for a user
+export const getUserTransactions = async (req: Request, res: Response) => {
+  try {
+    const userId = req.params.id;
+    const user = await User.findById(userId).select(
+      "attachments.transactions -_id"
+    );
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.status(200).json(user.attachments.transactions || []);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

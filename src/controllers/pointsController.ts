@@ -4,12 +4,7 @@ import User from "../models/users";
 
 import { IAuthenticatedRequest } from "./pickupController";
 import { calculateOrderPoints } from "./pickupController"; // Import the points calculation function
-import {
-  getTierByPoints,
-  notifyTierChange,
-  calculatePointsWithBonus,
-  processUserPoints,
-} from "../utils/tireHelpe";
+import { processUserPoints } from "../utils/tireHelpe";
 
 export const addUserPoints = async (req: Request, res: Response) => {
   try {
