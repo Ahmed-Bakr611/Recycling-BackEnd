@@ -130,6 +130,12 @@ export const getUserPoints = async (req: Request, res: Response) => {
       });
     }
 
+    // Get total number of completed orders for this user
+    const totalRecycled = await Order.countDocuments({
+      "user.userId": user._id,
+      status: "completed",
+    });
+
     // Paginate points history
     const pointsHistory = user.pointsHistory || [];
     const startIndex = (Number(page) - 1) * Number(limit);
@@ -149,6 +155,7 @@ export const getUserPoints = async (req: Request, res: Response) => {
         email: user.email,
         totalPoints: user.totalPoints || 0,
         pointsHistory: paginatedHistory,
+        totalRecycled,
         pagination: {
           currentPage: Number(page),
           totalItems: pointsHistory.length,
