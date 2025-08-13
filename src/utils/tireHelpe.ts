@@ -120,7 +120,11 @@ export async function processUserPoints(
   const user = await User.findById(userId);
   if (!user) throw new Error("User not found");
 
-  const msg = reason || (points > 0 ? "Points awarded" : "Points deducted");
+  const def =
+    points > 0
+      ? "Reward for your recent eco-friendly activity"
+      : "Points deducted for recent action";
+  const msg = reason || def;
 
   let newTotalPoints = user.totalPoints || 0;
   newTotalPoints += points;
@@ -144,6 +148,7 @@ export async function processUserPoints(
   user.totalPoints = newTotalPoints;
 
   if (!user.pointsHistory) user.pointsHistory = [];
+
   user.pointsHistory.push({
     points,
     type: points > 0 ? "earned" : "deducted",
@@ -151,13 +156,14 @@ export async function processUserPoints(
     timestamp: new Date(),
   });
 
-  if (bonusPointsAdded > 0) {
+  // Bonus points record
+  if (bonusPointsAdded > 0 && tier) {
     user.pointsHistory.push({
       points: bonusPointsAdded,
       type: "earned",
       reason: reachedNewTier
-        ? `Bonus points for reaching the ${tier.name} tier`
-        : `Bonus points for completed order`,
+        ? `Tier milestone — you reached ${tier.name}`
+        : `Bonus for completing an order as a ${tier.name}`,
       timestamp: new Date(),
     });
   }
