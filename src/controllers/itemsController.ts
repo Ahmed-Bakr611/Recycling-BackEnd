@@ -187,15 +187,15 @@ export const getItems = async (req: Request, res: Response) => {
       }
     }
 
-    // Step 2: Fallback to original name or slug if no translation
-    if (!category) {
-      category = await Category.findOne({
-        $or: [{ name: rawName }, { slug: rawName }],
-      }).slice("items", [skip, limit]);
-      console.log(
-        `Category found by name/slug: ${category ? category._id : "NOT FOUND"}`
-      );
-    }
+    // // Step 2: Fallback to original name or slug if no translation
+    // if (!category) {
+    //   category = await Category.findOne({
+    //     $or: [{ name: rawName }, { slug: rawName }],
+    //   }).slice("items", [skip, limit]);
+    //   console.log(
+    //     `Category found by name/slug: ${category ? category._id : "NOT FOUND"}`
+    //   );
+    // }
 
     if (!category) {
       console.log("Category not found");

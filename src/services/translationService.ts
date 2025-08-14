@@ -50,6 +50,7 @@ export class TranslationService {
       };
     });
   }
+
   static async getItemTranslation(
     itemName: string,
     language: "en" | "ar"
@@ -194,8 +195,8 @@ export class TranslationService {
   static async findCategoryTranslationByLang(text: string, lang: "en" | "ar") {
     console.log("🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️🤷‍♀️");
     console.log(text);
-    const k = `cat_${text}_name`;
-    console.log(k);
+    const k = `cat_${text.replace(/[^a-zA-Z0-9 ]/g, "")}_name`;
+    const t = lang === "ar" ? "en" : "ar";
     return await Translation.findOne({
       type: "category",
       [`translations.${lang}`]: text,
