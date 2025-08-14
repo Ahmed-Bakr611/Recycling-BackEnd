@@ -14,6 +14,8 @@ import {
   createTranslation,
   getCategoryByNameForAdmin,
   seedMissingCategoryTranslations,
+  debugTranslations,
+  checkCurrentTranslations,
 } from "../controllers/categoryController";
 
 import {
@@ -48,7 +50,6 @@ export default (router: express.Router) => {
   router.use("/categories", languageMiddleware);
   router.use("/get-items", languageMiddleware);
 
-
   // ----------------------
   // Category CRUD
   // ----------------------
@@ -59,7 +60,11 @@ export default (router: express.Router) => {
     uploadCategory.single("image"),
     createCategory
   );
-router.post('/translations/seed-categories', seedMissingCategoryTranslations);
+  router.post("/translations/seed-categories", seedMissingCategoryTranslations);
+
+  // Debug routes
+  router.get("/translations/debug", debugTranslations);
+  router.get("/translations/check", checkCurrentTranslations);
 
   router.get("/categories", paginate(), getCategoriesWithPagination);
 
@@ -102,11 +107,24 @@ router.post('/translations/seed-categories', seedMissingCategoryTranslations);
     addItem
   );
 
-  router.get("/get-items/:categoryName", urlDecodeMiddleware, getCategoryByName);
+  router.get(
+    "/get-items/:categoryName",
+    urlDecodeMiddleware,
+    getCategoryByName
+  );
 
-  router.get("/admin/get-items/:categoryName", urlDecodeMiddleware, getCategoryByNameForAdmin);
+  router.get(
+    "/admin/get-items/:categoryName",
+    urlDecodeMiddleware,
+    getCategoryByNameForAdmin
+  );
 
-  router.get("/categories/get-items/:categoryName", urlDecodeMiddleware, paginate(), getItems);
+  router.get(
+    "/categories/get-items/:categoryName",
+    urlDecodeMiddleware,
+    paginate(),
+    getItems
+  );
 
   router.get("/categories/get-items", paginate(), getAllItems);
 
@@ -162,10 +180,12 @@ router.post('/translations/seed-categories', seedMissingCategoryTranslations);
     async (req: express.Request, res: express.Response) => {
       try {
         const { categoryName } = req.body;
-        if (!categoryName) return res.status(400).json({ message: "Category name is required" });
+        if (!categoryName)
+          return res.status(400).json({ message: "Category name is required" });
 
         const category = await Category.findOne({ name: categoryName });
-        if (!category) return res.status(404).json({ message: "Category not found" });
+        if (!category)
+          return res.status(404).json({ message: "Category not found" });
 
         const createdTranslations: string[] = [];
 
@@ -179,7 +199,10 @@ router.post('/translations/seed-categories', seedMissingCategoryTranslations);
             );
             createdTranslations.push(itemKey);
           } catch (error) {
-            console.error(`Error creating translation for item ${item.name}:`, error);
+            console.error(
+              `Error creating translation for item ${item.name}:`,
+              error
+            );
           }
         }
 
@@ -193,6 +216,4 @@ router.post('/translations/seed-categories', seedMissingCategoryTranslations);
       }
     }
   );
-
-
 };

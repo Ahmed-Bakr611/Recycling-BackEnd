@@ -198,7 +198,7 @@ export class TranslationService {
     console.log(k);
     return await Translation.findOne({
       type: "category",
-      [`translations.${lang}`]: k,
+      [`translations.${lang}`]: text,
     }).lean();
   }
   // Generate translation key from text
@@ -340,6 +340,7 @@ export class TranslationService {
             name: translatedName,
             description: translatedDescription,
             items: translatedItems,
+            originalName: category.name, // Preserve original name for reference
           };
         } catch (categoryError) {
           console.error(
