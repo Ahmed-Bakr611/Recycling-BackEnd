@@ -23,19 +23,7 @@ const categorySchema = new Schema<ICategory>(
   { timestamps: true }
 );
 
-// Auto-generate slug from name
-categorySchema.pre("save", function (next) {
-  if (this.isModified("name")) {
-    this.slug = this.name
-      .toString()
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, "-")
-      .replace(/[^\w-]+/g, "")
-      .replace(/--+/g, "-");
-  }
-  next();
-});
+
 
 const Category = model<ICategory>("Category", categorySchema);
 export default Category;

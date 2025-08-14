@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import Category, { ICategory } from "../models/category";
 import { TranslationService } from "../services/translationService";
-import Translation from "../models/translation";  // Make sure this line exists
+import Translation from "../models/translation";
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -11,6 +11,34 @@ interface TranslatedRequest extends Request {
   language?: 'en' | 'ar';
 }
 
+// Helper function to generate slug that matches English name exactly (preserving spaces and original format)
+const generateSlug = (name: string): string => {
+  if (!name || typeof name !== 'string') return '';
+  
+  // Keep the name exactly as it is, just trim whitespace
+  // This preserves spaces, capitalization, and keeps the original format
+  return name.trim();
+};
+
+// Alternative: If you want to use underscores instead of URL encoding
+const generateSlugWithUnderscores = (name: string): string => {
+  if (!name || typeof name !== 'string') return '';
+  
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^\w_]/g, '');
+};
+
+// Alternative: If you want to keep exactly as the name but make it URL-safe
+const generateSlugExact = (name: string): string => {
+  if (!name || typeof name !== 'string') return '';
+  
+  // This will preserve the exact text but encode special characters for URLs
+  return encodeURIComponent(name.trim());
+};
+
 export const createCategory = async (
   req: MulterRequest,
   res: Response
@@ -19,13 +47,13 @@ export const createCategory = async (
     const { name, description, nameAr, descriptionAr } = req.body;
     const image = req.file?.path ?? "";
 
-    // Create category with slug
+    // Create category with improved slug generation
     const category = new Category({ 
       name, 
       description, 
       image, 
       items: [],
-      slug: name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '')
+      slug: generateSlug(name) // Using the new slug generation
     });
 
     await category.save();
@@ -74,12 +102,11 @@ export const getAllCategories = async (
 };
 
 export const getCategoriesWithPagination = async (
-  req: any, // Use any to avoid TypeScript issues for now
+  req: any,
   res: Response
 ): Promise<void> => {
   try {
     const role = req.query.role;
-    // Fix language detection priority: query param first, then middleware, then default
     const language = (req.query.lang as 'en' | 'ar') || req.language || 'en';
     const pagination = req.pagination || { skip: 0, limit: 10, page: 1 };
     
@@ -109,7 +136,6 @@ export const getCategoriesWithPagination = async (
         console.log('Translated sample names:', processedCategories.map(c => c.name));
       } catch (translationError) {
         console.error('Translation failed:', translationError);
-        // Fall back to original categories if translation fails
         processedCategories = categories;
       }
     } else {
@@ -131,8 +157,6 @@ export const getCategoriesWithPagination = async (
         };
       });
     }
-
-
 
     res.json({
       success: true,
@@ -161,7 +185,7 @@ export const createCategoryWithImage = async (
       nameAr, descriptionAr, itemNameAr
     } = req.body;
 
-    // Create category (your existing logic)
+    // Create category with improved slug
     const newCategory = new Category({
       name,
       description,
@@ -169,6 +193,7 @@ export const createCategoryWithImage = async (
       items: [
         {
           name: itemName,
+          slug: generateSlug(itemName), // Add slug for item too
           image: req.file?.path ?? "",
           points: Number(points),
           price: Number(price),
@@ -176,6 +201,7 @@ export const createCategoryWithImage = async (
           categoryName: name
         },
       ],
+      slug: generateSlug(name) // Add slug for category
     });
 
     await newCategory.save();
@@ -213,11 +239,13 @@ export const updatedCategory = async (
     const { name, description, image: imageFromBody, nameAr, descriptionAr } = req.body;
     const imageFromFile = req.file?.path;
 
-    // Find by slug or name
+    // Find by slug or name with URL decoding for slug matching
+    const decodedCategoryName = decodeURIComponent(categoryName);
     const category = await Category.findOne({
       $or: [
-        { slug: categoryName },
-        { name: { $regex: new RegExp(`^${categoryName}$`, 'i') } }
+        { slug: categoryName }, // Try original (might be encoded)
+        { slug: decodedCategoryName }, // Try decoded
+        { name: { $regex: new RegExp(`^${decodedCategoryName}$`, 'i') } }
       ]
     });
 
@@ -225,6 +253,7 @@ export const updatedCategory = async (
       return res.status(404).json({ 
         message: "Category not found",
         searchedName: categoryName,
+        decodedName: decodedCategoryName,
         suggestion: "Check if the category name is correct and try again"
       });
     }
@@ -237,14 +266,13 @@ export const updatedCategory = async (
 
     // Handle English updates
     if (name !== undefined) {
-      const newName = name.toLowerCase();
-      if (newName !== category.name) {
-        category.name = newName;
-        category.slug = newName.replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+      if (name !== category.name) {
+        category.name = name;
+        category.slug = generateSlug(name); // Update slug with new logic
         
         // Update category name in all items
         category.items.forEach((item) => {
-          item.categoryName = newName;
+          item.categoryName = name;
         });
       }
     }
@@ -285,13 +313,13 @@ export const updatedCategory = async (
       );
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Category updated successfully",
       category: updatedCategory
     });
   } catch (err) {
     console.error("Update category error:", err);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       message: "Failed to update category",
       error: (err as Error).message 
     });
@@ -304,7 +332,15 @@ export const deleteCategory = async (
 ): Promise<void> => {
   try {
     const { categoryName } = req.params;
-    const deleted = await Category.findOneAndDelete({ name: categoryName });
+    const decodedCategoryName = decodeURIComponent(categoryName);
+    
+    const deleted = await Category.findOneAndDelete({
+      $or: [
+        { name: decodedCategoryName },
+        { slug: categoryName },
+        { slug: decodedCategoryName }
+      ]
+    });
 
     if (!deleted) {
       res.status(404).json({ message: "Category not found" });
@@ -312,12 +348,12 @@ export const deleteCategory = async (
     }
 
     // Clean up related translations
-    const nameKey = TranslationService.generateKey(categoryName, 'cat', 'name');
-    const descKey = TranslationService.generateKey(categoryName, 'cat', 'desc');
+    const nameKey = TranslationService.generateKey(deleted.name, 'cat', 'name');
+    const descKey = TranslationService.generateKey(deleted.name, 'cat', 'desc');
     
     // Create array of item translation keys
     const itemTranslationPromises = deleted.items.map(item => {
-      const itemKey = TranslationService.generateKey(`${categoryName}_${item.name}`, 'item');
+      const itemKey = TranslationService.generateKey(`${deleted.name}_${item.name}`, 'item');
       return Translation.deleteOne({ key: itemKey });
     });
 
@@ -333,8 +369,6 @@ export const deleteCategory = async (
   }
 };
 
-
-
 export const getCategoryByName = async (
   req: TranslatedRequest,
   res: Response
@@ -342,17 +376,23 @@ export const getCategoryByName = async (
   try {
     const { categoryName } = req.params;
     const language = req.query.lang as 'en' | 'ar' || 'en';
+    const decodedCategoryName = decodeURIComponent(categoryName);
 
-    // Search by either slug or name
+    // Search by either slug or name with URL decoding
     const category = await Category.findOne({
       $or: [
         { slug: categoryName },
-        { name: categoryName }
+        { slug: decodedCategoryName },
+        { name: decodedCategoryName }
       ]
     }).lean();
 
     if (!category) {
-      res.status(404).json({ message: "Category not found" });
+      res.status(404).json({ 
+        message: "Category not found",
+        searchedFor: categoryName,
+        decodedName: decodedCategoryName
+      });
       return;
     }
 
@@ -366,6 +406,46 @@ export const getCategoryByName = async (
   }
 };
 
+export const migrateExistingSlugs = async (req: Request, res: Response): Promise<void> => {
+  try {
+    console.log('Starting slug migration...');
+    
+    const categories = await Category.find();
+    let updatedCount = 0;
+    
+    for (const category of categories) {
+      const newSlug = category.name.trim(); // New slug logic
+      
+      if (category.slug !== newSlug) {
+        console.log(`Updating "${category.name}": "${category.slug}" -> "${newSlug}"`);
+        
+        category.slug = newSlug;
+        
+        // Update item slugs too
+        if (category.items && category.items.length > 0) {
+          category.items.forEach(item => {
+            if (item.name) {
+              item.slug = item.name.trim();
+            }
+          });
+        }
+        
+        await category.save();
+        updatedCount++;
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      message: `Updated ${updatedCount} categories`,
+      updatedCount 
+    });
+    
+  } catch (error) {
+    console.error('Migration failed:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
 
 export const seedMissingCategoryTranslations = async (req: Request, res: Response) => {
   try {
