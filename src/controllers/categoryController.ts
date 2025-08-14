@@ -529,7 +529,6 @@ export const createTranslation = async (
   }
 };
 
-// Also add this endpoint to check what you currently have:
 export const checkCurrentTranslations = async (req: Request, res: Response): Promise<void> => {
   try {
     const allTranslations = await Translation.find().lean();

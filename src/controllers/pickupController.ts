@@ -18,6 +18,7 @@ import { runAggregation } from "../utils/FilterHelper";
 import { processUserPoints } from "../utils/tireHelpe";
 import { getSocketIO } from "../socket/socketServer";
 import { TranslationService } from "../services/translationService";
+import translation from "../models/translation";
 
 // Use interfaces from pickupOrder.ts
 export interface IAuthenticatedRequest extends express.Request {
@@ -461,14 +462,16 @@ export const getOrderById = async (
           foreignField: "_id",
           as: "courierDetails",
           pipeline: [
-            { $project: { 
-              attachments: 1, 
-              name: 1, 
-              email: 1, 
-              phoneNumber: 1, 
-              rating: 1, 
-              totalReviews: 1 
-            } },
+            {
+              $project: {
+                attachments: 1,
+                name: 1,
+                email: 1,
+                phoneNumber: 1,
+                rating: 1,
+                totalReviews: 1,
+              },
+            },
           ],
         },
       },
@@ -509,7 +512,9 @@ export const getOrderById = async (
           comment: order.deliveryReview.comment,
           reviewedAt: order.deliveryReview.reviewedAt,
           courier: {
-            id: order.courier?._id?.toString() || order.deliveryReview.reviewedBy.toString(),
+            id:
+              order.courier?._id?.toString() ||
+              order.deliveryReview.reviewedBy.toString(),
             name: order.courier?.name || "Unknown Courier",
           },
           hasReview: true,
@@ -690,56 +695,53 @@ export const getAllOrdersForAdmin = async (
         { orderId: searchRegex },
         { status: searchRegex },
         { "user.name": searchRegex },
-        { "user.email": searchRegex }
+        { "user.email": searchRegex },
       ];
     }
 
-const lookups = [
-  {
-    $lookup: {
-      from: "users",
-      localField: "user.userId",
-      foreignField: "_id",
-      as: "userDetails",
-    },
-  },
-  {
-    $lookup: {
-      from: "users",
-      localField: "courier",
-      foreignField: "_id",
-      as: "courierDetails",
-      pipeline: [
-        { $project: { attachments: 1, name: 1 } }, // only return these fields (+ _id by default)
-      ],
-    },
-  },
-];
+    const lookups = [
+      {
+        $lookup: {
+          from: "users",
+          localField: "user.userId",
+          foreignField: "_id",
+          as: "userDetails",
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "courier",
+          foreignField: "_id",
+          as: "courierDetails",
+          pipeline: [
+            { $project: { attachments: 1, name: 1 } }, // only return these fields (+ _id by default)
+          ],
+        },
+      },
+    ];
 
+    const addFields = {
+      "user.role": { $arrayElemAt: ["$userDetails.role", 0] },
+      "user.name": { $arrayElemAt: ["$userDetails.name", 0] },
+      "user.email": { $arrayElemAt: ["$userDetails.email", 0] },
+      courier: { $arrayElemAt: ["$courierDetails", 0] },
+    };
 
-const addFields = {
-  "user.role": { $arrayElemAt: ["$userDetails.role", 0] },
-  "user.name": { $arrayElemAt: ["$userDetails.name", 0] },
-  "user.email": { $arrayElemAt: ["$userDetails.email", 0] },
-  courier: { $arrayElemAt: ["$courierDetails", 0] },
-};
+    const project: Record<string, 0 | 1> = {
+      userDetails: 0,
+      courierDetails: 0,
+    };
 
-const project: Record<string, 0 | 1> = {
-  userDetails: 0,
-  courierDetails: 0,
-};
-
-
-const result = await runAggregation(Order, {
-  filters,
-  lookups,
-  addFields,
-  project,
-  sort: { createdAt: -1 },
-  page,
-  limit,
-});
-
+    const result = await runAggregation(Order, {
+      filters,
+      lookups,
+      addFields,
+      project,
+      sort: { createdAt: -1 },
+      page,
+      limit,
+    });
 
     res.json({
       success: true,
@@ -1265,17 +1267,28 @@ export const getTopMaterialsRecycled = async (
 ): Promise<void> => {
   try {
     const category = req.query.category as string | undefined;
+    const language = (req.query.language as 'en' | 'ar') || 'en';
 
+    // 1. Aggregation Pipeline
     const pipeline: any[] = [
       { $unwind: "$items" },
       {
         $addFields: {
           "items.quantity": { $toDouble: "$items.quantity" },
           "items.points": { $toDouble: "$items.points" },
-          // Normalize item names to lowercase for grouping
-          "items.normalizedItemName": { $toLower: "$items.itemName" },
-        },
-      },
+          // Normalize item names with manual Arabic handling
+          "items.normalizedItemName": {
+            $toLower: {
+              $switch: {
+                branches: [
+                  { case: { $eq: ["$items.itemName", "اكريلك"] }, then: "acrylic" }
+                ],
+                default: "$items.itemName"
+              }
+            }
+          }
+        }
+      }
     ];
 
     if (category) {
@@ -1286,116 +1299,118 @@ export const getTopMaterialsRecycled = async (
       {
         $group: {
           _id: {
-            // Group by normalized (lowercase) name to combine case variations
             itemName: "$items.normalizedItemName",
           },
           totalQuantity: { $sum: "$items.quantity" },
           totalPoints: { $sum: "$items.points" },
           image: { $first: "$items.image" },
-          // Use the first occurrence's original name (you can change this logic)
-          itemName: { $first: "$items.itemName" },
-          categoryName: { $first: "$items.categoryName" },
-          // Add unit field - get the first unit found for this item
+          // Apply initial translation during grouping
+          itemName: {
+            $first: {
+              $switch: {
+                branches: [
+                  { case: { $eq: ["$items.itemName", "اكريلك"] }, then: "Acrylic" }
+                ],
+                default: "$items.itemName"
+              }
+            }
+          },
+          categoryNames: { $addToSet: "$items.categoryName" },
           unit: { $first: "$items.unit" },
           documentCount: { $sum: 1 },
-          // Debug: show all the different case variations found
           nameVariations: { $addToSet: "$items.itemName" },
-          // Debug: show all units found for this item (in case there are variations)
           unitVariations: { $addToSet: "$items.unit" },
-        },
-      },
-      {
-        $addFields: {
-          // Convert measurement_unit integer to readable unit string
-          unit: {
-            $switch: {
-              branches: [
-                { case: { $eq: ["$measurementUnit", 1] }, then: "kg" },
-                { case: { $eq: ["$measurementUnit", 2] }, then: "pieces" },
-              ],
-              default: "pieces", // Default fallback
-            },
-          },
-          // Add a formatted display string for quantity with unit
-          quantityWithUnit: {
-            $concat: [
-              { $toString: "$totalQuantity" },
-              " ",
-              {
-                $switch: {
-                  branches: [
-                    { case: { $eq: ["$measurementUnit", 1] }, then: "kg" },
-                    { case: { $eq: ["$measurementUnit", 2] }, then: "pieces" },
-                  ],
-                  default: "pieces",
-                },
-              },
-            ],
-          },
         },
       },
       { $sort: { totalQuantity: -1 } },
       { $limit: 4 }
     );
 
-    console.log(
-      "Case-insensitive Pipeline:",
-      JSON.stringify(pipeline, null, 2)
-    );
+    // 2. Execute Aggregation
+    let materials = await Order.aggregate(pipeline);
 
-    const materials = await Order.aggregate(pipeline);
+    // 3. Enhanced Translation Handling
+    if (materials.length > 0) {
+      // Get all text needing translation
+      const translationTexts = [
+        ...new Set([
+          ...materials.flatMap(m => [m.itemName, ...m.nameVariations]),
+          ...materials.flatMap(m => m.categoryNames)
+        ])
+      ];
 
-    // Enhanced logging to show the case consolidation and units
-    console.log("Case-insensitive Results:");
-    materials.forEach((material, index) => {
-      console.log(`\n--- Material ${index + 1} ---`);
-      console.log(`Display Name: ${material.itemName}`);
-      console.log(`Total Quantity: ${material.totalQuantity}`);
-      console.log(
-        `Unit: ${material.unit || "pieces"} (${material.measurementUnit})`
-      );
-      console.log(`Quantity with Unit: ${material.quantityWithUnit}`);
-      console.log(`Document Count: ${material.documentCount}`);
-      console.log(`Name Variations Found:`, material.nameVariations);
-      console.log(`Unit Variations Found:`, material.unitVariations);
+      // Find all translations in single query
+      const translations = await translation.find({
+        $or: [
+          { key: { $in: translationTexts.map(t => `item_${t}`) } },
+          { "translations.ar": { $in: translationTexts } },
+          { key: { $in: translationTexts.map(t => `cat_${t}_name`) } }
+        ]
+      });
 
-      if (material._id.itemName === "cooking pan") {
-        console.log(`🍳 COOKING PAN CONSOLIDATED:`);
-        console.log(
-          `- Combined total: ${material.totalQuantity} ${
-            material.unit || "pieces"
-          }`
-        );
-        console.log(`- From ${material.documentCount} entries`);
-        console.log(`- Variations: ${material.nameVariations.join(", ")}`);
-        console.log(`- Unit code: ${material.measurementUnit}`);
-      }
-    });
+      // Create comprehensive lookup map
+      const translationMap = translations.reduce((map, t) => {
+        // Map by key
+        map[`key::${t.key}`] = t.translations[language] || t.translations.en;
+        
+        // Map by Arabic text if exists
+        if (t.translations.ar) {
+          map[`ar::${t.translations.ar}`] = t.translations[language] || t.translations.en;
+        }
+        
+        return map;
+      }, {});
 
-    // Show what the totals would be for cooking pan specifically
-    const cookingPanTotal = await Order.aggregate([
-      { $unwind: "$items" },
-      { $match: { "items.itemName": { $regex: /^cooking pan$/i } } }, // Case insensitive exact match
-      {
-        $group: {
-          _id: null,
-          totalQuantity: { $sum: { $toDouble: "$items.quantity" } },
-          totalDocs: { $sum: 1 },
-          variations: { $addToSet: "$items.itemName" },
-          units: { $addToSet: "$items.measurement_unit" },
-        },
-      },
-    ]);
+      // Manual fallbacks for known items
+      const manualFallbacks: Record<string, string> = {
+        "اكريلك": "Acrylic",
+        "بلاستيك": "Plastic"
+      };
 
-    console.log("\n🔍 COOKING PAN VERIFICATION:", cookingPanTotal);
+      // Apply translations consistently
+      materials = materials.map(material => {
+        // Translate item name
+        const itemTranslation = 
+          translationMap[`key::item_${material.itemName}`] ||
+          translationMap[`ar::${material.itemName}`] ||
+          manualFallbacks[material.itemName] ||
+          material.itemName;
+
+        // Translate categories
+        const translatedCategories = material.categoryNames.map(cat => {
+          return (
+            translationMap[`key::cat_${cat}_name`] ||
+            translationMap[`ar::${cat}`] ||
+            manualFallbacks[cat] ||
+            cat
+          );
+        });
+
+        // Translate name variations
+        const translatedVariations = material.nameVariations.map(name => {
+          return (
+            translationMap[`key::item_${name}`] ||
+            translationMap[`ar::${name}`] ||
+            manualFallbacks[name] ||
+            name
+          );
+        });
+
+        return {
+          ...material,
+          _id: {
+            itemName: itemTranslation // Ensure _id matches translated name
+          },
+          itemName: itemTranslation,
+          categoryNames: translatedCategories,
+          nameVariations: translatedVariations
+        };
+      });
+    }
 
     res.json({
       success: true,
       data: materials,
-      debug: {
-        cookingPanTotal,
-        timestamp: new Date().toISOString(),
-      },
     });
   } catch (error) {
     console.error("Error getting top materials recycled:", error);
@@ -1508,3 +1523,5 @@ export const recalculateUserPointsFromOrders = async (
     });
   }
 };
+
+

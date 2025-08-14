@@ -43,7 +43,49 @@ static async translateOrders(orders: any[], language: 'en' | 'ar'): Promise<any[
     };
   });
 }
+  static async getItemTranslation(itemName: string, language: 'en' | 'ar'): Promise<string> {
+    // Try multiple lookup strategies
+    const translations = await Translation.find({
+      $or: [
+        { key: `item_${itemName}` },
+        { 'translations.ar': itemName },
+        { 'translations.en': itemName }
+      ]
+    });
 
+    // Return the first valid translation found
+    for (const t of translations) {
+      if (t.translations[language]) {
+        return t.translations[language];
+      }
+      if (t.translations.en) {
+        return t.translations.en;
+      }
+    }
+
+    // Manual fallback for known items
+    const manualFallbacks: Record<string, string> = {
+      'اكريلك': 'acrylic',
+      'بلاستيك': 'plastic'
+    };
+
+    return manualFallbacks[itemName] || itemName;
+  }
+
+  static async translateItems(items: any[], language: 'en' | 'ar'): Promise<any[]> {
+    return Promise.all(items.map(async item => {
+      const translatedName = await this.getItemTranslation(item.itemName, language);
+      return {
+        ...item,
+        itemName: translatedName,
+        nameVariations: await Promise.all(
+          (item.nameVariations || []).map((name: string) => 
+            this.getItemTranslation(name, language)
+          )
+        )
+      };
+    }));
+  }
 static async translateCartItems(
   cartItems: any[],
   language: 'en' | 'ar'
