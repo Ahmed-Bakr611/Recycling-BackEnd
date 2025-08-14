@@ -76,15 +76,17 @@ export const getAllCategories = async (
 export const getCategoriesWithPagination = async (
   req: any, // Use any to avoid TypeScript issues for now
   res: Response
-) => {
+): Promise<void> => {
   try {
     const role = req.query.role;
+    // Fix language detection priority: query param first, then middleware, then default
     const language = (req.query.lang as 'en' | 'ar') || req.language || 'en';
     const pagination = req.pagination || { skip: 0, limit: 10, page: 1 };
     
     console.log('=== getCategoriesWithPagination Debug ===');
     console.log('Language requested:', language);
     console.log('Req.language from middleware:', req.language);
+    console.log('Query lang param:', req.query.lang);
 
     // Your existing pagination logic
     const [categories, total] = await Promise.all([
@@ -543,6 +545,54 @@ export const checkCurrentTranslations = async (req: Request, res: Response): Pro
       }))
     });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Debug endpoint to test translation service
+export const debugTranslations = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const language = req.query.lang as 'en' | 'ar' || 'en';
+    const testCategoryName = req.query.category as string || 'Electronics';
+    
+    console.log('=== Debug Translations ===');
+    console.log('Language:', language);
+    console.log('Test category:', testCategoryName);
+    
+    // Test generateKey
+    const nameKey = TranslationService.generateKey(testCategoryName, 'cat', 'name');
+    console.log('Generated key:', nameKey);
+    
+    // Test getTranslations
+    const translations = await TranslationService.getTranslations(language);
+    console.log('Total translations found:', Object.keys(translations).length);
+    console.log('Translation for test key:', translations[nameKey]);
+    
+    // Test with actual categories
+    const categories = await Category.find().limit(3).lean();
+    console.log('Sample categories:', categories.map(c => c.name));
+    
+    const translatedCategories = await TranslationService.translateCategories(categories, language);
+    console.log('Translated categories:', translatedCategories.map(c => ({ 
+      original: c.originalName, 
+      translated: c.name 
+    })));
+    
+    res.json({
+      language,
+      testCategory: testCategoryName,
+      generatedKey: nameKey,
+      translationFound: !!translations[nameKey],
+      translationValue: translations[nameKey],
+      totalTranslations: Object.keys(translations).length,
+      sampleCategories: categories.map(c => c.name),
+      translatedSample: translatedCategories.map(c => ({ 
+        original: c.originalName, 
+        translated: c.name 
+      }))
+    });
+  } catch (error) {
+    console.error('Debug translations error:', error);
     res.status(500).json({ error: error.message });
   }
 };
