@@ -10,6 +10,7 @@ export interface ICartItem {
   price: number;
   measurement_unit: number;
   quantity: number;
+  
 }
 
 export interface ICart extends Document {

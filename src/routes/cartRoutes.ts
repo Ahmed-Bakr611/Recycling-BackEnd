@@ -16,4 +16,5 @@ export default (router: express.Router) => {
   router.delete("/cart/:_id", optionalAuthenticate, removeCartItem);
   router.delete("/cart/", optionalAuthenticate, clearCart);
   router.post("/cart/save", optionalAuthenticate, saveCart);
+
 };

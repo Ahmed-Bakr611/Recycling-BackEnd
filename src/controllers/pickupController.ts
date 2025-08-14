@@ -17,6 +17,7 @@ import {
 import { runAggregation } from "../utils/FilterHelper";
 import { processUserPoints } from "../utils/tireHelpe";
 import { getSocketIO } from "../socket/socketServer";
+import { TranslationService } from "../services/translationService";
 
 // Use interfaces from pickupOrder.ts
 export interface IAuthenticatedRequest extends express.Request {
@@ -144,74 +145,57 @@ export const createOrder = async (
 };
 
 export const getAllOrders = async (
-  req: IAuthenticatedRequest,
+  req: IAuthenticatedRequest & { language?: 'en' | 'ar' },
   res: express.Response
 ): Promise<void> => {
   try {
     const userId = req.user.userId;
-
-    // Get pagination parameters from query string
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 5;
     const skip = (page - 1) * limit;
-
-    // Get status filter from query string
     const status = req.query.status as string;
+    const language = (req.query.lang as 'en' | 'ar') || req.language || 'en';
 
-    // Build query filter
     let filter: any = { "user.userId": userId };
-
     if (status) {
-      if (status === "incoming") {
-        filter.status = { $in: ["pending", "assigntocourier", "collected"] };
-      } else if (status === "completed") {
-        filter.status = "completed";
-      } else if (status === "cancelled") {
-        filter.status = "cancelled";
-      } else if (status === "collected") {
-        filter.status = "collected";
-      }
+      if (status === "incoming") filter.status = { $in: ["pending", "assigntocourier", "collected"] };
+      else if (status === "completed") filter.status = "completed";
+      else if (status === "cancelled") filter.status = "cancelled";
+      else if (status === "collected") filter.status = "collected";
     }
 
-    // Get total count for pagination info (with filter)
     const totalOrders = await Order.countDocuments(filter);
-
-    // Get total completed orders count for stats
     const totalCompletedOrders = await Order.countDocuments({
       "user.userId": userId,
       status: "completed",
     });
 
-    // FIX: Use correct field names from User schema
     const orders = await Order.find(filter)
       .populate({
         path: "courier",
-        select: "name email phoneNumber rating totalReviews", // Use 'name' instead of 'userName'
+        select: "name email phoneNumber rating totalReviews",
       })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    // Transform orders to include review information
-    const ordersWithReviewData = orders.map((order) => {
+    // Map orders with review info
+    let ordersWithReviewData = orders.map((order) => {
       const orderObj: any = order.toObject();
 
-      // FIX: Normalize courier data to ensure consistent field names
       if (orderObj.courier) {
         orderObj.courier = {
           _id: orderObj.courier._id,
           email: orderObj.courier.email,
           phoneNumber: orderObj.courier.phoneNumber,
-          name: orderObj.courier.name || "Unknown Courier", // Use the correct 'name' field
+          name: orderObj.courier.name || "Unknown Courier",
           rating: orderObj.courier.rating,
           totalReviews: orderObj.courier.totalReviews,
         };
       }
 
-      // For completed orders, add review status information
       if (order.status === "completed") {
         if (order.deliveryReview) {
-          // Order has a review
           orderObj.review = {
             _id: order._id.toString(),
             orderId: order._id.toString(),
@@ -219,22 +203,18 @@ export const getAllOrders = async (
             comment: order.deliveryReview.comment,
             reviewedAt: order.deliveryReview.reviewedAt,
             courier: {
-              id:
-                (order.courier as any)?._id?.toString() ||
-                order.deliveryReview.reviewedBy.toString(),
-              name: (order.courier as any)?.name || "Unknown Courier", // Use 'name' instead of 'userName'
+              id: (order.courier as any)?._id?.toString() || order.deliveryReview.reviewedBy.toString(),
+              name: (order.courier as any)?.name || "Unknown Courier",
             },
             hasReview: true,
           };
           orderObj.canBeReviewed = false;
           orderObj.hasReview = true;
         } else {
-          // Order can be reviewed
           orderObj.canBeReviewed = true;
           orderObj.hasReview = false;
         }
       } else {
-        // Non-completed orders cannot be reviewed
         orderObj.canBeReviewed = false;
         orderObj.hasReview = false;
       }
@@ -242,10 +222,17 @@ export const getAllOrders = async (
       return orderObj;
     });
 
-    // Calculate pagination info
+    // If Arabic is requested, translate order items and category names
+    if (language === 'ar' && ordersWithReviewData.length > 0) {
+      try {
+        ordersWithReviewData = await TranslationService.translateOrders(ordersWithReviewData, language);
+      } catch (translationError) {
+        console.error('Order translation failed:', translationError);
+        // fallback to original orders
+      }
+    }
+
     const totalPages = Math.ceil(totalOrders / limit);
-    const hasNextPage = page < totalPages;
-    const hasPrevPage = page > 1;
 
     res.json({
       success: true,
@@ -256,8 +243,8 @@ export const getAllOrders = async (
       pagination: {
         currentPage: page,
         totalPages,
-        hasNextPage,
-        hasPrevPage,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
         limit,
       },
     });
@@ -269,6 +256,7 @@ export const getAllOrders = async (
     });
   }
 };
+
 export const deleteOrderById = async (
   req: IAuthenticatedRequest,
   res: express.Response

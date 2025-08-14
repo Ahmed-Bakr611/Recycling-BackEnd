@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import Cart from "../models/cart";
+import { TranslationService } from "../services/translationService";
 
 const validateQuantity = (
   quantity: number,
@@ -29,40 +30,127 @@ const validateQuantity = (
 };
 
 export const getCart = async (req: Request, res: Response) => {
-  const userId = req.user?.userId;
-  const sessionId = req.sessionId;
-  // DEBUG: Log the request details
-  console.log("=== GET CART DEBUG ===");
-  console.log("User ID:", userId);
-  console.log("Session ID:", sessionId);
-  console.log("Request headers:", {
-    authorization: req.headers.authorization,
-    cookie: req.headers.cookie,
-  });
+  try {
+    const userId = req.user?.userId;
+    const sessionId = req.sessionId;
+    const language = (req.query.lang as 'en' | 'ar') || (req as any).language || 'en';
 
-  if (!userId && !sessionId) {
-    return res.status(400).json({ message: "Missing user or session" });
-  }
+    console.log('=== getCart Debug ===');
+    console.log('Language requested:', language);
+    console.log('User ID:', userId);
+    console.log('Session ID:', sessionId);
 
-  let cart = null;
-  if (userId) {
-    cart = await Cart.findOne({ userId });
-    if (!cart) {
-      cart = new Cart({ userId, items: [] });
-      await cart.save();
+    if (!userId && !sessionId) {
+      return res.status(400).json({ message: "Missing user or session" });
     }
-  } else if (sessionId) {
-    cart = await Cart.findOne({ sessionId });
-    if (!cart) {
-      cart = new Cart({ sessionId, items: [] });
-      await cart.save();
-    }
-  }
-  // console.log("😜😜😜😜😜😜😜😜😜😜😜😜");
-  // console.log(`userId = ${userId} , sessionID = ${sessionId}`);
-  // console.log("😜😜😜😜😜😜😜😜😜😜😜😜");
 
-  return res.status(200).json(cart);
+    let cart = null;
+    if (userId) {
+      cart = await Cart.findOne({ userId }).lean();
+    } else {
+      cart = await Cart.findOne({ sessionId }).lean();
+    }
+
+    if (!cart) {
+      cart = { items: [] };
+    }
+
+    console.log('Found cart with items count:', cart.items?.length || 0);
+
+    if (language === 'ar' && cart.items && cart.items.length > 0) {
+      console.log('Starting Arabic translation for cart items...');
+      
+      try {
+        const translations = await TranslationService.getTranslations(language);
+        console.log(`Retrieved ${Object.keys(translations).length} translations`);
+        
+        // Create a reverse mapping of Arabic to English category names
+        const reverseCategoryMap: Record<string, string> = {};
+        const categoryKeys = Object.keys(translations).filter(key => 
+          key.startsWith('cat_') && key.endsWith('_name')
+        );
+        
+        for (const catKey of categoryKeys) {
+          const englishName = catKey.replace('cat_', '').replace('_name', '');
+          reverseCategoryMap[translations[catKey]] = englishName;
+        }
+        
+        // Translate cart items while preserving slugs
+        cart.items = cart.items.map((item: any) => {
+          const cleanCategoryName = item.categoryName?.trim() || '';
+          let translatedItemName = item.name;
+          let translatedCategoryName = cleanCategoryName;
+          let categorySlug = item.categorySlug; // Preserve original slug
+          let itemSlug = item.itemSlug; // Preserve original slug
+          
+          // Step 1: Find English category name
+          let englishCategoryName = reverseCategoryMap[cleanCategoryName] || '';
+          const categoryKey = `cat_${(cleanCategoryName || '').toLowerCase()}_name`;
+if (translations[categoryKey]) {
+  translatedCategoryName = translations[categoryKey];
+}
+          
+          if (englishCategoryName) {
+            console.log(`✅ Found English category: "${englishCategoryName}" for Arabic: "${cleanCategoryName}"`);
+            
+            // Step 2: Try to translate item name using standard key patterns
+            const normalizedItemName = item.name.toLowerCase().replace(/-/g, '_');
+            const possibleItemKeys = [
+              `item_${englishCategoryName}_${normalizedItemName}`,
+              `item_${englishCategoryName}${normalizedItemName}`,
+              `item_${englishCategoryName}_${item.name}`,
+              `item_${englishCategoryName}${item.name}`
+            ];
+            
+            for (const itemKey of possibleItemKeys) {
+              if (translations[itemKey]) {
+                translatedItemName = translations[itemKey];
+                console.log(`✅ Found item translation: ${item.name} -> ${translatedItemName}`);
+                break;
+              }
+            }
+            
+            // Step 3: Get Arabic category name (should be the same as original)
+            const categoryKey = `cat_${englishCategoryName}_name`;
+            if (translations[categoryKey]) {
+              translatedCategoryName = translations[categoryKey];
+            }
+          } else {
+            console.log(`⚠️ No English category found for: "${cleanCategoryName}"`);
+            
+            // Fallback: Try direct item name matching
+            const normalizedItemName = item.name.toLowerCase().replace(/-/g, '_');
+            const itemKeys = Object.keys(translations).filter(key => 
+              key.startsWith('item_') && 
+              key.toLowerCase().includes(normalizedItemName)
+            );
+            
+            if (itemKeys.length > 0) {
+              translatedItemName = translations[itemKeys[0]];
+              console.log(`✅ Found fallback translation: ${item.name} -> ${translatedItemName}`);
+            }
+          }
+          
+          return {
+            ...item,
+            name: translatedItemName,
+            categoryName: translatedCategoryName,
+            categorySlug, // Include the slug
+            itemSlug // Include the slug
+          };
+        });
+        
+        console.log('Cart items translation completed');
+      } catch (translationError) {
+        console.error('Cart translation failed:', translationError);
+      }
+    }
+
+    return res.status(200).json(cart);
+  } catch (error) {
+    console.error("Error in getCart:", error);
+    return res.status(500).json({ message: "Server error", error });
+  }
 };
 
 export const addItemToCart = async (req: Request, res: Response) => {
@@ -216,6 +304,7 @@ export const clearCart = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "Failed to clear cart", error });
   }
 };
+
 export const saveCart = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
