@@ -473,14 +473,16 @@ export const getOrderById = async (
           foreignField: "_id",
           as: "courierDetails",
           pipeline: [
-            { $project: { 
-              attachments: 1, 
-              name: 1, 
-              email: 1, 
-              phoneNumber: 1, 
-              rating: 1, 
-              totalReviews: 1 
-            } },
+            {
+              $project: {
+                attachments: 1,
+                name: 1,
+                email: 1,
+                phoneNumber: 1,
+                rating: 1,
+                totalReviews: 1,
+              },
+            },
           ],
         },
       },
@@ -521,7 +523,9 @@ export const getOrderById = async (
           comment: order.deliveryReview.comment,
           reviewedAt: order.deliveryReview.reviewedAt,
           courier: {
-            id: order.courier?._id?.toString() || order.deliveryReview.reviewedBy.toString(),
+            id:
+              order.courier?._id?.toString() ||
+              order.deliveryReview.reviewedBy.toString(),
             name: order.courier?.name || "Unknown Courier",
           },
           hasReview: true,
@@ -702,56 +706,53 @@ export const getAllOrdersForAdmin = async (
         { orderId: searchRegex },
         { status: searchRegex },
         { "user.name": searchRegex },
-        { "user.email": searchRegex }
+        { "user.email": searchRegex },
       ];
     }
 
-const lookups = [
-  {
-    $lookup: {
-      from: "users",
-      localField: "user.userId",
-      foreignField: "_id",
-      as: "userDetails",
-    },
-  },
-  {
-    $lookup: {
-      from: "users",
-      localField: "courier",
-      foreignField: "_id",
-      as: "courierDetails",
-      pipeline: [
-        { $project: { attachments: 1, name: 1 } }, // only return these fields (+ _id by default)
-      ],
-    },
-  },
-];
+    const lookups = [
+      {
+        $lookup: {
+          from: "users",
+          localField: "user.userId",
+          foreignField: "_id",
+          as: "userDetails",
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "courier",
+          foreignField: "_id",
+          as: "courierDetails",
+          pipeline: [
+            { $project: { attachments: 1, name: 1 } }, // only return these fields (+ _id by default)
+          ],
+        },
+      },
+    ];
 
+    const addFields = {
+      "user.role": { $arrayElemAt: ["$userDetails.role", 0] },
+      "user.name": { $arrayElemAt: ["$userDetails.name", 0] },
+      "user.email": { $arrayElemAt: ["$userDetails.email", 0] },
+      courier: { $arrayElemAt: ["$courierDetails", 0] },
+    };
 
-const addFields = {
-  "user.role": { $arrayElemAt: ["$userDetails.role", 0] },
-  "user.name": { $arrayElemAt: ["$userDetails.name", 0] },
-  "user.email": { $arrayElemAt: ["$userDetails.email", 0] },
-  courier: { $arrayElemAt: ["$courierDetails", 0] },
-};
+    const project: Record<string, 0 | 1> = {
+      userDetails: 0,
+      courierDetails: 0,
+    };
 
-const project: Record<string, 0 | 1> = {
-  userDetails: 0,
-  courierDetails: 0,
-};
-
-
-const result = await runAggregation(Order, {
-  filters,
-  lookups,
-  addFields,
-  project,
-  sort: { createdAt: -1 },
-  page,
-  limit,
-});
-
+    const result = await runAggregation(Order, {
+      filters,
+      lookups,
+      addFields,
+      project,
+      sort: { createdAt: -1 },
+      page,
+      limit,
+    });
 
     res.json({
       success: true,
@@ -1306,8 +1307,7 @@ export const getTopMaterialsRecycled = async (
           image: { $first: "$items.image" },
           // Use the first occurrence's original name (you can change this logic)
           itemName: { $first: "$items.itemName" },
-          categoryName: { $first: "$items.categoryName" },
-          // Add unit field - get the first unit found for this item
+          categoryNames: { $addToSet: "$items.categoryName" }, // Add unit field - get the first unit found for this item
           unit: { $first: "$items.unit" },
           documentCount: { $sum: 1 },
           // Debug: show all the different case variations found
@@ -1395,6 +1395,19 @@ export const getTopMaterialsRecycled = async (
           totalDocs: { $sum: 1 },
           variations: { $addToSet: "$items.itemName" },
           units: { $addToSet: "$items.measurement_unit" },
+        },
+      },
+      {
+        $addFields: {
+          categoryName: {
+            $first: {
+              $filter: {
+                input: "$categoryNames",
+                as: "cat",
+                cond: { $ne: ["$$cat", null] },
+              },
+            },
+          },
         },
       },
     ]);
