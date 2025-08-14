@@ -15,20 +15,18 @@ interface TranslatedMulterRequest extends MulterRequest {
   language?: "en" | "ar";
 }
 
-// Helper function to generate slug
+// Helper function to generate slug that matches English name exactly (preserving spaces and original format)
 const generateSlug = (name: string): string => {
-  return name
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^\w-]+/g, "");
+  if (!name || typeof name !== "string") return "";
+
+  // Keep the name exactly as it is, just trim whitespace
+  // This preserves spaces, capitalization, and keeps the original format
+  return name.trim();
 };
 
 // ======================== ITEM ========================
 
-export const getAllItems = async (
-  req: any, // Use any to avoid TypeScript issues, matching your category pattern
-  res: Response
-): Promise<void> => {
+export const getAllItems = async (req: any, res: Response): Promise<void> => {
   try {
     const { skip, limit } = req.pagination;
     const role = req.query.role;
@@ -42,7 +40,15 @@ export const getAllItems = async (
     let matchStage = {};
 
     if (categoryName && categoryName !== "all") {
-      matchStage = { name: categoryName };
+      const decodedCategoryName = decodeURIComponent(categoryName);
+      matchStage = {
+        $or: [
+          { name: categoryName },
+          { name: decodedCategoryName },
+          { slug: categoryName },
+          { slug: decodedCategoryName },
+        ],
+      };
     }
 
     // 1. Count total items
@@ -63,14 +69,14 @@ export const getAllItems = async (
         $project: {
           _id: "$items._id",
           name: "$items.name",
-          slug: "$items.slug", // Include slug in projection
+          slug: "$items.slug",
           points: "$items.points",
           price: "$items.price",
           measurement_unit: "$items.measurement_unit",
           image: "$items.image",
           quantity: "$items.quantity",
           categoryName: "$name",
-          categorySlug: "$slug", // Include category slug too
+          categorySlug: "$slug",
           categoryId: "$_id",
         },
       },
@@ -153,7 +159,7 @@ export const getAllItems = async (
 
 export const getItems = async (req: Request, res: Response) => {
   try {
-    const rawName = decodeURIComponent(req.params.categoryName); // decode URL
+    const rawName = decodeURIComponent(req.params.categoryName);
     const { skip, limit } = req.pagination || { skip: 0, limit: 10 };
     const role = req.query.role as string | undefined;
     const language =
@@ -161,6 +167,7 @@ export const getItems = async (req: Request, res: Response) => {
 
     console.log("=== getItems Debug ===");
     console.log("Raw param:", rawName);
+    console.log("Decoded param:", rawName);
     console.log("Language requested:", language);
 
     let category: any = null;
@@ -187,21 +194,30 @@ export const getItems = async (req: Request, res: Response) => {
       }
     }
 
-    // // Step 2: Fallback to original name or slug if no translation
-    // if (!category) {
-    //   category = await Category.findOne({
-    //     $or: [{ name: rawName }, { slug: rawName }],
-    //   }).slice("items", [skip, limit]);
-    //   console.log(
-    //     `Category found by name/slug: ${category ? category._id : "NOT FOUND"}`
-    //   );
-    // }
+    // Step 2: Fallback to original name or slug if no translation
+    if (!category) {
+      category = await Category.findOne({
+        $or: [
+          { name: rawName },
+          { slug: rawName },
+          { slug: encodeURIComponent(rawName) }, // Try encoded version too
+        ],
+      }).slice("items", [skip, limit]);
+      console.log(
+        `Category found by name/slug: ${category ? category._id : "NOT FOUND"}`
+      );
+    }
 
     if (!category) {
       console.log("Category not found");
       return res
         .status(404)
         .json({ message: "Category not found", searchedFor: rawName });
+      return res.status(404).json({
+        message: "Category not found",
+        searchedFor: rawName,
+        encodedSearchTerm: encodeURIComponent(rawName),
+      });
     }
 
     // Get total items count
@@ -273,12 +289,12 @@ export const addItem = async (
       return;
     }
 
-    // Generate slug for the new item
+    // Generate slug for the new item using improved logic
     const itemSlug = generateSlug(itemName);
 
     const item = {
       name: itemName,
-      slug: itemSlug, // Add slug to item
+      slug: itemSlug,
       image: req.file.path,
       points: Number(points),
       price: Number(price),
@@ -286,14 +302,26 @@ export const addItem = async (
       measurement_unit: Number(measurement_unit),
     };
 
+    // Find category by name or slug
+    const decodedCategoryName = decodeURIComponent(categoryName);
     const updatedCategory = await Category.findOneAndUpdate(
-      { name: categoryName },
+      {
+        $or: [
+          { name: decodedCategoryName },
+          { slug: categoryName },
+          { slug: decodedCategoryName },
+        ],
+      },
       { $push: { items: item } },
       { new: true }
     );
 
     if (!updatedCategory) {
-      res.status(404).json({ message: "Category not found" });
+      res.status(404).json({
+        message: "Category not found",
+        searchedFor: categoryName,
+        decodedName: decodedCategoryName,
+      });
       return;
     }
 
@@ -304,7 +332,7 @@ export const addItem = async (
         console.log("Creating item translation...");
         const itemKey = await TranslationService.createItemTranslation(
           itemName,
-          categoryName,
+          updatedCategory.name, // Use actual category name
           itemNameAr,
           newItem._id?.toString()
         );
@@ -335,28 +363,29 @@ export const updateItem = async (
     const { name, points, price, measurement_unit, quantity, nameAr } =
       req.body;
     const image = req.file?.path;
-    const cleanCategoryName = categoryName.trim();
+    const decodedCategoryName = decodeURIComponent(categoryName);
 
     console.log("Updating item with data:", {
       name,
       nameAr,
-      categoryName,
+      categoryName: decodedCategoryName,
       itemId,
     });
-    console.log("Searching for category:", cleanCategoryName);
-
-    const allCategories = await Category.find({});
-    console.log(
-      "Existing categories:",
-      allCategories.map((c) => c.name)
-    );
 
     const category = await Category.findOne({
-      name: { $regex: new RegExp(`^${cleanCategoryName}$`, "i") },
+      $or: [
+        { name: { $regex: new RegExp(`^${decodedCategoryName}$`, "i") } },
+        { slug: categoryName },
+        { slug: decodedCategoryName },
+      ],
     });
 
     if (!category) {
-      res.status(404).json({ message: "Category not found" });
+      res.status(404).json({
+        message: "Category not found",
+        searchedFor: categoryName,
+        decodedName: decodedCategoryName,
+      });
       return;
     }
 
@@ -395,7 +424,7 @@ export const updateItem = async (
         console.log("Updating item translation...");
         const itemKey = await TranslationService.createItemTranslation(
           name || oldItemName,
-          categoryName,
+          category.name,
           nameAr,
           itemId
         );
@@ -423,10 +452,22 @@ export const deleteItem = async (
 ): Promise<void> => {
   try {
     const { categoryName, itemId } = req.params;
-    const category = await Category.findOne({ name: categoryName });
+    const decodedCategoryName = decodeURIComponent(categoryName);
+
+    const category = await Category.findOne({
+      $or: [
+        { name: decodedCategoryName },
+        { slug: categoryName },
+        { slug: decodedCategoryName },
+      ],
+    });
 
     if (!category) {
-      res.status(404).json({ message: "Category not found" });
+      res.status(404).json({
+        message: "Category not found",
+        searchedFor: categoryName,
+        decodedName: decodedCategoryName,
+      });
       return;
     }
 
@@ -444,7 +485,7 @@ export const deleteItem = async (
     // Clean up item translation
     try {
       const itemKey = TranslationService.generateKey(
-        `${categoryName}_${itemName}`,
+        `${category.name}_${itemName}`,
         "item"
       );
       await Translation.deleteOne({ key: itemKey });
@@ -468,24 +509,42 @@ export const getItemByName = async (req: any, res: Response): Promise<void> => {
   try {
     const { categoryName, itemName } = req.params;
     const language = (req.query.lang as "en" | "ar") || req.language || "en";
+    const decodedCategoryName = decodeURIComponent(categoryName);
+    const decodedItemName = decodeURIComponent(itemName);
 
     console.log("=== getItemByName Debug ===");
-    console.log("Category:", categoryName, "ItemName:", itemName);
+    console.log("Category:", decodedCategoryName, "ItemName:", decodedItemName);
     console.log("Language requested:", language);
 
-    // Find category by name (keep existing behavior)
-    const category = await Category.findOne({ name: categoryName });
+    // Find category by name or slug
+    const category = await Category.findOne({
+      $or: [
+        { name: decodedCategoryName },
+        { slug: categoryName },
+        { slug: decodedCategoryName },
+      ],
+    });
 
     if (!category) {
-      res.status(404).json({ message: "Category not found" });
+      res.status(404).json({
+        message: "Category not found",
+        searchedFor: categoryName,
+        decodedName: decodedCategoryName,
+      });
       return;
     }
 
-    // Find item by name (keep existing behavior)
-    const item = category.items.find((item: any) => item.name === itemName);
+    // Find item by name
+    const item = category.items.find(
+      (item: any) => item.name === decodedItemName
+    );
 
     if (!item) {
-      res.status(404).json({ message: "Item not found" });
+      res.status(404).json({
+        message: "Item not found",
+        searchedFor: itemName,
+        decodedName: decodedItemName,
+      });
       return;
     }
 
@@ -505,19 +564,19 @@ export const getItemByName = async (req: any, res: Response): Promise<void> => {
 
         // Translate item name
         const itemKey = TranslationService.generateKey(
-          `${categoryName}_${item.name}`,
+          `${category.name}_${item.name}`,
           "item"
         );
         const translatedItemName = translations[itemKey] || item.name;
 
         // Translate category name
         const categoryNameKey = TranslationService.generateKey(
-          categoryName,
+          category.name,
           "cat",
           "name"
         );
         const translatedCategoryName =
-          translations[categoryNameKey] || categoryName;
+          translations[categoryNameKey] || category.name;
 
         console.log(
           `Translating single item: ${item.name} -> ${translatedItemName}`
@@ -550,26 +609,42 @@ export const getItemBySlug = async (req: any, res: Response): Promise<void> => {
   try {
     const { categoryName, itemSlug } = req.params;
     const language = (req.query.lang as "en" | "ar") || req.language || "en";
+    const decodedCategoryName = decodeURIComponent(categoryName);
+    const decodedItemSlug = decodeURIComponent(itemSlug);
 
     console.log("=== getItemBySlug Debug ===");
-    console.log("Category:", categoryName, "ItemSlug:", itemSlug);
+    console.log("Category:", decodedCategoryName, "ItemSlug:", decodedItemSlug);
     console.log("Language requested:", language);
 
     // Find category by name or slug
     const category = await Category.findOne({
-      $or: [{ name: categoryName }, { slug: categoryName }],
+      $or: [
+        { name: decodedCategoryName },
+        { slug: categoryName },
+        { slug: decodedCategoryName },
+      ],
     });
 
     if (!category) {
-      res.status(404).json({ message: "Category not found" });
+      res.status(404).json({
+        message: "Category not found",
+        searchedFor: categoryName,
+        decodedName: decodedCategoryName,
+      });
       return;
     }
 
-    // Find item by slug
-    const item = category.items.find((item: any) => item.slug === itemSlug);
+    // Find item by slug (try both encoded and decoded versions)
+    const item = category.items.find(
+      (item: any) => item.slug === itemSlug || item.slug === decodedItemSlug
+    );
 
     if (!item) {
-      res.status(404).json({ message: "Item not found" });
+      res.status(404).json({
+        message: "Item not found",
+        searchedFor: itemSlug,
+        decodedSlug: decodedItemSlug,
+      });
       return;
     }
 
@@ -634,15 +709,26 @@ export const getItemById = async (req: any, res: Response): Promise<void> => {
   try {
     const { categoryName, itemId } = req.params;
     const language = (req.query.lang as "en" | "ar") || req.language || "en";
+    const decodedCategoryName = decodeURIComponent(categoryName);
 
     console.log("=== getItemById Debug ===");
-    console.log("Category:", categoryName, "ItemId:", itemId);
+    console.log("Category:", decodedCategoryName, "ItemId:", itemId);
     console.log("Language requested:", language);
 
-    const category = await Category.findOne({ name: categoryName });
+    const category = await Category.findOne({
+      $or: [
+        { name: decodedCategoryName },
+        { slug: categoryName },
+        { slug: decodedCategoryName },
+      ],
+    });
 
     if (!category) {
-      res.status(404).json({ message: "Category not found" });
+      res.status(404).json({
+        message: "Category not found",
+        searchedFor: categoryName,
+        decodedName: decodedCategoryName,
+      });
       return;
     }
 
@@ -668,19 +754,19 @@ export const getItemById = async (req: any, res: Response): Promise<void> => {
 
         // Translate item name
         const itemKey = TranslationService.generateKey(
-          `${categoryName}_${item.name}`,
+          `${category.name}_${item.name}`,
           "item"
         );
         const translatedItemName = translations[itemKey] || item.name;
 
         // Translate category name
         const categoryNameKey = TranslationService.generateKey(
-          categoryName,
+          category.name,
           "cat",
           "name"
         );
         const translatedCategoryName =
-          translations[categoryNameKey] || categoryName;
+          translations[categoryNameKey] || category.name;
 
         console.log(
           `Translating single item: ${item.name} -> ${translatedItemName}`
