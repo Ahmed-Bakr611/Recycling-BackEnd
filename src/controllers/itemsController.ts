@@ -261,22 +261,19 @@ export const updateItem = async (
 
     await category.save();
 
-    // Update translation if name changed
-    if (name && name !== oldName) {
+    // Update translation if name or Arabic name changed
+    if (name || nameAr) {
       console.log('🔄 Updating bilingual item translation');
       try {
-        if (name && nameAr) {
-          await translationService.updateItemTranslation(
-            categoryName, 
-            oldName, 
-            name,
-            { en: name, ar: nameAr }
-          );
-        } else {
-          // Fallback to single language update
-          await translationService.removeItemTranslation(categoryName, oldName);
-          await translationService.addItemTranslationSingle(categoryName, name);
-        }
+        const currentName = name || oldName; // Use new name if provided, otherwise keep old name
+        const currentNameAr = nameAr || (await translationService.getItemTranslation(categoryName, oldName))?.ar || oldName;
+        
+        await translationService.updateItemTranslation(
+          categoryName, 
+          oldName, 
+          currentName,
+          { en: currentName, ar: currentNameAr }
+        );
         console.log('✅ Bilingual item translation updated successfully');
       } catch (translationError) {
         console.error('⚠️ Item translation update failed:', translationError);
