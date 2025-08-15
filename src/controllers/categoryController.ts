@@ -1,43 +1,79 @@
 import { Request, Response } from "express";
 import Category, { ICategory } from "../models/category";
-
+import translationService from "../utils/translationInstance"; // Import the singleton
 interface MulterRequest extends Request {
   file: Express.Multer.File;
 }
+
 
 export const createCategory = async (
   req: MulterRequest,
   res: Response
 ): Promise<void> => {
   try {
-    const { name, description } = req.body;
+    const { 
+      name, 
+      description, 
+      nameAr, 
+      descriptionAr 
+    } = req.body;
+
     const image = req.file?.path ?? "";
 
-    const category = new Category({ name, description, image, items: [] });
+    // Use English name as the primary key in database
+    const category = new Category({ 
+      name: name || nameAr, // Fallback to Arabic if English not provided
+      description: description || descriptionAr, 
+      image, 
+      items: [] 
+    });
+    
     await category.save();
+
+    // Add bilingual translations
+    console.log('🔄 Adding bilingual category translation');
+    try {
+      if (name && nameAr) {
+        // Both languages provided
+        await translationService.addCategoryTranslation(
+          category.name, // Use database name as key
+          { en: name, ar: nameAr },
+          { en: description, ar: descriptionAr }
+        );
+      } else {
+        // Fallback to single language
+        await translationService.addCategoryTranslationSingle(
+          category.name, 
+          description || descriptionAr
+        );
+      }
+      console.log('✅ Bilingual translation added successfully');
+    } catch (translationError) {
+      console.error('⚠️ Translation failed but category was created:', translationError);
+    }
 
     res.status(201).json(category);
   } catch (err) {
+    console.error('❌ Create category error:', err);
     res.status(400).json({ message: (err as Error).message });
   }
 };
 
 export const getAllCategories = async (
-  req: Request, // Changed from _req since we need pagination info
+  req: Request,
   res: Response
 ): Promise<void> => {
   try {
     const { skip, limit } = req.pagination;
 
-    // Get paginated results and total count in parallel
     const [categories, total] = await Promise.all([
-      Category.find().skip(skip).limit(limit).lean(), // Using lean() for better performance
+      Category.find().skip(skip).limit(limit).lean(),
       Category.countDocuments(),
     ]);
 
-    // Use the paginated response method
     res.paginated(categories, total);
   } catch (err) {
+    console.error('❌ Get all categories error:', err);
     res.status(500).json({ message: (err as Error).message });
   }
 };
@@ -84,21 +120,31 @@ export const getCategoriesWithPagination = async (
     res.status(500).json({ error: "Server error" });
   }
 };
+
 export const createCategoryWithImage = async (
   req: MulterRequest,
   res: Response
 ): Promise<void> => {
   try {
-    const { name, description, itemName, points, price, measurement_unit } =
-      req.body;
+    const { 
+      name, 
+      description, 
+      nameAr, 
+      descriptionAr,
+      itemName, 
+      itemNameAr,
+      points, 
+      price, 
+      measurement_unit 
+    } = req.body;
 
     const newCategory = new Category({
-      name,
-      description,
+      name: name || nameAr,
+      description: description || descriptionAr,
       image: req.file?.path ?? "",
       items: [
         {
-          name: itemName,
+          name: itemName || itemNameAr,
           image: req.file?.path ?? "",
           points: Number(points),
           price: Number(price),
@@ -108,8 +154,45 @@ export const createCategoryWithImage = async (
     });
 
     await newCategory.save();
+
+    console.log('🔄 Adding bilingual category and item translations');
+    try {
+      // Add category translation
+      if (name && nameAr) {
+        await translationService.addCategoryTranslation(
+          newCategory.name,
+          { en: name, ar: nameAr },
+          { en: description, ar: descriptionAr }
+        );
+      } else {
+        await translationService.addCategoryTranslationSingle(
+          newCategory.name, 
+          description || descriptionAr
+        );
+      }
+
+      // Add item translation
+      if (itemName && itemNameAr) {
+        await translationService.addItemTranslation(
+          newCategory.name,
+          newCategory.items[0].name,
+          { en: itemName, ar: itemNameAr }
+        );
+      } else {
+        await translationService.addItemTranslationSingle(
+          newCategory.name, 
+          newCategory.items[0].name
+        );
+      }
+
+      console.log('✅ Both bilingual translations added successfully');
+    } catch (translationError) {
+      console.error('⚠️ Translation failed but category was created:', translationError);
+    }
+
     res.status(201).json(newCategory);
   } catch (err) {
+    console.error('❌ Create category with image error:', err);
     res.status(400).json({ message: (err as Error).message });
   }
 };
@@ -119,7 +202,13 @@ export const updatedCategory = async (
 ): Promise<void> => {
   try {
     const { categoryName } = req.params;
-    const { name, description, image: imageFromBody } = req.body;
+    const { 
+      name, 
+      description, 
+      nameAr, 
+      descriptionAr,
+      image: imageFromBody 
+    } = req.body;
     const imageFromFile = req.file?.path;
 
     const category = await Category.findOne({ name: categoryName });
@@ -128,26 +217,49 @@ export const updatedCategory = async (
       return;
     }
 
-    // Update name and associated item names
-    if (name) {
-      category.name = name.toLowerCase();
-      category.items.forEach((item) => {
-        item.categoryName = name.toLowerCase();
-      });
-    }
+    const oldName = category.name;
 
+    // Update database
+    if (name) category.name = name;
     if (description) category.description = description;
-
-    // ✅ Accept either uploaded file OR URL
-    if (imageFromFile) {
-      category.image = imageFromFile;
-    } else if (imageFromBody) {
-      category.image = imageFromBody;
-    }
+    if (imageFromFile) category.image = imageFromFile;
+    else if (imageFromBody) category.image = imageFromBody;
 
     const updated = await category.save();
+
+    // Update translations
+    try {
+      if (name && name !== oldName) {
+        // Name changed - remove old and add new
+        await translationService.removeCategoryTranslation(oldName);
+        
+        if (name && nameAr) {
+          await translationService.addCategoryTranslation(
+            name,
+            { en: name, ar: nameAr },
+            { en: description, ar: descriptionAr }
+          );
+        } else {
+          await translationService.addCategoryTranslationSingle(name, description);
+        }
+      } else {
+        // Just update existing translation
+        if (name && nameAr) {
+          await translationService.addCategoryTranslation(
+            category.name,
+            { en: name, ar: nameAr },
+            { en: description, ar: descriptionAr }
+          );
+        }
+      }
+      console.log('✅ Translation updated successfully');
+    } catch (translationError) {
+      console.error('⚠️ Translation update failed:', translationError);
+    }
+
     res.status(200).json(updated);
   } catch (err) {
+    console.error('❌ Update category error:', err);
     res.status(500).json({ message: (err as Error).message });
   }
 };
@@ -165,8 +277,18 @@ export const deleteCategory = async (
       return;
     }
 
+    // Remove from translation files
+    console.log('🔄 Removing category translation for:', categoryName);
+    try {
+      await translationService.removeCategoryTranslation(categoryName);
+      console.log('✅ Translation removed successfully');
+    } catch (translationError) {
+      console.error('⚠️ Translation removal failed:', translationError);
+    }
+
     res.status(200).json({ message: "Category deleted successfully" });
   } catch (err) {
+    console.error('❌ Delete category error:', err);
     res.status(500).json({ message: (err as Error).message });
   }
 };
@@ -176,7 +298,6 @@ export const getCategoryByName = async (
 ): Promise<void> => {
   try {
     const { categoryName } = req.params;
-
     const category = await Category.findOne({ name: categoryName });
 
     if (!category) {
@@ -185,6 +306,91 @@ export const getCategoryByName = async (
     }
 
     res.status(200).json(category);
+  } catch (err) {
+    console.error('❌ Get category error:', err);
+    res.status(500).json({ message: (err as Error).message });
+  }
+};
+
+export const createCategoryWithTranslation = async (
+  req: MulterRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { name, description } = req.body;
+    const image = req.file?.path ?? "";
+
+    const category = new Category({ name, description, image, items: [] });
+    await category.save();
+
+    // Auto-update translation files
+    await translationService.addCategoryTranslation(name, description);
+
+    res.status(201).json(category);
+  } catch (err) {
+    res.status(400).json({ message: (err as Error).message });
+  }
+};
+
+// export const addItemWithTranslation = async (
+//   req: MulterRequest,
+//   res: Response
+// ): Promise<void> => {
+//   try {
+//     const { categoryName } = req.params;
+//     const { itemName, points, price, measurement_unit, quantity } = req.body;
+
+//     if (!req.file) {
+//       res.status(400).json({ message: "Image is required" });
+//       return;
+//     }
+
+//     const item = {
+//       name: itemName,
+//       image: req.file.path,
+//       points: Number(points),
+//       price: Number(price),
+//       quantity: Number(quantity),
+//       measurement_unit: Number(measurement_unit),
+//     };
+
+//     const updatedCategory = await Category.findOneAndUpdate(
+//       { name: categoryName },
+//       { $push: { items: item } },
+//       { new: true }
+//     );
+
+//     if (!updatedCategory) {
+//       res.status(404).json({ message: "Category not found" });
+//       return;
+//     }
+
+//     // Auto-update translation files
+//     await translationService.addItemTranslation(categoryName, itemName);
+
+//     res.status(200).json(updatedCategory);
+//   } catch (err) {
+//     res.status(500).json({ message: (err as Error).message });
+//   }
+// };
+
+export const deleteCategoryWithTranslation = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { categoryName } = req.params;
+    const deleted = await Category.findOneAndDelete({ name: categoryName });
+
+    if (!deleted) {
+      res.status(404).json({ message: "Category not found" });
+      return;
+    }
+
+    // Remove from translation files
+    await translationService.removeCategoryTranslation(categoryName);
+
+    res.status(200).json({ message: "Category deleted successfully" });
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }

@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import Category from "../models/category";
+import translationService from "../utils/translationInstance"; // Use the singletonimport path from "path";
+
 
 interface MulterRequest extends Request {
   file: Express.Multer.File;
@@ -56,7 +58,6 @@ export const getAllItems = async (
       matchStage = { name: categoryName };
     }
 
-    // 1. Count total items
     const totalAggregation = await Category.aggregate([
       { $match: matchStage },
       { $project: { itemCount: { $size: "$items" } } },
@@ -64,7 +65,6 @@ export const getAllItems = async (
     ]);
     const totalItems = totalAggregation[0]?.totalItems || 0;
 
-    // 2. Paginate items within matched categories
     let items = await Category.aggregate([
       { $match: matchStage },
       { $unwind: "$items" },
@@ -85,7 +85,6 @@ export const getAllItems = async (
       },
     ]) as Array<Record<string, any>>;
 
-    // 3. Adjust price if role is buyer
     if (role === "buyer") {
       items = items.map(item => ({
         ...item,
@@ -143,13 +142,21 @@ export const getItems = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
+
 export const addItem = async (
   req: MulterRequest,
   res: Response
 ): Promise<void> => {
   try {
     const { categoryName } = req.params;
-    const { itemName, points, price, measurement_unit, quantity } = req.body;
+    const { 
+      itemName, 
+      itemNameAr,
+      points, 
+      price, 
+      measurement_unit, 
+      quantity 
+    } = req.body;
 
     if (!req.file) {
       res.status(400).json({ message: "Image is required" });
@@ -157,14 +164,14 @@ export const addItem = async (
     }
 
     if (!quantity || isNaN(quantity)) {
-      res
-        .status(400)
-        .json({ message: "Quantity is required and must be a number" });
+      res.status(400).json({ 
+        message: "Quantity is required and must be a number" 
+      });
       return;
     }
 
     const item = {
-      name: itemName,
+      name: itemName || itemNameAr,
       image: req.file.path,
       points: Number(points),
       price: Number(price),
@@ -183,8 +190,26 @@ export const addItem = async (
       return;
     }
 
+    // Add bilingual item translation
+    console.log('🔄 Adding bilingual item translation');
+    try {
+      if (itemName && itemNameAr) {
+        await translationService.addItemTranslation(
+          categoryName,
+          item.name,
+          { en: itemName, ar: itemNameAr }
+        );
+      } else {
+        await translationService.addItemTranslationSingle(categoryName, item.name);
+      }
+      console.log('✅ Bilingual item translation added successfully');
+    } catch (translationError) {
+      console.error('⚠️ Item translation failed:', translationError);
+    }
+
     res.status(200).json(updatedCategory);
   } catch (err) {
+    console.error('❌ Add item error:', err);
     res.status(500).json({ message: (err as Error).message });
   }
 };
@@ -195,11 +220,17 @@ export const updateItem = async (
 ): Promise<void> => {
   try {
     const { categoryName, itemId } = req.params;
-    const { name, points, price, measurement_unit, quantity } = req.body;
+    const { 
+      name, 
+      nameAr,
+      points, 
+      price, 
+      measurement_unit, 
+      quantity 
+    } = req.body;
     const image = req.file?.path;
 
     const category = await Category.findOne({ name: categoryName });
-
     if (!category) {
       res.status(404).json({ message: "Category not found" });
       return;
@@ -211,10 +242,14 @@ export const updateItem = async (
       return;
     }
 
+    const oldName = item.name;
+
+    // Update item fields
     if (name) item.name = name;
     if (points) item.points = Number(points);
     if (price) item.price = Number(price);
     if (quantity !== undefined) item.quantity = Number(quantity);
+    if (image) item.image = image;
 
     const unit = Number(measurement_unit);
     if (unit === 1 || unit === 2) {
@@ -224,16 +259,37 @@ export const updateItem = async (
       return;
     }
 
-    if (image) item.image = image;
-
     await category.save();
+
+    // Update translation if name changed
+    if (name && name !== oldName) {
+      console.log('🔄 Updating bilingual item translation');
+      try {
+        if (name && nameAr) {
+          await translationService.updateItemTranslation(
+            categoryName, 
+            oldName, 
+            name,
+            { en: name, ar: nameAr }
+          );
+        } else {
+          // Fallback to single language update
+          await translationService.removeItemTranslation(categoryName, oldName);
+          await translationService.addItemTranslationSingle(categoryName, name);
+        }
+        console.log('✅ Bilingual item translation updated successfully');
+      } catch (translationError) {
+        console.error('⚠️ Item translation update failed:', translationError);
+      }
+    }
 
     res.status(200).json({ message: "Item updated successfully", item });
   } catch (err) {
-    console.error("Update item error:", err);
+    console.error("❌ Update item error:", err);
     res.status(500).json({ message: (err as Error).message });
   }
 };
+
 
 export const deleteItem = async (
   req: Request,
@@ -254,15 +310,27 @@ export const deleteItem = async (
       return;
     }
 
+    const itemName = item.name;
+    
+    // Remove from database
     category.items.pull(itemId);
     await category.save();
+
+    // Remove from translation files
+    console.log('🔄 Removing item translation for:', itemName);
+    try {
+      await translationService.removeItemTranslation(categoryName, itemName);
+      console.log('✅ Item translation removed successfully');
+    } catch (translationError) {
+      console.error('⚠️ Item translation removal failed:', translationError);
+    }
 
     res.status(200).json({
       message: "Item deleted successfully",
       updatedCategory: category,
     });
   } catch (err) {
+    console.error('❌ Delete item error:', err);
     res.status(500).json({ message: (err as Error).message });
   }
 };
-
