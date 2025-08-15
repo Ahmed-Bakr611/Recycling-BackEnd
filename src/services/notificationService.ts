@@ -42,12 +42,31 @@ export const createAndEmitNotification = async (
     // Emit real-time notification to the user if they are connected
     const io = getSocketIO();
     if (io) {
+      // Normalize order data in notification payload if present
+      const orderPayload = savedNotification.orderId ? (() => {
+        try {
+          const o: any = savedNotification.orderId;
+          const orderObj = o.toObject ? o.toObject() : o;
+          const items = Array.isArray(orderObj.items)
+            ? orderObj.items.map((it: any) => ({
+                ...it,
+                name: it.nameObj || (it.name ? (typeof it.name === 'string' ? { en: it.name } : it.name) : { en: '' }),
+                itemSlug: it.itemSlug || it.slug || (it.name && typeof it.name === 'string' ? it.name : (it.name?.en || ''))
+              }))
+            : [];
+
+          return { id: orderObj._id, status: orderObj.status, items };
+        } catch (e) {
+          return savedNotification.orderId;
+        }
+      })() : undefined;
+
       io.to(`user_${notificationData.userId}`).emit("notification:new", {
         id: savedNotification._id,
         title: savedNotification.title,
         body: savedNotification.body,
         type: savedNotification.type,
-        orderId: savedNotification.orderId,
+        order: orderPayload,
         data: savedNotification.data,
         isRead: savedNotification.isRead,
         createdAt: savedNotification.createdAt,

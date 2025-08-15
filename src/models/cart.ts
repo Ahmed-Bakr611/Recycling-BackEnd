@@ -4,7 +4,9 @@ export interface ICartItem {
   _id?: string;
   categoryId: string;
   categoryName: string;
-  name: string;
+  name: any; // string or translations object
+  nameObj?: any;
+  itemSlug?: string;
   image: string;
   points: number;
   price: number;
@@ -23,7 +25,9 @@ const cartItemSchema = new Schema<ICartItem>(
   {
     _id: { type: String, required: false },
     categoryId: { type: String, required: true },
-    name: { type: String, required: true },
+  name: { type: Schema.Types.Mixed, required: true },
+  nameObj: { type: Schema.Types.Mixed, required: false },
+  itemSlug: { type: String, required: false },
     image: { type: String, required: false },
     points: { type: Number, required: true },
     price: { type: Number, required: true },

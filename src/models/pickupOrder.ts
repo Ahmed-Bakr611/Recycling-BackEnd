@@ -41,6 +41,10 @@ const ItemSchema = new mongoose.Schema({
     lowercase: true,
     trim: true,
   },
+  // Optional: keep translations object for the item (e.g., { en, ar })
+  nameObj: { type: mongoose.Schema.Types.Mixed, required: false },
+  // Optional slug for the item
+  itemSlug: { type: String, required: false },
   measurement_unit: { type: Number, enum: [1, 2], required: true },
   points: { type: Number, required: true },
   price: { type: Number, required: true },
@@ -273,6 +277,8 @@ export interface IItem {
   categoryId: mongoose.Types.ObjectId;
   image: string;
   itemName: string;
+  nameObj?: any;
+  itemSlug?: string;
   measurement_unit: 1 | 2;
   points: number;
   price: number;

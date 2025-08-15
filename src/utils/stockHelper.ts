@@ -3,6 +3,7 @@ import Category from "../models/category";
 import { IItem } from "../models/pickupOrder";
 import mongoose, { Types } from "mongoose";
 import { getSocketIO } from "../socket/socketServer"; // adjust path to your socket setup
+import { safeName } from "../utils/strings";
 
 type Operation = "increase" | "decrease";
 
@@ -34,7 +35,7 @@ export const updateItemQuantities = async (
 
         if (operation === "decrease" && item.quantity < orderItem.quantity) {
           throw new Error(
-            `❌ Not enough stock for "${item.name}". Need: ${orderItem.quantity}, Have: ${item.quantity}`
+            `❌ Not enough stock for "${safeName(item.name)}". Need: ${orderItem.quantity}, Have: ${item.quantity}`
           );
         }
 
@@ -47,21 +48,24 @@ export const updateItemQuantities = async (
           { $inc: { "items.$.quantity": quantityChange } }
         );
 
-        // Emit real-time update
+        // Emit real-time update with normalized payload
         if (io) {
-          console.log("SOKET SENDING NOW FROM SERVER 👋👋👋👋👋👋👋👋");
+          console.log("SOKET SENDING NOW FROM SERVER 👋");
           const newQuantity = item.quantity + quantityChange;
+          const rawName = safeName(item.name);
           io.emit("itemUpdated", {
             itemId: item._id,
+            slug: item.slug || (rawName ? String(rawName).replace(/\s+/g, '-').toLowerCase() : undefined),
             categoryId: category._id,
             quantity: newQuantity,
+            name: (typeof item.name === 'object') ? item.name : { en: rawName }
           });
         }
 
         console.log(
           `✅ ${operation === "increase" ? "Added" : "Subtracted"} ${
             orderItem.quantity
-          } → "${item.name}"`
+          } → "${safeName(item.name)}"`
         );
       } catch (error: any) {
         console.error(
@@ -78,10 +82,11 @@ export const updateItemQuantities = async (
 
 export function mapCartItemsToOrderItems(cartItems: ICartItem[]): IItem[] {
   return cartItems.map((item) => ({
-    _id: new mongoose.Types.ObjectId(item._id),
-    categoryId: new mongoose.Types.ObjectId(item.categoryId),
-    categoryName: item.categoryName,
-    itemName: item.name,
+  _id: new mongoose.Types.ObjectId(item._id),
+  categoryId: new mongoose.Types.ObjectId(item.categoryId),
+  categoryName: item.categoryName,
+  itemName: (typeof item.name === 'object') ? (item.name.en || Object.values(item.name)[0]) : item.name,
+  nameObj: (typeof item.name === 'object') ? item.name : { en: item.name },
     image: item.image,
     points: item.points,
     price: item.price,

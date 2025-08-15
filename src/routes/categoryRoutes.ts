@@ -183,7 +183,7 @@ export default (router: express.Router) => {
         if (!categoryName)
           return res.status(400).json({ message: "Category name is required" });
 
-        const category = await Category.findOne({ name: categoryName });
+  const category = await Category.findOne({ name: categoryName });
         if (!category)
           return res.status(404).json({ message: "Category not found" });
 
@@ -191,16 +191,18 @@ export default (router: express.Router) => {
 
         for (const item of category.items) {
           try {
+            const safeItemName = typeof item.name === 'string' ? item.name : (item.name?.en || Object.values(item.name || {})[0] || '');
+            const safeCategoryName = typeof categoryName === 'string' ? categoryName : (categoryName?.toString() || '');
             const itemKey = await TranslationService.createItemTranslation(
-              item.name.trim(),
-              categoryName.trim(),
-              item.name.trim(), // Default Arabic translation same as English
+              safeItemName.trim(),
+              safeCategoryName.trim(),
+              safeItemName.trim(), // Default Arabic translation same as English
               item._id?.toString()
             );
             createdTranslations.push(itemKey);
           } catch (error) {
             console.error(
-              `Error creating translation for item ${item.name}:`,
+              `Error creating translation for item ${typeof item.name === 'string' ? item.name : JSON.stringify(item.name)}:`,
               error
             );
           }

@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import Category, { ICategory } from "../models/category";
 import { TranslationService } from "../services/translationService";
 import Translation from "../models/translation";
+import { safeName } from "../utils/strings";
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -37,6 +38,38 @@ const generateSlugExact = (name: string): string => {
   
   // This will preserve the exact text but encode special characters for URLs
   return encodeURIComponent(name.trim());
+};
+
+// Helpers to normalize names/items/categories to the new contract
+const ensureNameObj = (n: any) => {
+  if (!n) return { en: "" };
+  if (typeof n === "string") return { en: n };
+  return n;
+};
+
+const normalizeItem = (item: any) => {
+  const nameObj = ensureNameObj(item.name || item.nameObj || item.itemName);
+  const slug = item.slug || item.itemSlug || (nameObj.en ? String(nameObj.en).trim() : "");
+  return {
+    ...item,
+    name: nameObj,
+    nameObj,
+    itemName: item.itemName || nameObj.en,
+    itemSlug: slug,
+    slug
+  };
+};
+
+const normalizeCategory = (cat: any) => {
+  const nameObj = ensureNameObj(cat.name);
+  const slug = cat.slug || (nameObj.en ? String(nameObj.en).trim() : "");
+  const items = Array.isArray(cat.items) ? cat.items.map(normalizeItem) : [];
+  return {
+    ...cat,
+    name: nameObj,
+    slug,
+    items
+  };
 };
 
 export const createCategory = async (
@@ -353,7 +386,9 @@ export const deleteCategory = async (
     
     // Create array of item translation keys
     const itemTranslationPromises = deleted.items.map(item => {
-      const itemKey = TranslationService.generateKey(`${deleted.name}_${item.name}`, 'item');
+      const rawCategoryName = safeName(deleted.name);
+      const rawItemName = safeName(item.name);
+      const itemKey = TranslationService.generateKey(`${rawCategoryName}_${rawItemName}`, 'item');
       return Translation.deleteOne({ key: itemKey });
     });
 
@@ -414,22 +449,29 @@ export const migrateExistingSlugs = async (req: Request, res: Response): Promise
     let updatedCount = 0;
     
     for (const category of categories) {
-      const newSlug = category.name.trim(); // New slug logic
-      
+      // Safely extract a representative English name from possible shapes
+      const catNameObj = ensureNameObj(category.name || category.nameObj || category.itemName);
+      const newSlug = (catNameObj && catNameObj.en) ? String(catNameObj.en).trim() : String(category.slug || category._id);
+
       if (category.slug !== newSlug) {
-        console.log(`Updating "${category.name}": "${category.slug}" -> "${newSlug}"`);
-        
+        console.log(`Updating "${typeof category.name === 'object' ? JSON.stringify(category.name) : category.name}": "${category.slug}" -> "${newSlug}"`);
+
         category.slug = newSlug;
-        
+
         // Update item slugs too
         if (category.items && category.items.length > 0) {
           category.items.forEach(item => {
-            if (item.name) {
-              item.slug = item.name.trim();
+            // Use existing itemSlug/slug when available, otherwise derive from name or nameObj
+            const itNameObj = ensureNameObj(item.name || item.nameObj || item.itemName);
+            const derived = (itNameObj && itNameObj.en) ? String(itNameObj.en).trim() : (item.name && typeof item.name === 'string' ? String(item.name).trim() : undefined);
+            if (derived) {
+              const derivedSlug = derived.replace(/\s+/g, '-').toLowerCase();
+              item.slug = derivedSlug;
+              item.itemSlug = item.itemSlug || derivedSlug;
             }
           });
         }
-        
+
         await category.save();
         updatedCount++;
       }

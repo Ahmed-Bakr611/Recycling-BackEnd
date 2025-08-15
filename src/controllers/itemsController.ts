@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import Category from "../models/category";
 import { TranslationService } from "../services/translationService";
+import { safeName } from "../utils/strings";
 import Translation from "../models/translation";
 
 interface MulterRequest extends Request {
@@ -83,10 +84,20 @@ export const getAllItems = async (
           categoryId: "$_id",
         },
       },
-    ]) as Array<Record<string, any>>;
+  ]) as Array<Record<string, any>>;
 
     console.log('Found items count:', items.length);
     console.log('Sample item names:', items.map(i => i.name));
+
+    // Normalize items: ensure name is translations object and slug exists
+    items = items.map(i => {
+      const nameObj = (i.name && typeof i.name === 'object') ? i.name : (i.name ? { en: i.name } : {});
+      return {
+        ...i,
+        name: nameObj,
+        slug: i.slug || (nameObj.en ? nameObj.en.replace(/\s+/g, '-').toLowerCase() : i._id)
+      };
+    });
 
     // 3. Apply translations if language is Arabic AND we have items
     if (language === 'ar' && items.length > 0) {
@@ -97,19 +108,20 @@ export const getAllItems = async (
         console.log(`Retrieved ${Object.keys(translations).length} translations`);
         
         items = items.map(item => {
-          // Translate item name
-          const itemKey = TranslationService.generateKey(`${item.categoryName}_${item.name}`, 'item');
-          const translatedItemName = translations[itemKey] || item.name;
-          
+          // Translate item name (item.name is object)
+          const rawName = (typeof item.name === 'object') ? (item.name.en || Object.values(item.name)[0]) : item.name;
+          const itemKey = TranslationService.generateKey(`${item.categoryName}_${rawName}`, 'item');
+          const translatedItemName = translations[itemKey] || rawName;
+
           // Translate category name
           const categoryNameKey = TranslationService.generateKey(item.categoryName, 'cat', 'name');
           const translatedCategoryName = translations[categoryNameKey] || item.categoryName;
-          
-          console.log(`Translating item: ${item.name} -> ${translatedItemName}`);
-          
+
+          console.log(`Translating item: ${rawName} -> ${translatedItemName}`);
+
           return {
             ...item,
-            name: translatedItemName,
+            name: { en: rawName, ar: translatedItemName },
             categoryName: translatedCategoryName
           };
         });
@@ -247,9 +259,12 @@ export const addItem = async (
     // Generate slug for the new item using improved logic
     const itemSlug = generateSlug(itemName);
 
+    const nameObjForNewItem = (typeof itemName === 'object') ? itemName : { en: itemName };
     const item = {
-      name: itemName,
+      name: nameObjForNewItem,
+      nameObj: nameObjForNewItem,
       slug: itemSlug,
+      itemSlug: itemSlug,
       image: req.file.path,
       points: Number(points),
       price: Number(price),
@@ -342,12 +357,15 @@ export const updateItem = async (
       return;
     }
 
-    const oldItemName = item.name;
+  const oldItemNameRaw = (typeof item.name === 'object') ? (item.name.en || Object.values(item.name)[0]) : item.name;
 
     // Update item properties
     if (name) {
-      item.name = name;
-      item.slug = generateSlug(name); // Update slug when name changes
+      const nameObjUpdated = (typeof name === 'object') ? name : { en: name };
+      item.name = nameObjUpdated;
+      item.nameObj = nameObjUpdated;
+      item.slug = generateSlug(nameObjUpdated.en || String(nameObjUpdated)); // Update slug when name changes
+      item.itemSlug = item.slug;
     }
     if (points) item.points = Number(points);
     if (price) item.price = Number(price);
@@ -370,7 +388,7 @@ export const updateItem = async (
       try {
         console.log('Updating item translation...');
         const itemKey = await TranslationService.createItemTranslation(
-          name || oldItemName,
+          name || oldItemNameRaw,
           category.name,
           nameAr,
           itemId
@@ -422,14 +440,15 @@ export const deleteItem = async (
       return;
     }
 
-    const itemName = item.name;
+    const itemNameVal = item.name;
+    const rawItemName = (typeof itemNameVal === 'object') ? (itemNameVal.en || Object.values(itemNameVal)[0]) : itemNameVal;
 
     category.items.pull(itemId);
     await category.save();
 
     // Clean up item translation
     try {
-      const itemKey = TranslationService.generateKey(`${category.name}_${itemName}`, 'item');
+      const itemKey = TranslationService.generateKey(`${category.name}_${rawItemName}`, 'item');
       await Translation.deleteOne({ key: itemKey });
       console.log(`Deleted translation for item key: ${itemKey}`);
     } catch (translationError) {
@@ -479,8 +498,22 @@ export const getItemByName = async (
       return;
     }
 
-    // Find item by name
-    const item = category.items.find((item: any) => item.name === decodedItemName);
+    // Find item by name or slug/itemSlug. Handle legacy `name` which may be string or translations object.
+    const item = category.items.find((it: any) => {
+      const itNameVal = it.name;
+      const nameStr = (typeof itNameVal === 'object') ? (itNameVal.en || Object.values(itNameVal)[0]) : itNameVal;
+      const derivedSlug = it.itemSlug || it.slug || (nameStr ? String(nameStr).trim().replace(/\s+/g, '-').toLowerCase() : undefined);
+
+      return (
+        // match by decoded item name (exact)
+        (nameStr && nameStr === decodedItemName) ||
+        // match by slug (both param and decoded param)
+        it.slug === itemName || it.slug === decodedItemName ||
+        (it.itemSlug === itemName) || (it.itemSlug === decodedItemName) ||
+        // also allow derived slug match
+        derivedSlug === itemName || derivedSlug === decodedItemName
+      );
+    });
 
     if (!item) {
       res.status(404).json({ 
@@ -491,8 +524,12 @@ export const getItemByName = async (
       return;
     }
 
-    let itemResponse = {
+    // Normalize name and slug for response
+    const rawName = (typeof item.name === 'object') ? (item.name.en || Object.values(item.name)[0]) : item.name;
+    let itemResponse: any = {
       ...item.toObject(),
+      name: (typeof item.name === 'object') ? item.name : { en: rawName },
+      slug: item.slug || (rawName ? rawName.replace(/\s+/g, '-').toLowerCase() : item._id),
       categoryName: category.name,
       categorySlug: category.slug,
       categoryId: category._id
@@ -505,19 +542,19 @@ export const getItemByName = async (
       try {
         const translations = await TranslationService.getTranslations(language);
         
-        // Translate item name
-        const itemKey = TranslationService.generateKey(`${category.name}_${item.name}`, 'item');
-        const translatedItemName = translations[itemKey] || item.name;
+  // Translate item name
+  const itemKey = TranslationService.generateKey(`${category.name}_${rawName}`, 'item');
+  const translatedItemName = translations[itemKey] || rawName;
         
         // Translate category name
         const categoryNameKey = TranslationService.generateKey(category.name, 'cat', 'name');
         const translatedCategoryName = translations[categoryNameKey] || category.name;
         
-        console.log(`Translating single item: ${item.name} -> ${translatedItemName}`);
+  console.log(`Translating single item: ${safeName(item.name)} -> ${translatedItemName}`);
         
         itemResponse = {
           ...itemResponse,
-          name: translatedItemName,
+          name: { en: rawName, ar: translatedItemName },
           categoryName: translatedCategoryName
         };
         
@@ -584,8 +621,11 @@ export const getItemBySlug = async (
       return;
     }
 
+    const rawName2 = (typeof item.name === 'object') ? (item.name.en || Object.values(item.name)[0]) : item.name;
     let itemResponse = {
       ...item.toObject(),
+      name: (typeof item.name === 'object') ? item.name : { en: rawName2 },
+      slug: item.slug || (rawName2 ? rawName2.replace(/\s+/g, '-').toLowerCase() : item._id),
       categoryName: category.name,
       categorySlug: category.slug,
       categoryId: category._id
@@ -598,19 +638,19 @@ export const getItemBySlug = async (
       try {
         const translations = await TranslationService.getTranslations(language);
         
-        // Translate item name
-        const itemKey = TranslationService.generateKey(`${category.name}_${item.name}`, 'item');
-        const translatedItemName = translations[itemKey] || item.name;
+  // Translate item name
+  const itemKey = TranslationService.generateKey(`${category.name}_${rawName2}`, 'item');
+  const translatedItemName = translations[itemKey] || rawName2;
         
         // Translate category name
         const categoryNameKey = TranslationService.generateKey(category.name, 'cat', 'name');
         const translatedCategoryName = translations[categoryNameKey] || category.name;
         
-        console.log(`Translating single item: ${item.name} -> ${translatedItemName}`);
+  console.log(`Translating single item: ${safeName(item.name)} -> ${translatedItemName}`);
         
         itemResponse = {
           ...itemResponse,
-          name: translatedItemName,
+          name: { en: rawName2, ar: translatedItemName },
           categoryName: translatedCategoryName
         };
         
@@ -667,8 +707,11 @@ export const getItemById = async (
       return;
     }
 
+    const rawName3 = (typeof item.name === 'object') ? (item.name.en || Object.values(item.name)[0]) : item.name;
     let itemResponse = {
       ...item.toObject(),
+      name: (typeof item.name === 'object') ? item.name : { en: rawName3 },
+      slug: item.slug || (rawName3 ? rawName3.replace(/\s+/g, '-').toLowerCase() : item._id),
       categoryName: category.name,
       categorySlug: category.slug,
       categoryId: category._id
@@ -681,19 +724,19 @@ export const getItemById = async (
       try {
         const translations = await TranslationService.getTranslations(language);
         
-        // Translate item name
-        const itemKey = TranslationService.generateKey(`${category.name}_${item.name}`, 'item');
-        const translatedItemName = translations[itemKey] || item.name;
+  // Translate item name
+  const itemKey = TranslationService.generateKey(`${category.name}_${rawName3}`, 'item');
+  const translatedItemName = translations[itemKey] || rawName3;
         
         // Translate category name
         const categoryNameKey = TranslationService.generateKey(category.name, 'cat', 'name');
         const translatedCategoryName = translations[categoryNameKey] || category.name;
         
-        console.log(`Translating single item: ${item.name} -> ${translatedItemName}`);
+  console.log(`Translating single item: ${safeName(item.name)} -> ${translatedItemName}`);
         
         itemResponse = {
           ...itemResponse,
-          name: translatedItemName,
+          name: { en: rawName3, ar: translatedItemName },
           categoryName: translatedCategoryName
         };
         

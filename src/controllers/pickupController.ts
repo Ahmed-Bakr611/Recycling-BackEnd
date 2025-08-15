@@ -131,10 +131,20 @@ export const createOrder = async (
       // Do not fail the order creation if cart clearing fails
     }
 
+    // Normalize items for response (include nameObj and itemSlug)
+    const normalizedSaved = savedOrder.toObject ? savedOrder.toObject() : savedOrder;
+    normalizedSaved.items = Array.isArray(normalizedSaved.items)
+      ? normalizedSaved.items.map((it: any) => {
+          const nameObj = it.nameObj || (it.name ? (typeof it.name === 'object' ? it.name : { en: it.name }) : { en: it.itemName || '' });
+          const itemSlug = it.itemSlug || it.slug || (nameObj.en ? String(nameObj.en).trim().replace(/\s+/g, '-').toLowerCase() : undefined);
+          return { ...it, nameObj, itemSlug };
+        })
+      : normalizedSaved.items;
+
     res.status(201).json({
       success: true,
       message: "Order created successfully",
-      data: savedOrder,
+      data: normalizedSaved,
     });
   } catch (error) {
     console.error("Error creating order:", error);
@@ -381,11 +391,20 @@ export const deleteOrderById = async (
     }
 
     console.log("✅ Order deleted successfully:", deletedOrder._id);
+    const deletedObj = deletedOrder.toObject ? deletedOrder.toObject() : deletedOrder;
+    deletedObj.items = Array.isArray(deletedObj.items)
+      ? deletedObj.items.map((it: any) => {
+          const nameObj = it.nameObj || (it.name ? (typeof it.name === 'object' ? it.name : { en: it.name }) : { en: it.itemName || '' });
+          const itemSlug = it.itemSlug || it.slug || (nameObj.en ? String(nameObj.en).trim().replace(/\s+/g, '-').toLowerCase() : undefined);
+          return { ...it, nameObj, itemSlug };
+        })
+      : deletedObj.items;
+
     res.json({
       success: true,
       message: "Order deleted successfully",
       data: {
-        ...deletedOrder.toObject(),
+        ...deletedObj,
         pointsRemoved: shouldRemovePoints
           ? calculateOrderPoints(deletedOrder.items)
           : 0,
@@ -543,6 +562,15 @@ export const getOrderById = async (
         totalReviews: order.courier.totalReviews,
         attachments: order.courier.attachments,
       };
+    }
+
+    // Normalize items inside returned order
+    if (order.items && Array.isArray(order.items)) {
+      order.items = order.items.map((it: any) => {
+        const nameObj = it.nameObj || (it.name ? (typeof it.name === 'object' ? it.name : { en: it.name }) : { en: it.itemName || '' });
+        const itemSlug = it.itemSlug || it.slug || (nameObj.en ? String(nameObj.en).trim().replace(/\s+/g, '-').toLowerCase() : undefined);
+        return { ...it, nameObj, itemSlug };
+      });
     }
 
     res.json({

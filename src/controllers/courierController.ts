@@ -146,7 +146,7 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
       }
     }
 
-    let populatedOrder = savedOrder;
+  let populatedOrder = savedOrder;
     try {
       populatedOrder = await Order.findById(savedOrder._id)
         .populate("courier", "name phoneNumber email imgUrl")
@@ -160,16 +160,26 @@ export const assignCourierToOrder = async (req: Request, res: Response) => {
       );
     }
 
+    // Normalize items to include name objects and slugs
+    const cleanedOrder = populatedOrder.toObject ? populatedOrder.toObject() : populatedOrder;
+    const normalizedItems = Array.isArray(cleanedOrder.items)
+      ? cleanedOrder.items.map((it: any) => ({
+          ...it,
+          name: it.nameObj || (it.name ? (typeof it.name === 'string' ? { en: it.name } : it.name) : { en: '' }),
+          itemSlug: it.itemSlug || it.slug || (it.name && typeof it.name === 'string' ? it.name : (it.name?.en || ''))
+        }))
+      : [];
+
     res.status(200).json({
       message: "Courier assigned successfully",
       order: {
-        id: populatedOrder._id,
-        status: populatedOrder.status,
-        courier: populatedOrder.courier,
-        user: populatedOrder.user,
-        items: populatedOrder.items,
-        address: populatedOrder.address,
-        createdAt: populatedOrder.createdAt,
+        id: cleanedOrder._id,
+        status: cleanedOrder.status,
+        courier: cleanedOrder.courier,
+        user: cleanedOrder.user,
+        items: normalizedItems,
+        address: cleanedOrder.address,
+        createdAt: cleanedOrder.createdAt,
       },
     });
   } catch (error) {
@@ -628,23 +638,31 @@ export const markOrderAsCollected = async (req: Request, res: Response) => {
       .populate("courier", "name phoneNumber email imgUrl")
       .populate("user.userId", "name phoneNumber email imgUrl");
 
+    // Normalize items for response
+    const cleaned = populatedOrder.toObject ? populatedOrder.toObject() : populatedOrder;
+    const normalizedItems = Array.isArray(cleaned.items)
+      ? cleaned.items.map((it: any) => {
+          const nameObj = it.nameObj || (it.name ? (typeof it.name === 'object' ? it.name : { en: it.name }) : { en: it.itemName || '' });
+          const itemSlug = it.itemSlug || it.slug || (nameObj.en ? String(nameObj.en).trim().replace(/\s+/g, '-').toLowerCase() : undefined);
+          return { ...it, nameObj, itemSlug };
+        })
+      : [];
+
     res.status(200).json({
-      message: `Order ${
-        userRole === "buyer" ? "completed" : "marked as collected"
-      } successfully`,
+      message: `Order ${userRole === "buyer" ? "completed" : "marked as collected"} successfully`,
       order: {
-        id: populatedOrder._id,
-        status: populatedOrder.status,
-        courier: populatedOrder.courier,
-        user: populatedOrder.user,
-        items: populatedOrder.items,
-        address: populatedOrder.address,
-        deliveryProof: populatedOrder.deliveryProof,
-        collectedAt: populatedOrder.collectedAt,
-        completedAt: populatedOrder.completedAt,
-        estimatedWeight: populatedOrder.estimatedWeight,
-        quantityAdjustmentNotes: populatedOrder.quantityAdjustmentNotes,
-        createdAt: populatedOrder.createdAt,
+        id: cleaned._id,
+        status: cleaned.status,
+        courier: cleaned.courier,
+        user: cleaned.user,
+        items: normalizedItems,
+        address: cleaned.address,
+        deliveryProof: cleaned.deliveryProof,
+        collectedAt: cleaned.collectedAt,
+        completedAt: cleaned.completedAt,
+        estimatedWeight: cleaned.estimatedWeight,
+        quantityAdjustmentNotes: cleaned.quantityAdjustmentNotes,
+        createdAt: cleaned.createdAt,
       },
     });
   } catch (error) {
@@ -756,22 +774,31 @@ export const completeOrderFromCollected = async (
         .populate("courier", "name phoneNumber email imgUrl")
         .populate("user.userId", "name phoneNumber email imgUrl");
 
+      const cleaned = populatedOrder.toObject ? populatedOrder.toObject() : populatedOrder;
+      const normalizedItems = Array.isArray(cleaned.items)
+        ? cleaned.items.map((it: any) => {
+            const nameObj = it.nameObj || (it.name ? (typeof it.name === 'object' ? it.name : { en: it.name }) : { en: it.itemName || '' });
+            const itemSlug = it.itemSlug || it.slug || (nameObj.en ? String(nameObj.en).trim().replace(/\s+/g, '-').toLowerCase() : undefined);
+            return { ...it, nameObj, itemSlug };
+          })
+        : [];
+
       res.status(200).json({
         message:
           "Order completed successfully by admin with points awarded based on actual quantities",
         order: {
-          id: populatedOrder._id,
-          status: populatedOrder.status,
-          courier: populatedOrder.courier,
-          user: populatedOrder.user,
-          items: populatedOrder.items,
-          address: populatedOrder.address,
-          deliveryProof: populatedOrder.deliveryProof,
-          collectedAt: populatedOrder.collectedAt,
-          completedAt: populatedOrder.completedAt,
-          estimatedWeight: populatedOrder.estimatedWeight,
-          quantityAdjustmentNotes: populatedOrder.quantityAdjustmentNotes,
-          createdAt: populatedOrder.createdAt,
+          id: cleaned._id,
+          status: cleaned.status,
+          courier: cleaned.courier,
+          user: cleaned.user,
+          items: normalizedItems,
+          address: cleaned.address,
+          deliveryProof: cleaned.deliveryProof,
+          collectedAt: cleaned.collectedAt,
+          completedAt: cleaned.completedAt,
+          estimatedWeight: cleaned.estimatedWeight,
+          quantityAdjustmentNotes: cleaned.quantityAdjustmentNotes,
+          createdAt: cleaned.createdAt,
         },
       });
     }
@@ -803,14 +830,26 @@ export const getCollectedOrdersForAdmin = async (
     const totalOrders = await Order.countDocuments({ status: "collected" });
     const totalPages = Math.ceil(totalOrders / Number(limit));
 
+    const normalizedOrders = orders.map((o: any) => {
+      const obj = o.toObject ? o.toObject() : o;
+      obj.items = Array.isArray(obj.items)
+        ? obj.items.map((it: any) => {
+            const nameObj = it.nameObj || (it.name ? (typeof it.name === 'object' ? it.name : { en: it.name }) : { en: it.itemName || '' });
+            const itemSlug = it.itemSlug || it.slug || (nameObj.en ? String(nameObj.en).trim().replace(/\s+/g, '-').toLowerCase() : undefined);
+            return { ...it, nameObj, itemSlug };
+          })
+        : [];
+      return obj;
+    });
+
     res.status(200).json({
       success: true,
       message: "Collected orders retrieved successfully",
-      count: orders.length,
+      count: normalizedOrders.length,
       totalOrders,
       totalPages,
       currentPage: Number(page),
-      data: orders,
+      data: normalizedOrders,
     });
   } catch (error) {
     console.error("❌ Get collected orders error:", error);

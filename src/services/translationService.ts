@@ -1,4 +1,5 @@
 import Translation, { ITranslation } from "../models/translation";
+import { safeName } from "../utils/strings";
 
 export class TranslationService {
   // Create or update a translation
@@ -27,15 +28,14 @@ export class TranslationService {
       const translatedItems = order.items.map((item) => {
         if (!item || !item.itemName || !item.categoryName) return item;
 
-        const itemKey = this.generateKey(
-          `${item.categoryName}_${item.itemName}`,
-          "item"
-        );
-        const translatedItemName = translations[itemKey] || item.itemName;
+        const rawItemName = (typeof item.itemName === 'object') ? (item.itemName.en || Object.values(item.itemName)[0]) : item.itemName;
+        const rawCategoryName = (typeof item.categoryName === 'object') ? (item.categoryName.en || Object.values(item.categoryName)[0]) : item.categoryName;
 
-        const categoryKey = this.generateKey(item.categoryName, "cat", "name");
-        const translatedCategoryName =
-          translations[categoryKey] || item.categoryName;
+        const itemKey = this.generateKey(`${rawCategoryName}_${rawItemName}`, "item");
+        const translatedItemName = translations[itemKey] || rawItemName;
+
+        const categoryKey = this.generateKey(rawCategoryName, "cat", "name");
+        const translatedCategoryName = translations[categoryKey] || rawCategoryName;
 
         return {
           ...item,
@@ -116,17 +116,16 @@ export class TranslationService {
       const translations = await this.getTranslations(language);
 
       return cartItems.map((item) => {
-        if (!item || !item.name || !item.categoryName) return item;
+  if (!item || !item.name || !item.categoryName) return item;
 
-        const itemKey = this.generateKey(
-          `${item.categoryName}_${item.name}`,
-          "item"
-        );
-        const translatedItemName = translations[itemKey] || item.name;
+  const rawName = safeName(item.name);
+  const rawCategory = safeName(item.categoryName);
 
-        const categoryKey = this.generateKey(item.categoryName, "cat", "name");
-        const translatedCategoryName =
-          translations[categoryKey] || item.categoryName;
+        const itemKey = this.generateKey(`${rawCategory}_${rawName}`, "item");
+        const translatedItemName = translations[itemKey] || rawName;
+
+        const categoryKey = this.generateKey(rawCategory, "cat", "name");
+        const translatedCategoryName = translations[categoryKey] || rawCategory;
 
         return {
           ...item,
@@ -199,13 +198,15 @@ export class TranslationService {
   }
   // Generate translation key from text
   static generateKey(
-    text: string,
+    text: any,
     prefix: string = "",
     suffix: string = ""
   ): string {
-    if (!text || typeof text !== "string") return "";
+    if (!text) return "";
+    const raw = (typeof text === 'object') ? (text.en || Object.values(text)[0]) : text;
+    if (!raw || typeof raw !== 'string') return "";
 
-    const cleanText = text
+    const cleanText = raw
       .normalize("NFKD")
       .replace(/[\u0300-\u036f]/g, "") // remove accents
       .toLowerCase()
@@ -311,19 +312,19 @@ export class TranslationService {
           }
 
           // Handle items translation
-          const translatedItems = Array.isArray(category.items)
+              const translatedItems = Array.isArray(category.items)
             ? category.items.map((item: any) => {
                 if (!item || !item.name) return item;
 
-                const itemKey = this.generateKey(
-                  `${category.name}_${item.name}`,
-                  "item"
-                );
-                const translatedItemName = translations[itemKey] || item.name;
+                const rawItemName = safeName(item.name);
+                const rawCategoryName = safeName(category.name);
+
+                const itemKey = this.generateKey(`${rawCategoryName}_${rawItemName}`, "item");
+                const translatedItemName = translations[itemKey] || rawItemName;
 
                 if (!translations[itemKey]) {
                   console.warn(
-                    `No translation found for item key: "${itemKey}", using original name: "${item.name}"`
+                    `No translation found for item key: "${itemKey}", using original name: "${rawItemName}"`
                   );
                 }
 
@@ -388,12 +389,11 @@ export class TranslationService {
         if (Array.isArray(category.items)) {
           category.items.forEach((item: any) => {
             if (item && item.name) {
-              const itemKey = this.generateKey(
-                `${category.name}_${item.name}`,
-                "item"
-              );
+              const rawItemName = safeName(item.name);
+              const rawCategoryName = safeName(category.name);
+              const itemKey = this.generateKey(`${rawCategoryName}_${rawItemName}`, "item");
               if (!translationKeys.has(itemKey)) {
-                missingItems.push(`${category.name} - ${item.name}`);
+                missingItems.push(`${rawCategoryName} - ${rawItemName}`);
               }
             }
           });

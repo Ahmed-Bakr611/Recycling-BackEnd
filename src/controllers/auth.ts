@@ -281,8 +281,9 @@ export const login = async (req: Request, res: Response) => {
                 existingItem.price = sessionItem.price;
                 existingItem.categoryName = sessionItem.categoryName;
               } else {
+                const { safeName } = await import("../utils/strings");
                 console.warn(
-                  `Cannot merge item ${sessionItem.name}: invalid quantity ${newQuantity}`
+                  `Cannot merge item ${safeName(sessionItem.name)}: invalid quantity ${newQuantity}`
                 );
               }
             } else {

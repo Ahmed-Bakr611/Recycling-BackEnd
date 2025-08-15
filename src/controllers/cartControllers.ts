@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { safeName } from "../utils/strings";
 import Cart from "../models/cart";
 import { TranslationService } from "../services/translationService";
 
@@ -68,8 +69,8 @@ export const getCart = async (req: Request, res: Response) => {
 
           // Process each item individually - translate whatever needs translation
           cart.items = cart.items.map((item: any) => {
-            const cleanCategoryName = item.categoryName?.trim() || "";
-            const cleanItemName = item.name?.trim() || "";
+              const cleanCategoryName = safeName(item.categoryName);
+              const cleanItemName = safeName(item.name);
             let translatedItemName = cleanItemName;
             let translatedCategoryName = cleanCategoryName;
 
@@ -169,12 +170,15 @@ export const getCart = async (req: Request, res: Response) => {
               console.log(`✅ Item already in Arabic: "${cleanItemName}"`);
             }
 
+            const rawNameLocal = (typeof item.name === 'object') ? (item.name.en || Object.values(item.name)[0]) : item.name;
+            const nameObjLocal = (typeof item.name === 'object') ? item.name : { en: rawNameLocal };
             const result = {
               ...item,
               name: translatedItemName,
+              nameObj: nameObjLocal,
               categoryName: translatedCategoryName,
               categorySlug: item.categorySlug,
-              itemSlug: item.itemSlug,
+              itemSlug: item.itemSlug || (rawNameLocal ? rawNameLocal.replace(/\s+/g, '-').toLowerCase() : undefined),
             };
 
             console.log(`Final result - Item: "${result.name}", Category: "${result.categoryName}"`);
@@ -199,8 +203,8 @@ export const getCart = async (req: Request, res: Response) => {
           console.log(`Created reverse mapping with ${Object.keys(reverseTranslations).length} entries`);
 
           cart.items = cart.items.map((item: any) => {
-            const cleanCategoryName = item.categoryName?.trim() || "";
-            const cleanItemName = item.name?.trim() || "";
+            const cleanCategoryName = safeName(item.categoryName);
+            const cleanItemName = safeName(item.name);
             let translatedItemName = cleanItemName;
             let translatedCategoryName = cleanCategoryName;
 
@@ -279,12 +283,15 @@ export const getCart = async (req: Request, res: Response) => {
               console.log(`✅ Item already in English: "${cleanItemName}"`);
             }
 
+            const rawNameLocal = (typeof item.name === 'object') ? (item.name.en || Object.values(item.name)[0]) : item.name;
+            const nameObjLocal = (typeof item.name === 'object') ? item.name : { en: rawNameLocal };
             const result = {
               ...item,
               name: translatedItemName,
+              nameObj: nameObjLocal,
               categoryName: translatedCategoryName,
               categorySlug: item.categorySlug,
-              itemSlug: item.itemSlug,
+              itemSlug: item.itemSlug || (rawNameLocal ? rawNameLocal.replace(/\s+/g, '-').toLowerCase() : undefined),
             };
 
             console.log(`Final result - Item: "${result.name}", Category: "${result.categoryName}"`);
@@ -362,11 +369,13 @@ export const addItemToCart = async (req: Request, res: Response) => {
       categoryId,
       categoryName,
       name,
+      nameObj: (typeof name === 'object') ? name : { en: name },
       image,
       points,
       price,
       measurement_unit,
       quantity,
+      itemSlug: req.body.itemSlug || (typeof name === 'string' ? name.replace(/\s+/g, '-').toLowerCase() : undefined),
     });
   }
 
@@ -500,7 +509,7 @@ export const saveCart = async (req: Request, res: Response) => {
       const validation = validateQuantity(item.quantity, item.measurement_unit);
       if (!validation.isValid) {
         validationErrors.push(
-          `${item.name || item._id}: ${validation.message}`
+          `${safeName(item.name) || item._id}: ${validation.message}`
         );
       }
     }

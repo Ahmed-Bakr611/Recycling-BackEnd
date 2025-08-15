@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { getSocketIO } from "./socketServer";
 import Category from "../models/category";
+import { safeName } from "../utils/strings";
 
 export const updateItemQuantity = async (req: Request, res: Response) => {
   const { categoryId, itemId, newQuantity } = req.body;
@@ -32,10 +33,14 @@ export const updateItemQuantity = async (req: Request, res: Response) => {
     // Emit socket event
     const io = getSocketIO();
     if (io) {
+      // Normalize item payload: include slug and name object when available
+  const rawName = safeName(item.name);
       io.emit("itemUpdated", {
         itemId: item._id,
+        slug: item.slug || (rawName ? String(rawName).replace(/\s+/g, '-').toLowerCase() : undefined),
         categoryId: category._id,
         quantity: item.quantity,
+        name: (typeof item.name === 'object') ? item.name : { en: rawName }
       });
     }
 

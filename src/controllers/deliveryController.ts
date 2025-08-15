@@ -779,7 +779,14 @@ export const getReviewableOrders = async (req: Request, res: Response) => {
     // Format the response
     const formattedOrders = reviewableOrders.map(order => {
       const populatedCourier = order.courier as any;
-      
+      const normalizedItems = Array.isArray(order.items)
+        ? order.items.map((it: any) => {
+            const nameObj = it.nameObj || (it.name ? (typeof it.name === 'object' ? it.name : { en: it.name }) : { en: it.itemName || '' });
+            const itemSlug = it.itemSlug || it.slug || (nameObj.en ? String(nameObj.en).trim().replace(/\s+/g, '-').toLowerCase() : undefined);
+            return { ...it, nameObj, itemSlug };
+          })
+        : [];
+
       return {
         _id: order._id.toString(),
         createdAt: order.createdAt,
@@ -787,7 +794,7 @@ export const getReviewableOrders = async (req: Request, res: Response) => {
           _id: populatedCourier?._id?.toString() || null,
           name: populatedCourier?.name || "Unknown Courier"
         },
-        items: order.items || [],
+        items: normalizedItems,
         address: order.address,
         status: "completed"
       };
@@ -848,15 +855,7 @@ export const deleteDeliveryReview = async (req: Request, res: Response) => {
     if (order.user.userId._id.toString() !== userId) {
       return res.status(403).json({
         success: false,
-        message: "You are not authorized to delete this review"
-      });
-    }
-
-    // Check if review exists
-    if (!order.deliveryReview || !order.deliveryReview.stars) {
-      return res.status(404).json({
-        success: false,
-        message: "No review found to delete"
+        message: "You do not have permission to delete this review"
       });
     }
 
