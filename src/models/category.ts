@@ -1,8 +1,10 @@
 import { Schema, model, Types, Document } from "mongoose";
 import { IItem, itemSchema } from "./item";
+
+// Updated interface to handle both string and object name formats
 export interface ICategory extends Document {
   _id: Types.ObjectId;
-  name: string;
+  name: string | { en: string; ar?: string }; // Union type to handle both formats
   description: string;
   image: string;
   items: Types.DocumentArray<IItem>;
@@ -12,7 +14,11 @@ export interface ICategory extends Document {
 
 const categorySchema = new Schema<ICategory>(
   {
-    name: { type: String, required: true, unique: true, lowercase: true },
+    name: { 
+      type: Schema.Types.Mixed, // Changed to Mixed to allow both string and object
+      required: true, 
+      unique: true 
+    },
     description: { type: String, required: true },
     image: { type: String, required: true },
     items: [itemSchema],
