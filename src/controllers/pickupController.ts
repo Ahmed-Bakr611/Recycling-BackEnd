@@ -1278,155 +1278,139 @@ export const getTopMaterialsRecycled = async (
 ): Promise<void> => {
   try {
     const category = req.query.category as string | undefined;
+    
+    console.log('Fetching top materials, category filter:', category);
 
+    // Simplified pipeline
     const pipeline: any[] = [
+      // Only include completed orders
+      { $match: { status: "completed" } },
+      
+      // Unwind items
       { $unwind: "$items" },
+      
+      // Add category filter if specified
+      ...(category ? [{ $match: { "items.categoryName": category } }] : []),
+      
+      // Convert quantities to numbers and handle multilingual item names
       {
         $addFields: {
-          "items.quantity": { $toDouble: "$items.quantity" },
-          "items.points": { $toDouble: "$items.points" },
-          // Normalize item names to lowercase for grouping
-          "items.normalizedItemName": { $toLower: "$items.itemName" },
-        },
+          "items.quantity": { 
+            $cond: {
+              if: { $type: "$items.quantity" },
+              then: { $toDouble: "$items.quantity" },
+              else: 0
+            }
+          },
+          "items.points": {
+            $cond: {
+              if: { $type: "$items.points" },
+              then: { $toDouble: "$items.points" },
+              else: 0
+            }
+          },
+          // Handle multilingual itemName - use English version for grouping
+          "items.displayName": {
+            $cond: {
+              if: { $type: "$items.itemName" },
+              then: {
+                $cond: {
+                  if: { $eq: [{ $type: "$items.itemName" }, "object"] },
+                  then: { $ifNull: ["$items.itemName.en", "$items.itemName.ar"] },
+                  else: "$items.itemName"
+                }
+              },
+              else: "Unknown Item"
+            }
+          },
+          "items.normalizedItemName": {
+            $toLower: {
+              $cond: {
+                if: { $type: "$items.itemName" },
+                then: {
+                  $cond: {
+                    if: { $eq: [{ $type: "$items.itemName" }, "object"] },
+                    then: { $ifNull: ["$items.itemName.en", "$items.itemName.ar"] },
+                    else: "$items.itemName"
+                  }
+                },
+                else: "unknown"
+              }
+            }
+          }
+        }
       },
+      
+      // Group by normalized item name
+      {
+        $group: {
+          _id: "$items.normalizedItemName",
+          itemName: { $first: "$items.displayName" }, // Use the extracted display name
+          itemNameMultilingual: { $first: "$items.itemName" }, // Keep original multilingual object
+          totalQuantity: { $sum: "$items.quantity" },
+          totalPoints: { $sum: { $multiply: ["$items.points", "$items.quantity"] } },
+          image: { $first: "$items.image" },
+          categoryName: { $first: "$items.categoryName" },
+          unit: { $first: "$items.unit" },
+          measurementUnit: { $first: "$items.measurementUnit" },
+          orderCount: { $sum: 1 }
+        }
+      },
+      
+      // Add unit display logic
+      {
+        $addFields: {
+          displayUnit: {
+            $cond: {
+              if: { $eq: ["$measurementUnit", 1] },
+              then: "kg",
+              else: "pieces"
+            }
+          }
+        }
+      },
+      
+      // Sort by quantity descending
+      { $sort: { totalQuantity: -1 } },
+      
+      // Limit results
+      { $limit: 10 }
     ];
 
-    if (category) {
-      pipeline.push({ $match: { "items.categoryName": category } });
-    }
-
-    pipeline.push(
-      {
-        $group: {
-          _id: {
-            // Group by normalized (lowercase) name to combine case variations
-            itemName: "$items.normalizedItemName",
-          },
-          totalQuantity: { $sum: "$items.quantity" },
-          totalPoints: { $sum: "$items.points" },
-          image: { $first: "$items.image" },
-          // Use the first occurrence's original name (you can change this logic)
-          itemName: { $first: "$items.itemName" },
-          categoryNames: { $addToSet: "$items.categoryName" }, // Add unit field - get the first unit found for this item
-          unit: { $first: "$items.unit" },
-          documentCount: { $sum: 1 },
-          // Debug: show all the different case variations found
-          nameVariations: { $addToSet: "$items.itemName" },
-          // Debug: show all units found for this item (in case there are variations)
-          unitVariations: { $addToSet: "$items.unit" },
-        },
-      },
-      {
-        $addFields: {
-          // Convert measurement_unit integer to readable unit string
-          unit: {
-            $switch: {
-              branches: [
-                { case: { $eq: ["$measurementUnit", 1] }, then: "kg" },
-                { case: { $eq: ["$measurementUnit", 2] }, then: "pieces" },
-              ],
-              default: "pieces", // Default fallback
-            },
-          },
-          // Add a formatted display string for quantity with unit
-          quantityWithUnit: {
-            $concat: [
-              { $toString: "$totalQuantity" },
-              " ",
-              {
-                $switch: {
-                  branches: [
-                    { case: { $eq: ["$measurementUnit", 1] }, then: "kg" },
-                    { case: { $eq: ["$measurementUnit", 2] }, then: "pieces" },
-                  ],
-                  default: "pieces",
-                },
-              },
-            ],
-          },
-        },
-      },
-      { $sort: { totalQuantity: -1 } },
-      { $limit: 4 }
-    );
-
-    console.log(
-      "Case-insensitive Pipeline:",
-      JSON.stringify(pipeline, null, 2)
-    );
+    console.log('Aggregation pipeline:', JSON.stringify(pipeline, null, 2));
 
     const materials = await Order.aggregate(pipeline);
+    
+    console.log('Raw materials result:', materials);
+    
+    // Format the response
+    const formattedMaterials = materials.map(material => ({
+      _id: material._id,
+      itemName: material.itemName, // This is now the extracted string
+      itemNameMultilingual: material.itemNameMultilingual, // Original multilingual object
+      totalQuantity: material.totalQuantity || 0,
+      totalPoints: material.totalPoints || 0,
+      image: material.image || null,
+      categoryName: material.categoryName || 'Unknown',
+      unit: material.displayUnit || material.unit || 'pieces',
+      orderCount: material.orderCount || 0
+    }));
 
-    // Enhanced logging to show the case consolidation and units
-    console.log("Case-insensitive Results:");
-    materials.forEach((material, index) => {
-      console.log(`\n--- Material ${index + 1} ---`);
-      console.log(`Display Name: ${material.itemName}`);
-      console.log(`Total Quantity: ${material.totalQuantity}`);
-      console.log(
-        `Unit: ${material.unit || "pieces"} (${material.measurementUnit})`
-      );
-      console.log(`Quantity with Unit: ${material.quantityWithUnit}`);
-      console.log(`Document Count: ${material.documentCount}`);
-      console.log(`Name Variations Found:`, material.nameVariations);
-      console.log(`Unit Variations Found:`, material.unitVariations);
-
-      if (material._id.itemName === "cooking pan") {
-        console.log(`🍳 COOKING PAN CONSOLIDATED:`);
-        console.log(
-          `- Combined total: ${material.totalQuantity} ${
-            material.unit || "pieces"
-          }`
-        );
-        console.log(`- From ${material.documentCount} entries`);
-        console.log(`- Variations: ${material.nameVariations.join(", ")}`);
-        console.log(`- Unit code: ${material.measurementUnit}`);
-      }
-    });
-
-    // Show what the totals would be for cooking pan specifically
-    const cookingPanTotal = await Order.aggregate([
-      { $unwind: "$items" },
-      { $match: { "items.itemName": { $regex: /^cooking pan$/i } } }, // Case insensitive exact match
-      {
-        $group: {
-          _id: null,
-          totalQuantity: { $sum: { $toDouble: "$items.quantity" } },
-          totalDocs: { $sum: 1 },
-          variations: { $addToSet: "$items.itemName" },
-          units: { $addToSet: "$items.measurement_unit" },
-        },
-      },
-      {
-        $addFields: {
-          categoryName: {
-            $first: {
-              $filter: {
-                input: "$categoryNames",
-                as: "cat",
-                cond: { $ne: ["$$cat", null] },
-              },
-            },
-          },
-        },
-      },
-    ]);
-
-    console.log("\n🔍 COOKING PAN VERIFICATION:", cookingPanTotal);
+    console.log('Formatted materials:', formattedMaterials);
 
     res.json({
       success: true,
-      data: materials,
-      debug: {
-        cookingPanTotal,
-        timestamp: new Date().toISOString(),
-      },
+      data: formattedMaterials,
+      count: formattedMaterials.length,
+      category: category || 'All'
     });
+
   } catch (error) {
     console.error("Error getting top materials recycled:", error);
     res.status(500).json({
       success: false,
       message: error instanceof Error ? error.message : "Unknown error",
+      data: []
     });
   }
 };
