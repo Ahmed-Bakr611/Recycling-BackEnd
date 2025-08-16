@@ -469,7 +469,7 @@ export const markOrderAsCollected = async (req: Request, res: Response) => {
             const actualQuantity = quantityData.actualQuantity;
 
             console.log(
-              `📏 Item ${item.itemName}: ${originalQuantity} → ${actualQuantity}`
+              `📏 Item ${item.name}: ${originalQuantity} → ${actualQuantity}`
             );
 
             // Store original quantity if not already stored
