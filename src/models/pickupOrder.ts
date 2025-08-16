@@ -37,7 +37,6 @@ const ItemSchema = new mongoose.Schema({
   itemName: {
     type: String,
     required: true,
-    unique: true,
     lowercase: true,
     trim: true,
   },
@@ -46,19 +45,19 @@ const ItemSchema = new mongoose.Schema({
   price: { type: Number, required: true },
   quantity: { type: Number, required: true }, // This becomes the actual/adjusted quantity
   categoryName: String,
-  
+
   // NEW: Quantity management fields
-  originalQuantity: { 
-    type: Number, 
-    default: null 
+  originalQuantity: {
+    type: Number,
+    default: null,
   }, // Original quantity before adjustment
-  quantityAdjusted: { 
-    type: Boolean, 
-    default: false 
+  quantityAdjusted: {
+    type: Boolean,
+    default: false,
   }, // Flag indicating if quantity was adjusted
   unit: {
     type: String,
-    default: "kg"
+    default: "kg",
   }, // Unit for quantity measurement (kg, pieces, etc.)
 });
 
@@ -67,7 +66,13 @@ const StatusHistorySchema = new mongoose.Schema(
   {
     status: {
       type: String,
-      enum: ["pending", "assigntocourier", "collected", "completed", "cancelled"], // Added 'collected'
+      enum: [
+        "pending",
+        "assigntocourier",
+        "collected",
+        "completed",
+        "cancelled",
+      ], // Added 'collected'
       required: true,
     },
     timestamp: { type: Date, default: Date.now },
@@ -109,24 +114,24 @@ const DeliveryReviewSchema = new mongoose.Schema(
       type: Number,
       required: true,
       min: 1,
-      max: 5
+      max: 5,
     },
     comment: {
       type: String,
       required: false, // Comments are optional to match your frontend
       trim: true,
       maxlength: 1000, // Match your frontend validation (1000 chars)
-      default: ""
+      default: "",
     },
     reviewedAt: {
       type: Date,
-      default: Date.now
+      default: Date.now,
     },
     reviewedBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true
-    }
+      ref: "User",
+      required: true,
+    },
   },
   { _id: false }
 );
@@ -162,37 +167,37 @@ const OrderSchema = new mongoose.Schema({
     type: DeliveryProofSchema,
     default: null,
   },
-  
+
   // NEW: Delivery Review field
   deliveryReview: {
     type: DeliveryReviewSchema,
     default: null,
   },
-  
+
   // NEW: Collection timestamp (when courier marks as collected)
   collectedAt: {
     type: Date,
     default: null,
   },
-  
+
   // Completion timestamp (when admin marks as completed)
   completedAt: {
     type: Date,
     default: null,
   },
-  
+
   // NEW: Estimated weight field (for both customers and buyers)
   estimatedWeight: {
     type: String,
     default: null,
   },
-  
+
   // NEW: Quantity adjustment notes (for customer orders only)
   quantityAdjustmentNotes: {
     type: String,
     default: null,
   },
-  
+
   // NEW: Flag to indicate if any quantities were adjusted
   hasQuantityAdjustments: {
     type: Boolean,
@@ -211,7 +216,7 @@ const OrderSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
-  
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
@@ -240,7 +245,9 @@ OrderSchema.pre("save", function (next) {
 
   // Check if any items have quantity adjustments
   if (this.isModified("items")) {
-    this.hasQuantityAdjustments = this.items.some((item: any) => item.quantityAdjusted);
+    this.hasQuantityAdjustments = this.items.some(
+      (item: any) => item.quantityAdjusted
+    );
   }
 
   next();
@@ -278,7 +285,7 @@ export interface IItem {
   price: number;
   quantity: number; // Actual/adjusted quantity
   categoryName?: string;
-  
+
   // NEW: Quantity management fields
   originalQuantity?: number; // Original quantity before adjustment
   quantityAdjusted?: boolean; // Whether quantity was adjusted
@@ -287,7 +294,12 @@ export interface IItem {
 
 // UPDATED: Add 'collected' to IStatusHistory interface
 export interface IStatusHistory {
-  status: "pending" | "assigntocourier" | "collected" | "completed" | "cancelled"; // Added 'collected'
+  status:
+    | "pending"
+    | "assigntocourier"
+    | "collected"
+    | "completed"
+    | "cancelled"; // Added 'collected'
   timestamp: Date;
   updatedBy?: string;
   reason?: string;
@@ -325,27 +337,32 @@ export interface IOrder extends Document {
   address: IAddress;
   items: IItem[];
   courier?: mongoose.Types.ObjectId;
-  status: "pending" | "assigntocourier" | "collected" | "completed" | "cancelled"; // Added 'collected'
+  status:
+    | "pending"
+    | "assigntocourier"
+    | "collected"
+    | "completed"
+    | "cancelled"; // Added 'collected'
   statusHistory: IStatusHistory[];
   deliveryProof?: IDeliveryProof;
-  
+
   // NEW: Delivery Review field
   deliveryReview?: IDeliveryReview;
-  
+
   // Timestamp fields
   collectedAt?: Date; // When courier marks as collected
   completedAt?: Date; // When admin marks as completed
   createdAt: Date;
   updatedAt: Date;
-  
+
   // NEW: Additional fields for enhanced functionality
   estimatedWeight?: string; // Estimated weight provided by courier
   quantityAdjustmentNotes?: string; // Notes explaining quantity changes
   hasQuantityAdjustments?: boolean; // Quick flag for orders with quantity changes
 
-  paymentMethod?: "cash"| "credit-card"; 
-  deliveryFee?: number; 
-  totalAmount?: number; 
+  paymentMethod?: "cash" | "credit-card";
+  deliveryFee?: number;
+  totalAmount?: number;
 }
 
 // Clear the model cache and recreate it to ensure schema changes are applied

@@ -177,43 +177,148 @@ export default (router: express.Router) => {
     "/categories/admin/bulk-create-item-translations",
     authenticate,
     authorize(["admin"]),
-    async (req: express.Request, res: express.Response) => {
+    async (
+      req: express.Request<
+        {},
+        BulkCreateItemTranslationsResponse | ErrorResponse,
+        BulkCreateItemTranslationsRequest
+      >,
+      res: express.Response<BulkCreateItemTranslationsResponse | ErrorResponse>
+    ) => {
       try {
-        const { categoryName } = req.body;
-        if (!categoryName)
-          return res.status(400).json({ message: "Category name is required" });
+        const { categoryName }: BulkCreateItemTranslationsRequest = req.body;
 
-        const category = await Category.findOne({ name: categoryName });
-        if (!category)
-          return res.status(404).json({ message: "Category not found" });
+        // Validation
+        if (!categoryName || typeof categoryName !== "string") {
+          return res.status(400).json({
+            message: "Category name is required and must be a string",
+          });
+        }
+
+        const trimmedCategoryName = categoryName.trim();
+        if (!trimmedCategoryName) {
+          return res.status(400).json({
+            message: "Category name cannot be empty",
+          });
+        }
+
+        // Normalize the category name for consistent lookup
+        const normalizedCategoryName =
+          TranslationService.normalizeText(trimmedCategoryName);
+
+        // Find category by normalized name (assuming your database uses normalized names)
+        const category = await Category.findOne({
+          name: normalizedCategoryName,
+        });
+
+        if (!category) {
+          return res.status(404).json({
+            message: `Category not found: ${trimmedCategoryName}`,
+          });
+        }
+
+        if (!Array.isArray(category.items) || category.items.length === 0) {
+          return res.status(200).json({
+            message: "No items found in this category",
+            createdTranslations: [],
+            categoryNormalizedName: normalizedCategoryName,
+            totalItems: 0,
+            successfulTranslations: 0,
+            failedTranslations: 0,
+          });
+        }
 
         const createdTranslations: string[] = [];
+        const failedItems: string[] = [];
 
+        // Process each item
         for (const item of category.items) {
           try {
-            const itemKey = await TranslationService.createItemTranslation(
-              item.name.trim(),
-              categoryName.trim(),
-              item.name.trim(), // Default Arabic translation same as English
+            if (!item || !item.name || typeof item.name !== "string") {
+              console.warn(`Skipping invalid item:`, item);
+              failedItems.push(item?.name || "unknown");
+              continue;
+            }
+
+            const trimmedItemName = item.name.trim();
+            if (!trimmedItemName) {
+              console.warn(`Skipping empty item name:`, item);
+              failedItems.push("empty_name");
+              continue;
+            }
+
+            // Create translation using the updated service
+            const result = await TranslationService.createItemTranslation(
+              trimmedItemName, // Display name (will be normalized internally)
+              normalizedCategoryName, // Already normalized category name
+              trimmedItemName, // Default Arabic translation same as English for now
               item._id?.toString()
             );
-            createdTranslations.push(itemKey);
+
+            createdTranslations.push(result.itemKey);
+
+            console.log(
+              `✅ Created translation for item: ${trimmedItemName} -> ${result.normalizedSlug}`
+            );
           } catch (error) {
             console.error(
-              `Error creating translation for item ${item.name}:`,
+              `❌ Error creating translation for item ${item.name}:`,
               error
             );
+            failedItems.push(item.name);
           }
         }
 
-        res.status(200).json({
-          message: `Created translations for ${createdTranslations.length} items`,
+        const response: BulkCreateItemTranslationsResponse = {
+          message: `Created translations for ${createdTranslations.length}/${category.items.length} items`,
           createdTranslations,
+          categoryNormalizedName: normalizedCategoryName,
+          totalItems: category.items.length,
+          successfulTranslations: createdTranslations.length,
+          failedTranslations: failedItems.length,
+        };
+
+        console.log(`📊 Bulk translation summary:`, {
+          category: trimmedCategoryName,
+          normalizedCategory: normalizedCategoryName,
+          total: category.items.length,
+          successful: createdTranslations.length,
+          failed: failedItems.length,
+          failedItems: failedItems,
         });
+
+        res.status(200).json(response);
       } catch (error) {
-        console.error("Bulk create item translations error:", error);
-        res.status(500).json({ message: (error as Error).message });
+        console.error("❌ Bulk create item translations error:", error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error occurred";
+
+        res.status(500).json({
+          message: "Internal server error while creating translations",
+          error: errorMessage,
+        });
       }
     }
   );
 };
+
+interface BulkCreateItemTranslationsRequest {
+  categoryName: string;
+}
+
+// Response interface
+interface BulkCreateItemTranslationsResponse {
+  message: string;
+  createdTranslations: string[];
+  categoryNormalizedName?: string;
+  totalItems?: number;
+  successfulTranslations?: number;
+  failedTranslations?: number;
+}
+
+// Error response interface
+interface ErrorResponse {
+  message: string;
+  error?: string;
+}

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import Cart from "../models/cart";
 import { TranslationService } from "../services/translationService";
+import translation from "../models/translation";
 
 const validateQuantity = (
   quantity: number,
@@ -33,269 +34,61 @@ export const getCart = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
-    const language = (req.query.lang as "en" | "ar") || (req as any).language || "en";
-
-    console.log("=== getCart Debug ===");
-    console.log("Language requested:", language);
-    console.log("User ID:", userId);
-    console.log("Session ID:", sessionId);
+    const language =
+      (req.query.lang as "en" | "ar") || (req as any).language || "en";
 
     if (!userId && !sessionId) {
       return res.status(400).json({ message: "Missing user or session" });
     }
 
-    let cart = null;
-    if (userId) {
-      cart = await Cart.findOne({ userId }).lean();
-    } else {
-      cart = await Cart.findOne({ sessionId }).lean();
-    }
+    let cart = userId
+      ? await Cart.findOne({ userId }).lean()
+      : await Cart.findOne({ sessionId }).lean();
 
     if (!cart) {
-      cart = { items: [] };
+      return res.status(200).json({ items: [] });
     }
 
-    console.log("Found cart with items count:", cart.items?.length || 0);
+    if (cart.items?.length > 0) {
+      // Collect item and category ids
+      const itemIds = cart.items.map((i: any) => i._id.toString());
+      const categoryIds = cart.items.map((i: any) => i.categoryId?.toString());
 
-    // Process translations if we have items
-    if (cart.items && cart.items.length > 0) {
-      if (language === "ar") {
-        console.log("Processing cart for Arabic language...");
-        
-        try {
-          const translations = await TranslationService.getTranslations("ar");
-          console.log(`Retrieved ${Object.keys(translations).length} Arabic translations`);
+      // Fetch translations from DB
+      const categoryTranslations = await translation
+        .find({
+          referenceId: { $in: categoryIds },
+          key: { $regex: /_name$/ },
+        })
+        .lean();
 
-          // Process each item individually - translate whatever needs translation
-          cart.items = cart.items.map((item: any) => {
-            const cleanCategoryName = item.categoryName?.trim() || "";
-            const cleanItemName = item.name?.trim() || "";
-            let translatedItemName = cleanItemName;
-            let translatedCategoryName = cleanCategoryName;
+      // get item translations (no _name/_desc suffix filter)
+      const itemTranslations = await translation
+        .find({
+          referenceId: { $in: itemIds },
+        })
+        .lean();
 
-            console.log(`\n--- Processing cart item ---`);
-            console.log(`Item: "${cleanItemName}"`);
-            console.log(`Category: "${cleanCategoryName}"`);
-            console.log(`Item is Arabic: ${/[\u0600-\u06FF]/.test(cleanItemName)}`);
-            console.log(`Category is Arabic: ${/[\u0600-\u06FF]/.test(cleanCategoryName)}`);
+      const translations = [...categoryTranslations, ...itemTranslations];
 
-            // TRANSLATE CATEGORY NAME if it's in English
-            if (!/[\u0600-\u06FF]/.test(cleanCategoryName)) {
-              console.log(`🔄 Translating English category: "${cleanCategoryName}"`);
+      // Build a map: referenceId -> { en, ar }
+      const translationsMap: Record<string, { en?: string; ar?: string }> = {};
+      translations.forEach((doc) => {
+        translationsMap[doc.referenceId] = doc.translations;
+      });
 
-              // Try multiple category key formats
-              const possibleCategoryKeys = [
-                TranslationService.generateKey(cleanCategoryName, "cat", "name"),
-                `cat_${cleanCategoryName.toLowerCase()}_name`,
-                `cat_${cleanCategoryName}_name`,
-                `cat_${cleanCategoryName.charAt(0).toUpperCase() + cleanCategoryName.slice(1)}_name`,
-                // Handle Paper vs paper inconsistency
-                `cat_${cleanCategoryName.charAt(0).toUpperCase() + cleanCategoryName.slice(1).toLowerCase()}_name`,
-              ];
+      // Apply translations to each cart item
+      cart.items = cart.items.map((item: any) => {
+        const itemTranslations = translationsMap[item._id.toString()] || {};
+        const categoryTranslations =
+          translationsMap[item.categoryId?.toString()] || {};
 
-              console.log("Trying category keys:", possibleCategoryKeys);
-
-              for (const categoryKey of possibleCategoryKeys) {
-                if (translations[categoryKey]) {
-                  translatedCategoryName = translations[categoryKey];
-                  console.log(`✅ Category translated: "${cleanCategoryName}" -> "${translatedCategoryName}" (key: ${categoryKey})`);
-                  break;
-                }
-              }
-
-              // Manual fallback for your specific case
-              if (translatedCategoryName === cleanCategoryName) {
-                const manualCategoryMappings: Record<string, string> = {
-                  'paper': 'ورق',
-                  'Paper': 'ورق',
-                  'electronics': 'إلكترونيات',
-                  'Electronics': 'إلكترونيات',
-                  'metals': 'معادن',
-                  'Metals': 'معادن',
-                  'plastic': 'بلاستيك',
-                  'Plastic': 'بلاستيك',
-                  'e-waste': 'نفايات إلكترونية',
-                  'E-waste': 'نفايات إلكترونية',
-                  'home appliances': 'أجهزة منزلية',
-                  'Home Appliances': 'أجهزة منزلية',
-                  'spare parts': 'قطع غيار',
-                  'Spare Parts': 'قطع غيار'
-                };
-
-                if (manualCategoryMappings[cleanCategoryName]) {
-                  translatedCategoryName = manualCategoryMappings[cleanCategoryName];
-                  console.log(`✅ Category translated (manual): "${cleanCategoryName}" -> "${translatedCategoryName}"`);
-                } else {
-                  console.log(`⚠️ No Arabic translation found for category: "${cleanCategoryName}"`);
-                }
-              }
-            } else {
-              console.log(`✅ Category already in Arabic: "${cleanCategoryName}"`);
-            }
-
-            // TRANSLATE ITEM NAME if it's in English
-            if (!/[\u0600-\u06FF]/.test(cleanItemName)) {
-              console.log(`🔄 Translating English item: "${cleanItemName}"`);
-
-              // Use the ORIGINAL English category name for key generation
-              const originalCategoryName = item.categoryName?.trim() || "";
-              const possibleItemKeys = [
-                `item_${originalCategoryName}_${cleanItemName}`,
-                `item_${originalCategoryName}_${cleanItemName.toLowerCase()}`,
-                `item_${originalCategoryName}_${cleanItemName.replace(/\s+/g, "_")}`,
-                TranslationService.generateKey(`${originalCategoryName}_${cleanItemName}`, "item"),
-                // Also try with Paper (capitalized) since your category might be stored as "Paper"
-                `item_Paper_${cleanItemName}`,
-                `item_paper_${cleanItemName}`,
-                // Try with underscores
-                `item_Paper_${cleanItemName.replace(/\s+/g, "_")}`,
-                `item_paper_${cleanItemName.replace(/\s+/g, "_")}`,
-              ];
-
-              console.log("Trying item keys:", possibleItemKeys);
-
-              for (const itemKey of possibleItemKeys) {
-                if (translations[itemKey]) {
-                  translatedItemName = translations[itemKey];
-                  console.log(`✅ Item translated: "${cleanItemName}" -> "${translatedItemName}" (key: ${itemKey})`);
-                  break;
-                }
-              }
-
-              if (translatedItemName === cleanItemName) {
-                console.log(`⚠️ No Arabic translation found for item: "${cleanItemName}"`);
-              }
-            } else {
-              console.log(`✅ Item already in Arabic: "${cleanItemName}"`);
-            }
-
-            const result = {
-              ...item,
-              name: translatedItemName,
-              categoryName: translatedCategoryName,
-              categorySlug: item.categorySlug,
-              itemSlug: item.itemSlug,
-            };
-
-            console.log(`Final result - Item: "${result.name}", Category: "${result.categoryName}"`);
-            return result;
-          });
-
-          console.log("✅ Cart Arabic translation completed");
-        } catch (translationError) {
-          console.error("❌ Cart Arabic translation failed:", translationError);
-        }
-      } else if (language === "en") {
-        console.log("Processing cart for English language...");
-        
-        try {
-          const arabicTranslations = await TranslationService.getTranslations("ar");
-          const reverseTranslations: Record<string, string> = {};
-          
-          Object.entries(arabicTranslations).forEach(([key, arabicValue]) => {
-            reverseTranslations[arabicValue] = key;
-          });
-
-          console.log(`Created reverse mapping with ${Object.keys(reverseTranslations).length} entries`);
-
-          cart.items = cart.items.map((item: any) => {
-            const cleanCategoryName = item.categoryName?.trim() || "";
-            const cleanItemName = item.name?.trim() || "";
-            let translatedItemName = cleanItemName;
-            let translatedCategoryName = cleanCategoryName;
-
-            console.log(`\n--- Processing cart item for English ---`);
-            console.log(`Item: "${cleanItemName}"`);
-            console.log(`Category: "${cleanCategoryName}"`);
-
-            // TRANSLATE CATEGORY NAME if it's in Arabic
-            if (/[\u0600-\u06FF]/.test(cleanCategoryName)) {
-              console.log(`🔄 Translating Arabic category to English: "${cleanCategoryName}"`);
-
-              const englishKey = reverseTranslations[cleanCategoryName];
-              if (englishKey && englishKey.startsWith("cat_")) {
-                const keyParts = englishKey.split("_");
-                if (keyParts.length >= 3) {
-                  const englishName = keyParts.slice(1, -1).join("_");
-                  // Capitalize first letter
-                  translatedCategoryName = englishName.charAt(0).toUpperCase() + englishName.slice(1);
-                  console.log(`✅ Category translated to English: "${cleanCategoryName}" -> "${translatedCategoryName}" (key: ${englishKey})`);
-                }
-              } else {
-                // Manual reverse mapping
-                const manualReverseCategoryMappings: Record<string, string> = {
-                  'ورق': 'Paper',
-                  'إلكترونيات': 'Electronics',
-                  'معادن': 'Metals',
-                  'بلاستيك': 'Plastic',
-                  'نفايات إلكترونية': 'E-waste',
-                  'أجهزة منزلية': 'Home Appliances',
-                  'قطع غيار': 'Spare Parts'
-                };
-
-                if (manualReverseCategoryMappings[cleanCategoryName]) {
-                  translatedCategoryName = manualReverseCategoryMappings[cleanCategoryName];
-                  console.log(`✅ Category translated to English (manual): "${cleanCategoryName}" -> "${translatedCategoryName}"`);
-                } else {
-                  console.log(`⚠️ No English translation found for Arabic category: "${cleanCategoryName}"`);
-                }
-              }
-            } else {
-              console.log(`✅ Category already in English: "${cleanCategoryName}"`);
-            }
-
-            // TRANSLATE ITEM NAME if it's in Arabic
-            if (/[\u0600-\u06FF]/.test(cleanItemName)) {
-              console.log(`🔄 Translating Arabic item to English: "${cleanItemName}"`);
-
-              const englishKey = reverseTranslations[cleanItemName];
-              if (englishKey && englishKey.startsWith("item_")) {
-                // Extract English name from the key
-                const keyParts = englishKey.split("_");
-                if (keyParts.length >= 3) {
-                  const englishName = keyParts.slice(2).join("_").replace(/_/g, " ");
-                  translatedItemName = englishName;
-                  console.log(`✅ Item translated to English: "${cleanItemName}" -> "${translatedItemName}" (key: ${englishKey})`);
-                }
-              } else {
-                // Manual reverse mapping for common items
-                const manualReverseItemMappings: Record<string, string> = {
-                  'ورق متقطع': 'shredded paper',
-                  'كتب': 'books',
-                  'جرائد': 'newspaper',
-                  'مروحة': 'fan',
-                  'راوتر': 'router',
-                  'موبايل': 'mobile'
-                };
-
-                if (manualReverseItemMappings[cleanItemName]) {
-                  translatedItemName = manualReverseItemMappings[cleanItemName];
-                  console.log(`✅ Item translated to English (manual): "${cleanItemName}" -> "${translatedItemName}"`);
-                } else {
-                  console.log(`⚠️ No English translation found for Arabic item: "${cleanItemName}"`);
-                }
-              }
-            } else {
-              console.log(`✅ Item already in English: "${cleanItemName}"`);
-            }
-
-            const result = {
-              ...item,
-              name: translatedItemName,
-              categoryName: translatedCategoryName,
-              categorySlug: item.categorySlug,
-              itemSlug: item.itemSlug,
-            };
-
-            console.log(`Final result - Item: "${result.name}", Category: "${result.categoryName}"`);
-            return result;
-          });
-
-          console.log("✅ Cart English translation completed");
-        } catch (translationError) {
-          console.error("❌ Cart English translation failed:", translationError);
-        }
-      }
+        return {
+          ...item,
+          name: itemTranslations[language] || item.name,
+          categoryName: categoryTranslations[language] || item.categoryName,
+        };
+      });
     }
 
     return res.status(200).json(cart);
@@ -688,5 +481,73 @@ export const debugCartTranslations = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Debug cart translations error:", error);
     res.status(500).json({ error: error.message });
+  }
+};
+
+export const translateCart = async (req: Request, res: Response) => {
+  try {
+    const language =
+      (req.query.lang as "en" | "ar") || (req as any).language || "en";
+
+    const cartItems = req.body.items;
+    if (!Array.isArray(cartItems) || cartItems.length === 0) {
+      return res.status(200).json({ items: [] });
+    }
+
+    // Collect all itemIds + categoryIds
+    const itemIds = cartItems
+      .map((i: any) => i._id?.toString())
+      .filter(Boolean);
+    const categoryIds = cartItems
+      .map((i: any) => i.categoryId?.toString())
+      .filter(Boolean);
+
+    // Fetch all translations in one go
+    const categoryTranslations = await translation
+      .find({
+        referenceId: { $in: categoryIds },
+        key: { $regex: /_name$/ },
+      })
+      .lean();
+
+    // get item translations (no _name/_desc suffix filter)
+    const itemTranslations = await translation
+      .find({
+        referenceId: { $in: itemIds },
+      })
+      .lean();
+
+    const translations = [...categoryTranslations, ...itemTranslations];
+
+    // Build translation map
+    const translationsMap: Record<string, { en?: string; ar?: string }> = {};
+    translations.forEach((doc) => {
+      translationsMap[doc.referenceId] = doc.translations;
+    });
+
+    // Apply translations
+    const translatedItems = cartItems.map((item: any) => {
+      const itemTranslations = translationsMap[item._id?.toString()] || {};
+      const categoryTranslations =
+        translationsMap[item.categoryId?.toString()] || {};
+
+      console.log("👀👀👀👀👀👀👀👀👀👀👀👀👀👀👀👀👀👀👀");
+      console.log(language);
+      console.log(translationsMap);
+      console.log(itemTranslations);
+      console.log(categoryTranslations);
+
+      console.log("👀👀👀👀👀👀👀👀👀👀👀👀👀👀👀👀👀👀👀");
+      return {
+        ...item,
+        name: itemTranslations[language] || item.name,
+        categoryName: categoryTranslations[language] || item.categoryName,
+      };
+    });
+
+    return res.status(200).json({ items: translatedItems });
+  } catch (error) {
+    console.error("Error in translateCart:", error);
+    return res.status(500).json({ message: "Server error", error });
   }
 };

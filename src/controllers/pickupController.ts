@@ -146,7 +146,7 @@ export const createOrder = async (
 };
 
 export const getAllOrders = async (
-  req: IAuthenticatedRequest & { language?: 'en' | 'ar' },
+  req: IAuthenticatedRequest & { language?: "en" | "ar" },
   res: express.Response
 ): Promise<void> => {
   try {
@@ -155,11 +155,12 @@ export const getAllOrders = async (
     const limit = parseInt(req.query.limit as string) || 5;
     const skip = (page - 1) * limit;
     const status = req.query.status as string;
-    const language = (req.query.lang as 'en' | 'ar') || req.language || 'en';
+    const language = (req.query.lang as "en" | "ar") || req.language || "en";
 
     let filter: any = { "user.userId": userId };
     if (status) {
-      if (status === "incoming") filter.status = { $in: ["pending", "assigntocourier", "collected"] };
+      if (status === "incoming")
+        filter.status = { $in: ["pending", "assigntocourier", "collected"] };
       else if (status === "completed") filter.status = "completed";
       else if (status === "cancelled") filter.status = "cancelled";
       else if (status === "collected") filter.status = "collected";
@@ -204,7 +205,9 @@ export const getAllOrders = async (
             comment: order.deliveryReview.comment,
             reviewedAt: order.deliveryReview.reviewedAt,
             courier: {
-              id: (order.courier as any)?._id?.toString() || order.deliveryReview.reviewedBy.toString(),
+              id:
+                (order.courier as any)?._id?.toString() ||
+                order.deliveryReview.reviewedBy.toString(),
               name: (order.courier as any)?.name || "Unknown Courier",
             },
             hasReview: true,
@@ -224,11 +227,14 @@ export const getAllOrders = async (
     });
 
     // If Arabic is requested, translate order items and category names
-    if (language === 'ar' && ordersWithReviewData.length > 0) {
+    if (language === "ar" && ordersWithReviewData.length > 0) {
       try {
-        ordersWithReviewData = await TranslationService.translateOrders(ordersWithReviewData, language);
+        ordersWithReviewData = await TranslationService.translateOrders(
+          ordersWithReviewData,
+          language
+        );
       } catch (translationError) {
-        console.error('Order translation failed:', translationError);
+        console.error("Order translation failed:", translationError);
         // fallback to original orders
       }
     }
@@ -670,6 +676,7 @@ export const getAllOrdersForAdmin = async (
     const date = req.query.date as string;
     const userRole = req.query.userRole as string;
     const search = req.query.search as string; // Add search parameter
+    const lang = req.query.lang as string;
 
     const filters: any = {};
 
@@ -742,6 +749,64 @@ export const getAllOrdersForAdmin = async (
       page,
       limit,
     });
+    // after you get result.data
+    if (lang && (lang === "en" || lang === "ar")) {
+      const resOrders = result.data as any[]; // array of orders
+
+      // Collect IDs
+      const itemIds = resOrders.flatMap(
+        (order) => order.items?.map((i: any) => i._id?.toString()) || []
+      );
+      const categoryIds = resOrders.flatMap(
+        (order) => order.items?.map((i: any) => i.categoryId?.toString()) || []
+      );
+
+      // Fetch category translations (must end with "_name")
+      const categoryTranslations = await translation
+        .find({
+          referenceId: { $in: categoryIds },
+          key: { $regex: /_name$/ },
+        })
+        .lean();
+
+      // Fetch item translations (no _name filter)
+      const itemTranslations = await translation
+        .find({
+          referenceId: { $in: itemIds },
+        })
+        .lean();
+
+      // Merge both
+      const translations = [...categoryTranslations, ...itemTranslations];
+
+      // Build lookup
+      const translationsMap: Record<string, { en?: string; ar?: string }> = {};
+      translations.forEach((doc) => {
+        translationsMap[doc.referenceId] = doc.translations;
+      });
+
+      // Apply translations
+      result.data = resOrders.map((order) => {
+        if (Array.isArray(order.items)) {
+          order.items = order.items.map((item: any) => {
+            const itemTr = translationsMap[item._id?.toString()] || {};
+            const catTr = translationsMap[item.categoryId?.toString()] || {};
+
+            console.log("🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️");
+            console.log(item);
+            console.log(itemTr);
+            console.log(catTr);
+            console.log("🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️🤦‍♀️");
+            return {
+              ...item,
+              itemName: itemTr[lang] || item.itemName,
+              categoryName: catTr[lang] || item.categoryName,
+            };
+          });
+        }
+        return order;
+      });
+    }
 
     res.json({
       success: true,
@@ -1267,7 +1332,7 @@ export const getTopMaterialsRecycled = async (
 ): Promise<void> => {
   try {
     const category = req.query.category as string | undefined;
-    const language = (req.query.language as 'en' | 'ar') || 'en';
+    const language = (req.query.language as "en" | "ar") || "en";
 
     // 1. Aggregation Pipeline
     const pipeline: any[] = [
@@ -1281,14 +1346,17 @@ export const getTopMaterialsRecycled = async (
             $toLower: {
               $switch: {
                 branches: [
-                  { case: { $eq: ["$items.itemName", "اكريلك"] }, then: "acrylic" }
+                  {
+                    case: { $eq: ["$items.itemName", "اكريلك"] },
+                    then: "acrylic",
+                  },
                 ],
-                default: "$items.itemName"
-              }
-            }
-          }
-        }
-      }
+                default: "$items.itemName",
+              },
+            },
+          },
+        },
+      },
     ];
 
     if (category) {
@@ -1309,11 +1377,14 @@ export const getTopMaterialsRecycled = async (
             $first: {
               $switch: {
                 branches: [
-                  { case: { $eq: ["$items.itemName", "اكريلك"] }, then: "Acrylic" }
+                  {
+                    case: { $eq: ["$items.itemName", "اكريلك"] },
+                    then: "Acrylic",
+                  },
                 ],
-                default: "$items.itemName"
-              }
-            }
+                default: "$items.itemName",
+              },
+            },
           },
           categoryNames: { $addToSet: "$items.categoryName" },
           unit: { $first: "$items.unit" },
@@ -1334,50 +1405,51 @@ export const getTopMaterialsRecycled = async (
       // Get all text needing translation
       const translationTexts = [
         ...new Set([
-          ...materials.flatMap(m => [m.itemName, ...m.nameVariations]),
-          ...materials.flatMap(m => m.categoryNames)
-        ])
+          ...materials.flatMap((m) => [m.itemName, ...m.nameVariations]),
+          ...materials.flatMap((m) => m.categoryNames),
+        ]),
       ];
 
       // Find all translations in single query
       const translations = await translation.find({
         $or: [
-          { key: { $in: translationTexts.map(t => `item_${t}`) } },
+          { key: { $in: translationTexts.map((t) => `item_${t}`) } },
           { "translations.ar": { $in: translationTexts } },
-          { key: { $in: translationTexts.map(t => `cat_${t}_name`) } }
-        ]
+          { key: { $in: translationTexts.map((t) => `cat_${t}_name`) } },
+        ],
       });
 
       // Create comprehensive lookup map
       const translationMap = translations.reduce((map, t) => {
         // Map by key
         map[`key::${t.key}`] = t.translations[language] || t.translations.en;
-        
+
         // Map by Arabic text if exists
         if (t.translations.ar) {
-          map[`ar::${t.translations.ar}`] = t.translations[language] || t.translations.en;
+          map[`ar::${t.translations.ar}`] =
+            t.translations[language] || t.translations.en;
         }
-        
+
         return map;
       }, {});
 
       // Manual fallbacks for known items
       const manualFallbacks: Record<string, string> = {
-        "اكريلك": "Acrylic",
-        "بلاستيك": "Plastic"
+        اكريلك: "Acrylic",
+        بلاستيك: "Plastic",
       };
 
       // Apply translations consistently
-      materials = materials.map(material => {
+      materials = materials.map((material) => {
         // Translate item name
-        const itemTranslation = 
+        const itemTranslation =
           translationMap[`key::item_${material.itemName}`] ||
           translationMap[`ar::${material.itemName}`] ||
           manualFallbacks[material.itemName] ||
           material.itemName;
 
         // Translate categories
-        const translatedCategories = material.categoryNames.map(cat => {
+        const translatedCategories = material.categoryNames.map((cat) => {
           return (
             translationMap[`key::cat_${cat}_name`] ||
             translationMap[`ar::${cat}`] ||
@@ -1387,7 +1459,7 @@ export const getTopMaterialsRecycled = async (
         });
 
         // Translate name variations
-        const translatedVariations = material.nameVariations.map(name => {
+        const translatedVariations = material.nameVariations.map((name) => {
           return (
             translationMap[`key::item_${name}`] ||
             translationMap[`ar::${name}`] ||
@@ -1399,11 +1471,11 @@ export const getTopMaterialsRecycled = async (
         return {
           ...material,
           _id: {
-            itemName: itemTranslation // Ensure _id matches translated name
+            itemName: itemTranslation, // Ensure _id matches translated name
           },
           itemName: itemTranslation,
           categoryNames: translatedCategories,
-          nameVariations: translatedVariations
+          nameVariations: translatedVariations,
         };
       });
     }
@@ -1523,5 +1595,3 @@ export const recalculateUserPointsFromOrders = async (
     });
   }
 };
-
-

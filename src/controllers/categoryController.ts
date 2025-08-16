@@ -2,42 +2,15 @@ import { Request, Response } from "express";
 import Category, { ICategory } from "../models/category";
 import { TranslationService } from "../services/translationService";
 import Translation from "../models/translation";
+import translation from "../models/translation";
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
 }
 
 interface TranslatedRequest extends Request {
-  language?: 'en' | 'ar';
+  language?: "en" | "ar";
 }
-
-// Helper function to generate slug that matches English name exactly (preserving spaces and original format)
-const generateSlug = (name: string): string => {
-  if (!name || typeof name !== 'string') return '';
-  
-  // Keep the name exactly as it is, just trim whitespace
-  // This preserves spaces, capitalization, and keeps the original format
-  return name.trim();
-};
-
-// Alternative: If you want to use underscores instead of URL encoding
-const generateSlugWithUnderscores = (name: string): string => {
-  if (!name || typeof name !== 'string') return '';
-  
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '_')
-    .replace(/[^\w_]/g, '');
-};
-
-// Alternative: If you want to keep exactly as the name but make it URL-safe
-const generateSlugExact = (name: string): string => {
-  if (!name || typeof name !== 'string') return '';
-  
-  // This will preserve the exact text but encode special characters for URLs
-  return encodeURIComponent(name.trim());
-};
 
 export const createCategory = async (
   req: MulterRequest,
@@ -47,31 +20,115 @@ export const createCategory = async (
     const { name, description, nameAr, descriptionAr } = req.body;
     const image = req.file?.path ?? "";
 
-    // Create category with improved slug generation
-    const category = new Category({ 
-      name, 
-      description, 
-      image, 
-      items: [],
-      slug: generateSlug(name) // Using the new slug generation
-    });
-
-    await category.save();
-
-    // Rest of your translation logic remains the same
-    if (nameAr || descriptionAr) {
+    // ✅ FIXED - Use TranslationService to get normalized values
+    const translationResult =
       await TranslationService.createCategoryTranslations(
         name,
         description,
         nameAr,
-        descriptionAr,
-        category._id.toString()
+        descriptionAr
       );
-    }
+
+    // ✅ FIXED - Create category with normalized name and slug
+    const category = new Category({
+      name: translationResult.normalizedSlug, // ✅ Use normalized name
+      slug: translationResult.normalizedSlug, // ✅ Same as name
+      description,
+      image,
+      items: [],
+    });
+
+    await category.save();
+
+    // Update translation with category ID
+    await TranslationService.createCategoryTranslations(
+      name,
+      description,
+      nameAr,
+      descriptionAr,
+      category._id.toString()
+    );
 
     res.status(201).json(category);
   } catch (err) {
-    console.error('Error creating category:', err);
+    console.error("Error creating category:", err);
+    res.status(400).json({ message: (err as Error).message });
+  }
+};
+
+export const createCategoryWithImage = async (
+  req: MulterRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const {
+      name,
+      description,
+      itemName,
+      points,
+      price,
+      measurement_unit,
+      nameAr,
+      descriptionAr,
+      itemNameAr,
+    } = req.body;
+
+    // ✅ FIXED - Get normalized category values
+    const categoryTranslation =
+      await TranslationService.createCategoryTranslations(
+        name,
+        description,
+        nameAr,
+        descriptionAr
+      );
+
+    // ✅ FIXED - Get normalized item values
+    const itemTranslation = await TranslationService.createItemTranslation(
+      itemName,
+      categoryTranslation.normalizedSlug, // ✅ Use normalized category name
+      itemNameAr
+    );
+
+    // ✅ FIXED - Create category with normalized values
+    const newCategory = new Category({
+      name: categoryTranslation.normalizedSlug, // ✅ Normalized
+      slug: categoryTranslation.normalizedSlug, // ✅ Same as name
+      description,
+      image: req.file?.path ?? "",
+      items: [
+        {
+          name: itemTranslation.normalizedSlug, // ✅ Normalized item name
+          slug: itemTranslation.normalizedSlug, // ✅ Same as name
+          image: req.file?.path ?? "",
+          points: Number(points),
+          price: Number(price),
+          measurement_unit,
+          categoryName: categoryTranslation.normalizedSlug, // ✅ Normalized category name
+        },
+      ],
+    });
+
+    await newCategory.save();
+
+    // Update translations with actual IDs
+    await TranslationService.createCategoryTranslations(
+      name,
+      description,
+      nameAr,
+      descriptionAr,
+      newCategory._id.toString()
+    );
+
+    const itemId = newCategory.items[0]._id?.toString();
+    await TranslationService.createItemTranslation(
+      itemName,
+      categoryTranslation.normalizedSlug,
+      itemNameAr,
+      itemId
+    );
+
+    res.status(201).json(newCategory);
+  } catch (err) {
     res.status(400).json({ message: (err as Error).message });
   }
 };
@@ -82,18 +139,18 @@ export const getAllCategories = async (
 ): Promise<void> => {
   try {
     const { skip, limit } = req.pagination;
-    const language = req.language || req.query.lang as 'en' | 'ar' || 'en';
+    const language = req.language || (req.query.lang as "en" | "ar") || "en";
 
-    // Get paginated results (your existing logic)
     const [categories, total] = await Promise.all([
       Category.find().skip(skip).limit(limit).lean(),
       Category.countDocuments(),
     ]);
 
-    // Translate if language is not English
-    const finalCategories = language === 'en' 
-      ? categories 
-      : await TranslationService.translateCategories(categories, language);
+    // ✅ FIXED - Always translate (service handles language logic)
+    const finalCategories = await TranslationService.translateCategories(
+      categories,
+      language
+    );
 
     res.paginated(finalCategories, total);
   } catch (err) {
@@ -107,51 +164,47 @@ export const getCategoriesWithPagination = async (
 ): Promise<void> => {
   try {
     const role = req.query.role;
-    const language = (req.query.lang as 'en' | 'ar') || req.language || 'en';
+    const language = (req.query.lang as "en" | "ar") || req.language || "en";
     const pagination = req.pagination || { skip: 0, limit: 10, page: 1 };
-    
-    console.log('=== getCategoriesWithPagination Debug ===');
-    console.log('Language requested:', language);
-    console.log('Req.language from middleware:', req.language);
-    console.log('Query lang param:', req.query.lang);
 
-    // Your existing pagination logic
+    console.log("=== getCategoriesWithPagination Debug ===");
+    console.log("Language requested:", language);
+
     const [categories, total] = await Promise.all([
       Category.find().skip(pagination.skip).limit(pagination.limit).lean(),
       Category.countDocuments(),
     ]);
 
-    console.log('Found categories count:', categories.length);
-    console.log('Sample category names:', categories.map(c => c.name));
+    console.log("Found categories count:", categories.length);
+    console.log(
+      "Sample category names:",
+      categories.map((c) => c.name)
+    );
 
-    // IMPORTANT: Only translate if language is Arabic AND we have categories
-    let processedCategories = categories;
-    
-    if (language === 'ar' && categories.length > 0) {
-      console.log('Starting Arabic translation...');
-      
-      try {
-        processedCategories = await TranslationService.translateCategories(categories, language);
-        console.log('Translation completed');
-        console.log('Translated sample names:', processedCategories.map(c => c.name));
-      } catch (translationError) {
-        console.error('Translation failed:', translationError);
-        processedCategories = categories;
-      }
-    } else {
-      console.log('Skipping translation - language:', language, 'categories:', categories.length);
-    }
+    // ✅ FIXED - Always translate, service handles the logic
+    let processedCategories = await TranslationService.translateCategories(
+      categories,
+      language
+    );
+    console.log("🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢");
+    console.log(processedCategories);
+    console.log("🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢🤢");
 
-    // Your existing role-based pricing logic
+    // Role-based pricing logic
     if (role === "buyer") {
-      processedCategories = processedCategories.map(category => {
-        const plainCategory = typeof category.toObject === "function" ? category.toObject() : category;
+      processedCategories = processedCategories.map((category) => {
+        const plainCategory =
+          typeof category.toObject === "function"
+            ? category.toObject()
+            : category;
         return {
           ...plainCategory,
           items: Array.isArray(plainCategory.items)
             ? plainCategory.items.map((item: any) => ({
                 ...item,
-                price: item.price ? Math.round(item.price * 1.5 * 100) / 100 : item.price
+                price: item.price
+                  ? Math.round(item.price * 1.5 * 100) / 100
+                  : item.price,
               }))
             : [],
         };
@@ -170,63 +223,8 @@ export const getCategoriesWithPagination = async (
       },
     });
   } catch (error) {
-    console.error('Error in getCategoriesWithPagination:', error);
+    console.error("Error in getCategoriesWithPagination:", error);
     res.status(500).json({ error: "Server error" });
-  }
-};
-
-export const createCategoryWithImage = async (
-  req: MulterRequest,
-  res: Response
-): Promise<void> => {
-  try {
-    const {
-      name, description, itemName, points, price, measurement_unit,
-      nameAr, descriptionAr, itemNameAr
-    } = req.body;
-
-    // Create category with improved slug
-    const newCategory = new Category({
-      name,
-      description,
-      image: req.file?.path ?? "",
-      items: [
-        {
-          name: itemName,
-          slug: generateSlug(itemName), // Add slug for item too
-          image: req.file?.path ?? "",
-          points: Number(points),
-          price: Number(price),
-          measurement_unit,
-          categoryName: name
-        },
-      ],
-      slug: generateSlug(name) // Add slug for category
-    });
-
-    await newCategory.save();
-
-    // Create translations
-    await TranslationService.createCategoryTranslations(
-      name,
-      description,
-      nameAr,
-      descriptionAr,
-      newCategory._id.toString()
-    );
-
-    // Create item translation
-    const itemId = newCategory.items[0]._id?.toString();
-    await TranslationService.createItemTranslation(
-      itemName,
-      name,
-      itemNameAr,
-      itemId
-    );
-
-    res.status(201).json(newCategory);
-  } catch (err) {
-    res.status(400).json({ message: (err as Error).message });
   }
 };
 
@@ -236,50 +234,66 @@ export const updatedCategory = async (
 ): Promise<Response> => {
   try {
     const { categoryName } = req.params;
-    const { name, description, image: imageFromBody, nameAr, descriptionAr } = req.body;
+    const {
+      name,
+      description,
+      image: imageFromBody,
+      nameAr,
+      descriptionAr,
+    } = req.body;
     const imageFromFile = req.file?.path;
 
-    // Find by slug or name with URL decoding for slug matching
-    const decodedCategoryName = decodeURIComponent(categoryName);
+    // ✅ FIXED - Find by normalized name (categories should have normalized names in DB)
+    const normalizedSearchName = categoryName;
+
     const category = await Category.findOne({
       $or: [
-        { slug: categoryName }, // Try original (might be encoded)
-        { slug: decodedCategoryName }, // Try decoded
-        { name: { $regex: new RegExp(`^${decodedCategoryName}$`, 'i') } }
-      ]
+        { name: normalizedSearchName }, // Direct match with normalized name
+        { slug: normalizedSearchName }, // Slug should be same as name
+      ],
     });
 
     if (!category) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         message: "Category not found",
         searchedName: categoryName,
-        decodedName: decodedCategoryName,
-        suggestion: "Check if the category name is correct and try again"
+        normalizedSearch: normalizedSearchName,
       });
     }
+    Promise.all([
+      TranslationService.createOrUpdateTranslation(
+        `cat_${category.slug}_name`,
+        {
+          en: name,
+          ar: nameAr,
+        },
+        "category"
+      ),
+      TranslationService.createOrUpdateTranslation(
+        `cat_${category.slug}_desc`,
+        {
+          en: description,
+          ar: descriptionAr,
+        },
+        "category"
+      ),
+    ]);
 
-    // Store original values for translation updates
-    const originalValues = {
-      name: category.name,
-      description: category.description
-    };
-
-    // Handle English updates
-    if (name !== undefined) {
-      if (name !== category.name) {
-        category.name = name;
-        category.slug = generateSlug(name); // Update slug with new logic
-        
-        // Update category name in all items
-        category.items.forEach((item) => {
-          item.categoryName = name;
-        });
-      }
+    // Handle updates
+    if (name) {
+      // ✅ FIXED - Get normalized values for new name
+      await TranslationService.createOrUpdateTranslation(
+        `cat_${category.slug}_name`,
+        { en: name, ar: nameAr },
+        "category",
+        category.id
+      );
+      category.name = TranslationService.normalizeText(name);
+      category.slug = TranslationService.normalizeText(name);
+      await TranslationService.updateCategoryKeys(category.id, category.slug);
     }
 
-    if (description !== undefined) {
-      category.description = description;
-    }
+    if (description) category.description = description;
 
     // Handle image update
     if (imageFromFile) {
@@ -288,40 +302,17 @@ export const updatedCategory = async (
       category.image = imageFromBody;
     }
 
-    // Save the category updates first
     const updatedCategory = await category.save();
-
-    // Handle translations (only update provided fields)
-    const translationUpdates: Record<string, any> = {};
-    
-    if (nameAr !== undefined) {
-      translationUpdates['translations.ar.name'] = nameAr;
-    }
-    
-    if (descriptionAr !== undefined) {
-      translationUpdates['translations.ar.description'] = descriptionAr;
-    }
-
-    // Only update translations if there are changes
-    if (Object.keys(translationUpdates).length > 0) {
-      await TranslationService.createCategoryTranslations(
-        name !== undefined ? category.name : originalValues.name,
-        description !== undefined ? category.description : originalValues.description,
-        nameAr,
-        descriptionAr,
-        category._id.toString()
-      );
-    }
 
     return res.status(200).json({
       message: "Category updated successfully",
-      category: updatedCategory
+      category: updatedCategory,
     });
   } catch (err) {
     console.error("Update category error:", err);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: "Failed to update category",
-      error: (err as Error).message 
+      error: (err as Error).message,
     });
   }
 };
@@ -332,14 +323,10 @@ export const deleteCategory = async (
 ): Promise<void> => {
   try {
     const { categoryName } = req.params;
-    const decodedCategoryName = decodeURIComponent(categoryName);
-    
+    const normalizedName = categoryName;
+
     const deleted = await Category.findOneAndDelete({
-      $or: [
-        { name: decodedCategoryName },
-        { slug: categoryName },
-        { slug: decodedCategoryName }
-      ]
+      $or: [{ name: normalizedName }, { slug: normalizedName }],
     });
 
     if (!deleted) {
@@ -347,20 +334,20 @@ export const deleteCategory = async (
       return;
     }
 
-    // Clean up related translations
-    const nameKey = TranslationService.generateKey(deleted.name, 'cat', 'name');
-    const descKey = TranslationService.generateKey(deleted.name, 'cat', 'desc');
-    
+    // ✅ FIXED - Clean up translations using correct keys
+    const nameKey = `cat_${normalizedName}_name`;
+    const descKey = `cat_${normalizedName}_desc`;
+
     // Create array of item translation keys
-    const itemTranslationPromises = deleted.items.map(item => {
-      const itemKey = TranslationService.generateKey(`${deleted.name}_${item.name}`, 'item');
+    const itemTranslationPromises = deleted.items.map((item) => {
+      const itemKey = `item_${normalizedName}_${item.name}`;
       return Translation.deleteOne({ key: itemKey });
     });
 
     await Promise.all([
       Translation.deleteOne({ key: nameKey }),
       Translation.deleteOne({ key: descKey }),
-      ...itemTranslationPromises
+      ...itemTranslationPromises,
     ]);
 
     res.status(200).json({ message: "Category deleted successfully" });
@@ -375,30 +362,27 @@ export const getCategoryByName = async (
 ): Promise<void> => {
   try {
     const { categoryName } = req.params;
-    const language = req.query.lang as 'en' | 'ar' || 'en';
-    const decodedCategoryName = decodeURIComponent(categoryName);
+    const language = (req.query.lang as "en" | "ar") || "en";
+    const normalizedName = categoryName;
 
-    // Search by either slug or name with URL decoding
+    // ✅ FIXED - Search by normalized name
     const category = await Category.findOne({
-      $or: [
-        { slug: categoryName },
-        { slug: decodedCategoryName },
-        { name: decodedCategoryName }
-      ]
+      $or: [{ name: normalizedName }, { slug: normalizedName }],
     }).lean();
 
     if (!category) {
-      res.status(404).json({ 
+      res.status(404).json({
         message: "Category not found",
         searchedFor: categoryName,
-        decodedName: decodedCategoryName
+        normalizedSearch: normalizedName,
       });
       return;
     }
 
-    const finalCategory = language === 'en' 
-      ? category 
-      : (await TranslationService.translateCategories([category], language))[0];
+    // ✅ FIXED - Always translate
+    const finalCategory = (
+      await TranslationService.translateCategories([category], language)
+    )[0];
 
     res.status(200).json(finalCategory);
   } catch (err) {
@@ -406,48 +390,32 @@ export const getCategoryByName = async (
   }
 };
 
-export const migrateExistingSlugs = async (req: Request, res: Response): Promise<void> => {
+// ✅ FIXED - Migration function to use TranslationService
+export const migrateExistingSlugs = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
-    console.log('Starting slug migration...');
-    
-    const categories = await Category.find();
-    let updatedCount = 0;
-    
-    for (const category of categories) {
-      const newSlug = category.name.trim(); // New slug logic
-      
-      if (category.slug !== newSlug) {
-        console.log(`Updating "${category.name}": "${category.slug}" -> "${newSlug}"`);
-        
-        category.slug = newSlug;
-        
-        // Update item slugs too
-        if (category.items && category.items.length > 0) {
-          category.items.forEach(item => {
-            if (item.name) {
-              item.slug = item.name.trim();
-            }
-          });
-        }
-        
-        await category.save();
-        updatedCount++;
-      }
-    }
-    
-    res.json({ 
-      success: true, 
-      message: `Updated ${updatedCount} categories`,
-      updatedCount 
+    console.log("Starting normalization migration...");
+
+    // ✅ Use the TranslationService normalization method
+    await TranslationService.normalizeExistingData();
+
+    res.json({
+      success: true,
+      message:
+        "Migration completed - all data normalized using TranslationService",
     });
-    
   } catch (error) {
-    console.error('Migration failed:', error);
+    console.error("Migration failed:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
 
-export const seedMissingCategoryTranslations = async (req: Request, res: Response) => {
+export const seedMissingCategoryTranslations = async (
+  req: Request,
+  res: Response
+) => {
   try {
     const categories = await Category.find().lean();
     const createdKeys: string[] = [];
@@ -456,16 +424,17 @@ export const seedMissingCategoryTranslations = async (req: Request, res: Respons
     for (const category of categories) {
       if (!category.name) continue;
 
-      const nameKey = TranslationService.generateKey(category.name, 'cat', 'name');
-      const descKey = TranslationService.generateKey(category.name, 'cat', 'desc');
+      // ✅ FIXED - Use correct key format
+      const nameKey = `cat_${category.name}_name`;
+      const descKey = `cat_${category.name}_desc`;
 
       // Check if name translation exists
       const existingName = await Translation.findOne({ key: nameKey });
       if (!existingName) {
         await TranslationService.createOrUpdateTranslation(
           nameKey,
-          { en: category.name, ar: category.name }, // placeholder Arabic
-          'category',
+          { en: category.name, ar: category.name }, // Will be normalized by service
+          "category",
           category._id.toString()
         );
         createdKeys.push(nameKey);
@@ -478,8 +447,8 @@ export const seedMissingCategoryTranslations = async (req: Request, res: Respons
       if (!existingDesc) {
         await TranslationService.createOrUpdateTranslation(
           descKey,
-          { en: category.description || '', ar: category.description || '' },
-          'category',
+          { en: category.description || "", ar: category.description || "" },
+          "category",
           category._id.toString()
         );
         createdKeys.push(descKey);
@@ -490,82 +459,77 @@ export const seedMissingCategoryTranslations = async (req: Request, res: Respons
 
     return res.json({
       success: true,
-      message: 'Category translations seeding complete.',
+      message: "Category translations seeding complete.",
       createdKeys,
-      skippedKeys
+      skippedKeys,
     });
   } catch (err) {
-    console.error('Error seeding category translations:', err);
-    return res.status(500).json({ success: false, error: 'Internal server error' });
+    console.error("Error seeding category translations:", err);
+    return res
+      .status(500)
+      .json({ success: false, error: "Internal server error" });
   }
 };
 
-
-
-export const getCategoryByNameForAdmin = async (req: Request, res: Response) => {
+export const getCategoryByNameForAdmin = async (
+  req: Request,
+  res: Response
+) => {
   try {
     const rawName = req.params.categoryName;
-    const decodedName = decodeURIComponent(rawName)
-      .normalize('NFC')
-      .trim()
-      .replace(/\s+/g, ' ');
+    const normalizedName = TranslationService.normalizeText(
+      decodeURIComponent(rawName)
+    );
 
-    console.log('Searching for category name:', decodedName);
+    console.log("Searching for category name:", normalizedName);
 
-    // First find translation documents that match the name
-    const translationDocs = await Translation.find({
-      $or: [
-        { 'translations.ar': decodedName }, // Match Arabic translation
-        { 'translations.en': decodedName }, // Match English translation
-      ],
-      key: { $regex: /_name$/ } // Only look at name fields (not descriptions)
-    });
+    // ✅ FIXED - Search translations using normalized text matching
+    const translationDoc = await TranslationService.getTheRightTrnslation(
+      rawName,
+      "category"
+    );
 
-    if (!translationDocs || translationDocs.length === 0) {
+    if (!translationDoc) {
       return res.status(404).json({
-        message: 'Category translation not found',
-        searchedFor: decodedName,
+        message: "Category translation not found",
+        searchedFor: rawName,
+        normalizedSearch: normalizedName,
       });
     }
 
-    // Get all reference IDs from matching translations
-    const categoryIds = translationDocs.map(doc => doc.referenceId);
+    // Find the actual category using the reference ID
+    const category = await Category.findById(translationDoc.referenceId);
 
-    // Find the actual categories using these IDs
-    const categories = await Category.find({
-      _id: { $in: categoryIds }
-    });
-
-    if (!categories || categories.length === 0) {
+    if (!category) {
       return res.status(404).json({
-        message: 'Categories not found for matching translations',
-        searchedFor: decodedName,
-        translationMatches: translationDocs
+        message: "Category not found for matching translation",
+        translationMatch: translationDoc,
       });
     }
 
     res.status(200).json({
       success: true,
-      data: categories,
+      data: category,
     });
   } catch (err) {
-    console.error('getCategoryByName error:', err);
+    console.error("getCategoryByNameForAdmin error:", err);
     res.status(500).json({ message: (err as Error).message });
   }
 };
-// New endpoints for translation management
+
+// Keep existing translation management endpoints...
 export const getTranslations = async (
   req: Request,
   res: Response
 ): Promise<void> => {
   try {
-    const language = req.query.lang as 'en' | 'ar' || 'en';
+    const language = (req.query.lang as "en" | "ar") || "en";
     const translations = await TranslationService.getTranslations(language);
-    
+
     res.json({
       success: true,
       data: translations,
-      language
+      language,
     });
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
@@ -578,10 +542,10 @@ export const getMissingTranslations = async (
 ): Promise<void> => {
   try {
     const missing = await TranslationService.getMissingTranslations();
-    
+
     res.json({
       success: true,
-      data: missing
+      data: missing,
     });
   } catch (err) {
     res.status(500).json({ message: (err as Error).message });
@@ -604,75 +568,89 @@ export const createTranslation = async (
 
     res.status(201).json({
       success: true,
-      data: translation
+      data: translation,
     });
   } catch (err) {
     res.status(400).json({ message: (err as Error).message });
   }
 };
 
-export const checkCurrentTranslations = async (req: Request, res: Response): Promise<void> => {
+export const checkCurrentTranslations = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const allTranslations = await Translation.find().lean();
-    
+
     res.json({
       total: allTranslations.length,
-      translations: allTranslations.map(t => ({
+      translations: allTranslations.map((t) => ({
         key: t.key,
         en: t.translations.en,
         ar: t.translations.ar,
-        type: t.type
-      }))
+        type: t.type,
+      })),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// Debug endpoint to test translation service
-export const debugTranslations = async (req: Request, res: Response): Promise<void> => {
+export const debugTranslations = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
-    const language = req.query.lang as 'en' | 'ar' || 'en';
-    const testCategoryName = req.query.category as string || 'Electronics';
-    
-    console.log('=== Debug Translations ===');
-    console.log('Language:', language);
-    console.log('Test category:', testCategoryName);
-    
-    // Test generateKey
-    const nameKey = TranslationService.generateKey(testCategoryName, 'cat', 'name');
-    console.log('Generated key:', nameKey);
-    
-    // Test getTranslations
+    const language = (req.query.lang as "en" | "ar") || "en";
+    const testCategoryName = (req.query.category as string) || "Electronics";
+
+    console.log("=== Debug Translations ===");
+    console.log("Language:", language);
+    console.log("Test category:", testCategoryName);
+
+    // ✅ FIXED - Use correct key format
+    const normalizedName = TranslationService.normalizeText(testCategoryName);
+    const nameKey = `cat_${normalizedName}_name`;
+    console.log("Generated key:", nameKey);
+
     const translations = await TranslationService.getTranslations(language);
-    console.log('Total translations found:', Object.keys(translations).length);
-    console.log('Translation for test key:', translations[nameKey]);
-    
-    // Test with actual categories
+    console.log("Total translations found:", Object.keys(translations).length);
+    console.log("Translation for test key:", translations[nameKey]);
+
     const categories = await Category.find().limit(3).lean();
-    console.log('Sample categories:', categories.map(c => c.name));
-    
-    const translatedCategories = await TranslationService.translateCategories(categories, language);
-    console.log('Translated categories:', translatedCategories.map(c => ({ 
-      original: c.originalName, 
-      translated: c.name 
-    })));
-    
+    console.log(
+      "Sample categories:",
+      categories.map((c) => c.name)
+    );
+
+    const translatedCategories = await TranslationService.translateCategories(
+      categories,
+      language
+    );
+    console.log(
+      "Translated categories:",
+      translatedCategories.map((c) => ({
+        name: c.name,
+        displayName: c.displayName,
+      }))
+    );
+
     res.json({
       language,
       testCategory: testCategoryName,
+      normalizedName,
       generatedKey: nameKey,
       translationFound: !!translations[nameKey],
       translationValue: translations[nameKey],
       totalTranslations: Object.keys(translations).length,
-      sampleCategories: categories.map(c => c.name),
-      translatedSample: translatedCategories.map(c => ({ 
-        original: c.originalName, 
-        translated: c.name 
-      }))
+      sampleCategories: categories.map((c) => c.name),
+      translatedSample: translatedCategories.map((c) => ({
+        name: c.name,
+        displayName: c.displayName,
+      })),
     });
   } catch (error) {
-    console.error('Debug translations error:', error);
+    console.error("Debug translations error:", error);
     res.status(500).json({ error: error.message });
   }
 };

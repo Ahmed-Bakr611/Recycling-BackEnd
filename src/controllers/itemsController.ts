@@ -15,13 +15,10 @@ interface TranslatedMulterRequest extends MulterRequest {
   language?: "en" | "ar";
 }
 
-// Helper function to generate slug that matches English name exactly (preserving spaces and original format)
+// Helper function to generate slug that matches the normalized format
 const generateSlug = (name: string): string => {
   if (!name || typeof name !== "string") return "";
-
-  // Keep the name exactly as it is, just trim whitespace
-  // This preserves spaces, capitalization, and keeps the original format
-  return name.trim();
+  return TranslationService.normalizeText(name);
 };
 
 // ======================== ITEM ========================
@@ -40,14 +37,12 @@ export const getAllItems = async (req: any, res: Response): Promise<void> => {
     let matchStage = {};
 
     if (categoryName && categoryName !== "all") {
-      const decodedCategoryName = decodeURIComponent(categoryName);
+      // Normalize the category name for consistent matching
+      const normalizedCategory = TranslationService.normalizeText(
+        decodeURIComponent(categoryName)
+      );
       matchStage = {
-        $or: [
-          { name: categoryName },
-          { name: decodedCategoryName },
-          { slug: categoryName },
-          { slug: decodedCategoryName },
-        ],
+        $or: [{ name: normalizedCategory }, { slug: normalizedCategory }],
       };
     }
 
@@ -83,61 +78,64 @@ export const getAllItems = async (req: any, res: Response): Promise<void> => {
     ])) as Array<Record<string, any>>;
 
     console.log("Found items count:", items.length);
-    console.log(
-      "Sample item names:",
-      items.map((i) => i.name)
-    );
 
-    // 3. Apply translations if language is Arabic AND we have items
-    if (language === "ar" && items.length > 0) {
-      console.log("Starting Arabic translation for items...");
-
+    // 3. Apply translations using your translation service
+    if (items.length > 0) {
       try {
-        const translations = await TranslationService.getTranslations(language);
-        console.log(
-          `Retrieved ${Object.keys(translations).length} translations`
-        );
+        // Get all unique categories for translation
+        const uniqueCategories = await Category.find({
+          _id: { $in: items.map((item) => item.categoryId) },
+        }).lean();
 
+        // Use your translation service
+        const translatedCategories =
+          await TranslationService.translateCategories(
+            uniqueCategories,
+            language
+          );
+
+        // Create lookup maps
+        const categoryMap = new Map();
+        const itemMap = new Map();
+
+        translatedCategories.forEach((cat) => {
+          categoryMap.set(cat._id.toString(), {
+            name: cat.name,
+            displayName: cat.displayName || cat.name,
+          });
+
+          if (cat.items) {
+            cat.items.forEach((item) => {
+              if (item._id) {
+                itemMap.set(item._id.toString(), {
+                  name: item.name,
+                  displayName: item.displayName || item.name,
+                });
+              }
+            });
+          }
+        });
+
+        // Apply translations to items
         items = items.map((item) => {
-          // Translate item name
-          const itemKey = TranslationService.generateKey(
-            `${item.categoryName}_${item.name}`,
-            "item"
-          );
-          const translatedItemName = translations[itemKey] || item.name;
-
-          // Translate category name
-          const categoryNameKey = TranslationService.generateKey(
-            item.categoryName,
-            "cat",
-            "name"
-          );
-          const translatedCategoryName =
-            translations[categoryNameKey] || item.categoryName;
-
-          console.log(
-            `Translating item: ${item.name} -> ${translatedItemName}`
-          );
+          const categoryInfo = categoryMap.get(item.categoryId?.toString());
+          const itemInfo = itemMap.get(item._id?.toString());
 
           return {
             ...item,
-            name: translatedItemName,
-            categoryName: translatedCategoryName,
+            name: item.name, // Keep normalized name
+            displayName: itemInfo?.displayName || item.name, // Add display name
+            categoryName: item.categoryName, // Keep normalized category name
+            categoryDisplayName: categoryInfo?.displayName || item.categoryName, // Add category display name
           };
         });
 
-        console.log("Item translation completed");
+        console.log(
+          "Translation completed using normalized TranslationService"
+        );
       } catch (translationError) {
-        console.error("Item translation failed:", translationError);
-        // Continue with original items if translation fails
+        console.error("Translation failed:", translationError);
       }
-    } else {
-      console.log(
-        "Skipping translation - language:",
-        language,
-        "items:",
-        items.length
-      );
     }
 
     // 4. Adjust price if role is buyer
@@ -167,56 +165,44 @@ export const getItems = async (req: Request, res: Response) => {
 
     console.log("=== getItems Debug ===");
     console.log("Raw param:", rawName);
-    console.log("Decoded param:", rawName);
     console.log("Language requested:", language);
 
     let category: any = null;
 
-    if (language === "ar") {
-      // Step 1: Try to find translation first
-      const translationRecord =
-        await TranslationService.findCategoryTranslationByLang(rawName, "ar");
-      console.log(
-        "---------------CATGEORY TRANSLATION------------------------"
+    // Use your translation service to find the right category
+    const translationRecord = await TranslationService.getTheRightTrnslation(
+      rawName,
+      "category"
+    );
+
+    if (translationRecord?.referenceId) {
+      category = await Category.findById(translationRecord.referenceId).slice(
+        "items",
+        [skip, limit]
       );
-      console.log(translationRecord);
-      console.log("😢😢😢😢😢😢😢😢😢😢😢");
-      if (translationRecord?.referenceId) {
-        category = await Category.findById(translationRecord.referenceId).slice(
-          "items",
-          [skip, limit]
-        );
-        console.log(
-          `Category found by referenceId: ${translationRecord.referenceId}`
-        );
-      } else {
-        console.log(`No translation found for "${rawName}"`);
-      }
+      console.log(
+        `Category found by translation referenceId: ${translationRecord.referenceId}`
+      );
     }
 
-    // Step 2: Fallback to original name or slug if no translation
+    // Fallback to normalized search
     if (!category) {
+      const normalizedName = TranslationService.normalizeText(rawName);
       category = await Category.findOne({
-        $or: [
-          { name: rawName },
-          { slug: rawName },
-          { slug: encodeURIComponent(rawName) }, // Try encoded version too
-        ],
+        $or: [{ name: normalizedName }, { slug: normalizedName }],
       }).slice("items", [skip, limit]);
       console.log(
-        `Category found by name/slug: ${category ? category._id : "NOT FOUND"}`
+        `Category found by normalized name: ${
+          category ? category._id : "NOT FOUND"
+        }`
       );
     }
 
     if (!category) {
       console.log("Category not found");
-      return res
-        .status(404)
-        .json({ message: "Category not found", searchedFor: rawName });
       return res.status(404).json({
         message: "Category not found",
         searchedFor: rawName,
-        encodedSearchTerm: encodeURIComponent(rawName),
       });
     }
 
@@ -233,15 +219,60 @@ export const getItems = async (req: Request, res: Response) => {
         }))
       : [];
 
-    // Translate category & items if Arabic
-    if (language === "ar" && items.length > 0) {
-      console.log("Translating items to Arabic...");
-      const translated = await TranslationService.translateCategories(
-        [{ ...category.toObject(), items }],
-        "ar"
+    // Get translated category name for the correct language
+    let translatedCategoryName = category.name; // Default to normalized name
+    try {
+      translatedCategoryName = await TranslationService.getCategoryTranslation(
+        category.name, // normalized category name
+        language
       );
-      items = translated[0].items;
-      console.log("Translation completed for items");
+      console.log(
+        `Category translation: ${category.name} -> ${translatedCategoryName}`
+      );
+    } catch (translationError) {
+      console.error("Category translation failed:", translationError);
+    }
+
+    // Translate items if needed
+    if (items.length > 0) {
+      try {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+
+          // Get translated item name
+          const translatedItemName =
+            await TranslationService.getItemTranslation(
+              item.name, // normalized item name
+              category.name, // normalized category name
+              language
+            );
+
+          // Update item with translations
+          items[i] = {
+            ...item,
+            categoryName: translatedCategoryName, // Keep normalized name for consistency
+            categorySlug: category.slug,
+            // Translated category name for UI
+            name: translatedItemName, // Translated item name for UI
+          };
+
+          console.log(
+            `Item translation: ${item.name} -> ${translatedItemName}`
+          );
+        }
+
+        console.log(
+          "Item translation completed using TranslationService methods"
+        );
+      } catch (translationError) {
+        console.error("Item translation failed:", translationError);
+        // Add fallback display names if translation fails
+        items = items.map((item) => ({
+          ...item,
+          categoryName: translatedCategoryName,
+          name: item.name,
+        }));
+      }
     }
 
     // Adjust price for buyers
@@ -289,12 +320,12 @@ export const addItem = async (
       return;
     }
 
-    // Generate slug for the new item using improved logic
-    const itemSlug = generateSlug(itemName);
+    // Generate normalized slug for the item
+    const normalizedItemName = TranslationService.normalizeText(itemName);
 
     const item = {
-      name: itemName,
-      slug: itemSlug,
+      name: normalizedItemName, // Store normalized name in database
+      slug: normalizedItemName, // Same as name
       image: req.file.path,
       points: Number(points),
       price: Number(price),
@@ -302,14 +333,13 @@ export const addItem = async (
       measurement_unit: Number(measurement_unit),
     };
 
-    // Find category by name or slug
-    const decodedCategoryName = decodeURIComponent(categoryName);
+    // Find category by normalized name
+    const normalizedCategoryName = categoryName;
     const updatedCategory = await Category.findOneAndUpdate(
       {
         $or: [
-          { name: decodedCategoryName },
-          { slug: categoryName },
-          { slug: decodedCategoryName },
+          { name: normalizedCategoryName },
+          { slug: normalizedCategoryName },
         ],
       },
       { $push: { items: item } },
@@ -320,31 +350,29 @@ export const addItem = async (
       res.status(404).json({
         message: "Category not found",
         searchedFor: categoryName,
-        decodedName: decodedCategoryName,
+        normalizedName: normalizedCategoryName,
       });
       return;
     }
 
-    // Create translation for the new item (only if Arabic translation provided)
+    // Create translation using your translation service
     if (itemNameAr) {
       try {
         const newItem = updatedCategory.items[updatedCategory.items.length - 1];
-        console.log("Creating item translation...");
-        const itemKey = await TranslationService.createItemTranslation(
-          itemName,
-          updatedCategory.name, // Use actual category name
-          itemNameAr,
-          newItem._id?.toString()
-        );
-        console.log(`Item translation created with key: ${itemKey}`);
+
+        // Use your translation service method
+        const translationResult =
+          await TranslationService.createItemTranslation(
+            itemName, // Display name (original format)
+            updatedCategory.name, // Category normalized name (already normalized in DB)
+            itemNameAr, // Arabic display name
+            newItem._id?.toString()
+          );
+
+        console.log(`Item translation created:`, translationResult);
       } catch (translationError) {
         console.error("Error creating item translation:", translationError);
-        // Don't fail the request if translation creation fails
       }
-    } else {
-      console.log(
-        "No Arabic translation provided for item, skipping translation creation"
-      );
     }
 
     res.status(200).json(updatedCategory);
@@ -363,28 +391,24 @@ export const updateItem = async (
     const { name, points, price, measurement_unit, quantity, nameAr } =
       req.body;
     const image = req.file?.path;
-    const decodedCategoryName = decodeURIComponent(categoryName);
+    const normalizedCategoryName = categoryName;
 
     console.log("Updating item with data:", {
       name,
       nameAr,
-      categoryName: decodedCategoryName,
+      normalizedCategoryName,
       itemId,
     });
 
     const category = await Category.findOne({
-      $or: [
-        { name: { $regex: new RegExp(`^${decodedCategoryName}$`, "i") } },
-        { slug: categoryName },
-        { slug: decodedCategoryName },
-      ],
+      $or: [{ name: normalizedCategoryName }, { slug: normalizedCategoryName }],
     });
 
     if (!category) {
       res.status(404).json({
         message: "Category not found",
         searchedFor: categoryName,
-        decodedName: decodedCategoryName,
+        normalizedName: normalizedCategoryName,
       });
       return;
     }
@@ -395,12 +419,25 @@ export const updateItem = async (
       return;
     }
 
-    const oldItemName = item.name;
+    await TranslationService.createOrUpdateTranslation(
+      item.slug,
+      {
+        en: name,
+        ar: nameAr,
+      },
+      "item"
+    );
 
-    // Update item properties
+    // Update item properties with normalized values
     if (name) {
-      item.name = name;
-      item.slug = generateSlug(name); // Update slug when name changes
+      const normalizedItemName = TranslationService.normalizeText(name);
+      item.name = normalizedItemName; // Store normalized name
+      item.slug = normalizedItemName; // Same as name
+      await Translation.findOneAndUpdate(
+        { referenceId: item.id },
+        { key: normalizedItemName },
+        { new: true }
+      );
     }
     if (points) item.points = Number(points);
     if (price) item.price = Number(price);
@@ -418,25 +455,21 @@ export const updateItem = async (
 
     await category.save();
 
-    // Update translation if Arabic translation provided
-    if (nameAr) {
+    // Update translation using your translation service
+    if (nameAr && name) {
       try {
-        console.log("Updating item translation...");
-        const itemKey = await TranslationService.createItemTranslation(
-          name || oldItemName,
-          category.name,
-          nameAr,
-          itemId
-        );
-        console.log(`Item translation updated with key: ${itemKey}`);
+        const translationResult =
+          await TranslationService.createItemTranslation(
+            name, // Display name (original format)
+            category.name, // Category normalized name (already normalized in DB)
+            nameAr, // Arabic display name
+            itemId
+          );
+
+        console.log(`Item translation updated:`, translationResult);
       } catch (translationError) {
         console.error("Error updating item translation:", translationError);
-        // Don't fail the request if translation update fails
       }
-    } else {
-      console.log(
-        "No Arabic translation provided for update, skipping translation update"
-      );
     }
 
     res.status(200).json({ message: "Item updated successfully", item });
@@ -452,21 +485,17 @@ export const deleteItem = async (
 ): Promise<void> => {
   try {
     const { categoryName, itemId } = req.params;
-    const decodedCategoryName = decodeURIComponent(categoryName);
+    const normalizedCategoryName = categoryName;
 
     const category = await Category.findOne({
-      $or: [
-        { name: decodedCategoryName },
-        { slug: categoryName },
-        { slug: decodedCategoryName },
-      ],
+      $or: [{ name: normalizedCategoryName }, { slug: normalizedCategoryName }],
     });
 
     if (!category) {
       res.status(404).json({
         message: "Category not found",
         searchedFor: categoryName,
-        decodedName: decodedCategoryName,
+        normalizedName: normalizedCategoryName,
       });
       return;
     }
@@ -477,17 +506,14 @@ export const deleteItem = async (
       return;
     }
 
-    const itemName = item.name;
+    const itemNormalizedName = item.name; // Should already be normalized in DB
 
     category.items.pull(itemId);
     await category.save();
 
-    // Clean up item translation
+    // Clean up translation
     try {
-      const itemKey = TranslationService.generateKey(
-        `${category.name}_${itemName}`,
-        "item"
-      );
+      const itemKey = `item_${category.name}_${itemNormalizedName}`;
       await Translation.deleteOne({ key: itemKey });
       console.log(`Deleted translation for item key: ${itemKey}`);
     } catch (translationError) {
@@ -504,99 +530,95 @@ export const deleteItem = async (
   }
 };
 
-// Get item by name (preserves existing functionality)
+// Helper function to get single item with translation using your service
+const getSingleItemWithTranslation = async (
+  category: any,
+  item: any,
+  language: "en" | "ar"
+) => {
+  let itemResponse = {
+    ...item.toObject(),
+    categoryName: category.name, // Normalized name
+    categorySlug: category.slug,
+    categoryId: category._id,
+  };
+
+  try {
+    const categoryWithItems = {
+      ...category.toObject(),
+      items: [item],
+    };
+
+    const translatedCategories = await TranslationService.translateCategories(
+      [categoryWithItems],
+      language
+    );
+
+    if (translatedCategories[0]?.items?.[0]) {
+      const translatedItem = translatedCategories[0].items[0];
+      const translatedCategory = translatedCategories[0];
+
+      itemResponse = {
+        ...itemResponse,
+        name: item.name, // Keep normalized name
+        displayName: translatedItem.displayName || item.name, // Add display name
+        categoryName: category.name, // Keep normalized name
+        categoryDisplayName: translatedCategory.displayName || category.name, // Add category display name
+      };
+    }
+  } catch (translationError) {
+    console.error("Single item translation failed:", translationError);
+  }
+
+  return itemResponse;
+};
+
 export const getItemByName = async (req: any, res: Response): Promise<void> => {
   try {
     const { categoryName, itemName } = req.params;
     const language = (req.query.lang as "en" | "ar") || req.language || "en";
-    const decodedCategoryName = decodeURIComponent(categoryName);
-    const decodedItemName = decodeURIComponent(itemName);
+    const normalizedCategoryName = categoryName;
+    const normalizedItemName = TranslationService.normalizeText(
+      decodeURIComponent(itemName)
+    );
 
     console.log("=== getItemByName Debug ===");
-    console.log("Category:", decodedCategoryName, "ItemName:", decodedItemName);
+    console.log("Normalized category:", normalizedCategoryName);
+    console.log("Normalized item:", normalizedItemName);
     console.log("Language requested:", language);
 
-    // Find category by name or slug
     const category = await Category.findOne({
-      $or: [
-        { name: decodedCategoryName },
-        { slug: categoryName },
-        { slug: decodedCategoryName },
-      ],
+      $or: [{ name: normalizedCategoryName }, { slug: normalizedCategoryName }],
     });
 
     if (!category) {
       res.status(404).json({
         message: "Category not found",
         searchedFor: categoryName,
-        decodedName: decodedCategoryName,
+        normalizedName: normalizedCategoryName,
       });
       return;
     }
 
-    // Find item by name
     const item = category.items.find(
-      (item: any) => item.name === decodedItemName
+      (item: any) =>
+        item.name === normalizedItemName || item.slug === normalizedItemName
     );
 
     if (!item) {
       res.status(404).json({
         message: "Item not found",
         searchedFor: itemName,
-        decodedName: decodedItemName,
+        normalizedName: normalizedItemName,
       });
       return;
     }
 
-    let itemResponse = {
-      ...item.toObject(),
-      categoryName: category.name,
-      categorySlug: category.slug,
-      categoryId: category._id,
-    };
-
-    // Apply translations if language is Arabic
-    if (language === "ar") {
-      console.log("Starting Arabic translation for single item...");
-
-      try {
-        const translations = await TranslationService.getTranslations(language);
-
-        // Translate item name
-        const itemKey = TranslationService.generateKey(
-          `${category.name}_${item.name}`,
-          "item"
-        );
-        const translatedItemName = translations[itemKey] || item.name;
-
-        // Translate category name
-        const categoryNameKey = TranslationService.generateKey(
-          category.name,
-          "cat",
-          "name"
-        );
-        const translatedCategoryName =
-          translations[categoryNameKey] || category.name;
-
-        console.log(
-          `Translating single item: ${item.name} -> ${translatedItemName}`
-        );
-
-        itemResponse = {
-          ...itemResponse,
-          name: translatedItemName,
-          categoryName: translatedCategoryName,
-        };
-
-        console.log("Single item translation completed");
-      } catch (translationError) {
-        console.error("Single item translation failed:", translationError);
-        // Continue with original item if translation fails
-      }
-    } else {
-      console.log("Skipping translation for single item - language:", language);
-    }
-
+    const itemResponse = await getSingleItemWithTranslation(
+      category,
+      item,
+      language
+    );
     res.status(200).json(itemResponse);
   } catch (err) {
     console.error("getItemByName error:", err);
@@ -604,99 +626,52 @@ export const getItemByName = async (req: any, res: Response): Promise<void> => {
   }
 };
 
-// Get item by slug (new functionality)
 export const getItemBySlug = async (req: any, res: Response): Promise<void> => {
   try {
     const { categoryName, itemSlug } = req.params;
     const language = (req.query.lang as "en" | "ar") || req.language || "en";
-    const decodedCategoryName = decodeURIComponent(categoryName);
-    const decodedItemSlug = decodeURIComponent(itemSlug);
+    const normalizedCategoryName = categoryName;
+    const normalizedItemSlug = TranslationService.normalizeText(
+      decodeURIComponent(itemSlug)
+    );
 
     console.log("=== getItemBySlug Debug ===");
-    console.log("Category:", decodedCategoryName, "ItemSlug:", decodedItemSlug);
+    console.log("Normalized category:", normalizedCategoryName);
+    console.log("Normalized item slug:", normalizedItemSlug);
     console.log("Language requested:", language);
 
-    // Find category by name or slug
     const category = await Category.findOne({
-      $or: [
-        { name: decodedCategoryName },
-        { slug: categoryName },
-        { slug: decodedCategoryName },
-      ],
+      $or: [{ name: normalizedCategoryName }, { slug: normalizedCategoryName }],
     });
 
     if (!category) {
       res.status(404).json({
         message: "Category not found",
         searchedFor: categoryName,
-        decodedName: decodedCategoryName,
+        normalizedName: normalizedCategoryName,
       });
       return;
     }
 
-    // Find item by slug (try both encoded and decoded versions)
     const item = category.items.find(
-      (item: any) => item.slug === itemSlug || item.slug === decodedItemSlug
+      (item: any) =>
+        item.slug === normalizedItemSlug || item.name === normalizedItemSlug
     );
 
     if (!item) {
       res.status(404).json({
         message: "Item not found",
         searchedFor: itemSlug,
-        decodedSlug: decodedItemSlug,
+        normalizedSlug: normalizedItemSlug,
       });
       return;
     }
 
-    let itemResponse = {
-      ...item.toObject(),
-      categoryName: category.name,
-      categorySlug: category.slug,
-      categoryId: category._id,
-    };
-
-    // Apply translations if language is Arabic
-    if (language === "ar") {
-      console.log("Starting Arabic translation for single item...");
-
-      try {
-        const translations = await TranslationService.getTranslations(language);
-
-        // Translate item name
-        const itemKey = TranslationService.generateKey(
-          `${category.name}_${item.name}`,
-          "item"
-        );
-        const translatedItemName = translations[itemKey] || item.name;
-
-        // Translate category name
-        const categoryNameKey = TranslationService.generateKey(
-          category.name,
-          "cat",
-          "name"
-        );
-        const translatedCategoryName =
-          translations[categoryNameKey] || category.name;
-
-        console.log(
-          `Translating single item: ${item.name} -> ${translatedItemName}`
-        );
-
-        itemResponse = {
-          ...itemResponse,
-          name: translatedItemName,
-          categoryName: translatedCategoryName,
-        };
-
-        console.log("Single item translation completed");
-      } catch (translationError) {
-        console.error("Single item translation failed:", translationError);
-        // Continue with original item if translation fails
-      }
-    } else {
-      console.log("Skipping translation for single item - language:", language);
-    }
-
+    const itemResponse = await getSingleItemWithTranslation(
+      category,
+      item,
+      language
+    );
     res.status(200).json(itemResponse);
   } catch (err) {
     console.error("getItemBySlug error:", err);
@@ -704,30 +679,26 @@ export const getItemBySlug = async (req: any, res: Response): Promise<void> => {
   }
 };
 
-// Keep the original getItemById for backward compatibility
 export const getItemById = async (req: any, res: Response): Promise<void> => {
   try {
     const { categoryName, itemId } = req.params;
     const language = (req.query.lang as "en" | "ar") || req.language || "en";
-    const decodedCategoryName = decodeURIComponent(categoryName);
+    const normalizedCategoryName = categoryName;
 
     console.log("=== getItemById Debug ===");
-    console.log("Category:", decodedCategoryName, "ItemId:", itemId);
+    console.log("Normalized category:", normalizedCategoryName);
+    console.log("ItemId:", itemId);
     console.log("Language requested:", language);
 
     const category = await Category.findOne({
-      $or: [
-        { name: decodedCategoryName },
-        { slug: categoryName },
-        { slug: decodedCategoryName },
-      ],
+      $or: [{ name: normalizedCategoryName }, { slug: normalizedCategoryName }],
     });
 
     if (!category) {
       res.status(404).json({
         message: "Category not found",
         searchedFor: categoryName,
-        decodedName: decodedCategoryName,
+        normalizedName: normalizedCategoryName,
       });
       return;
     }
@@ -738,55 +709,11 @@ export const getItemById = async (req: any, res: Response): Promise<void> => {
       return;
     }
 
-    let itemResponse = {
-      ...item.toObject(),
-      categoryName: category.name,
-      categorySlug: category.slug,
-      categoryId: category._id,
-    };
-
-    // Apply translations if language is Arabic
-    if (language === "ar") {
-      console.log("Starting Arabic translation for single item...");
-
-      try {
-        const translations = await TranslationService.getTranslations(language);
-
-        // Translate item name
-        const itemKey = TranslationService.generateKey(
-          `${category.name}_${item.name}`,
-          "item"
-        );
-        const translatedItemName = translations[itemKey] || item.name;
-
-        // Translate category name
-        const categoryNameKey = TranslationService.generateKey(
-          category.name,
-          "cat",
-          "name"
-        );
-        const translatedCategoryName =
-          translations[categoryNameKey] || category.name;
-
-        console.log(
-          `Translating single item: ${item.name} -> ${translatedItemName}`
-        );
-
-        itemResponse = {
-          ...itemResponse,
-          name: translatedItemName,
-          categoryName: translatedCategoryName,
-        };
-
-        console.log("Single item translation completed");
-      } catch (translationError) {
-        console.error("Single item translation failed:", translationError);
-        // Continue with original item if translation fails
-      }
-    } else {
-      console.log("Skipping translation for single item - language:", language);
-    }
-
+    const itemResponse = await getSingleItemWithTranslation(
+      category,
+      item,
+      language
+    );
     res.status(200).json(itemResponse);
   } catch (err) {
     console.error("getItemById error:", err);
@@ -794,7 +721,6 @@ export const getItemById = async (req: any, res: Response): Promise<void> => {
   }
 };
 
-// Check current item translations (debugging helper)
 export const checkItemTranslations = async (
   req: Request,
   res: Response
