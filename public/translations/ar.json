@@ -1,0 +1,13 @@
+{
+  "categories": {
+    "paperr": {
+      "name": "categories.paper only.name",
+      "description": "categories.paper only.description"
+    },
+    "test": {
+      "name": " بجررب",
+      "description": "تيست"
+    }
+  },
+  "items": {}
+}

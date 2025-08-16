@@ -5,7 +5,7 @@ import {
   getAllCategories,
   createCategoryWithImage,
   deleteCategory,
-  updatedCategory,
+  updateCategory,
   getCategoryByName,
   getCategoriesWithPagination,
 } from "../controllers/categoryController";
@@ -14,6 +14,7 @@ import {
   deleteItem,
   getAllItems,
   getItems,
+  migrateToBilingual,
   updateItem,
 } from "../controllers/itemsController";
 import {
@@ -37,6 +38,7 @@ export default (router: express.Router) => {
     uploadCategory.single("image"),
     createCategory
   );
+  router.post('/migrate',migrateToBilingual)
   router.get("/categories", paginate(), getCategoriesWithPagination);
   router.post(
     "/categories/with-image",
@@ -66,7 +68,7 @@ export default (router: express.Router) => {
     authorize(["admin"]),
     uploadCategory.single("image"),
     handleMulterError,
-    updatedCategory
+    updateCategory
   );
   router.delete(
     "/categories/:categoryName",

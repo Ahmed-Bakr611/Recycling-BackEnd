@@ -1,10 +1,22 @@
 import mongoose, { Schema, Document, Types } from "mongoose";
 
+// Interface for bilingual text support
+export interface IBilingualText {
+  en: string;
+  ar: string;
+}
+
+// Schema for bilingual text
+const bilingualTextSchema = new Schema<IBilingualText>({
+  en: { type: String, required: true },
+  ar: { type: String, required: true }
+}, { _id: false });
+
 export interface ICartItem {
   _id?: string;
   categoryId: string;
-  categoryName: string;
-  name: string;
+  categoryName: IBilingualText; // Now bilingual
+  name: IBilingualText; // Now bilingual
   image: string;
   points: number;
   price: number;
@@ -16,17 +28,26 @@ export interface ICart extends Document {
   userId?: Types.ObjectId;
   sessionId?: string;
   items: ICartItem[];
+  // Helper methods
+  getDisplayName(itemIndex: number, language?: 'en' | 'ar'): string;
+  getDisplayCategoryName(itemIndex: number, language?: 'en' | 'ar'): string;
 }
 
 const cartItemSchema = new Schema<ICartItem>(
   {
     _id: { type: String, required: false },
     categoryId: { type: String, required: true },
-    name: { type: String, required: true },
+    name: {
+      type: bilingualTextSchema,
+      required: true
+    },
     image: { type: String, required: false },
     points: { type: Number, required: true },
     price: { type: Number, required: true },
-    categoryName: { type: String, required: true },
+    categoryName: {
+      type: bilingualTextSchema,
+      required: true
+    },
     measurement_unit: { type: Number, required: true },
     quantity: {
       type: Number,
@@ -71,6 +92,17 @@ const cartSchema = new Schema<ICart>(
   },
   { timestamps: true }
 );
+
+// Helper methods for language support
+cartSchema.methods.getDisplayName = function(itemIndex: number, language: 'en' | 'ar' = 'en'): string {
+  if (!this.items[itemIndex] || !this.items[itemIndex].name) return '';
+  return this.items[itemIndex].name[language] || this.items[itemIndex].name.en;
+};
+
+cartSchema.methods.getDisplayCategoryName = function(itemIndex: number, language: 'en' | 'ar' = 'en'): string {
+  if (!this.items[itemIndex] || !this.items[itemIndex].categoryName) return '';
+  return this.items[itemIndex].categoryName[language] || this.items[itemIndex].categoryName.en;
+};
 
 // Ensure that either userId or sessionId is present (but not both)
 cartSchema.pre("save", function (next) {
