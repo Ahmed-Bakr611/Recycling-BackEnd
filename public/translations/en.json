@@ -1,0 +1,13 @@
+{
+  "categories": {
+    "paperr": {
+      "name": "paperr",
+      "description": "variety of paper items"
+    },
+    "test": {
+      "name": "test",
+      "description": "test"
+    }
+  },
+  "items": {}
+}

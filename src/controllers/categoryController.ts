@@ -1,20 +1,24 @@
 import { Request, Response } from "express";
 import Category, { ICategory } from "../models/category";
 import translationService from "../utils/translationInstance"; // Import the singleton
+import { IBilingualText } from "../models/item";
+import mongoose from "mongoose";
 
 interface MulterRequest extends Request {
   file: Express.Multer.File;
 }
 
-// Utility function to extract category name from different formats
-const extractCategoryName = (name: string | { en: string; ar?: string } | any): string => {
-  if (typeof name === 'string') {
-    return name;
-  }
-  if (typeof name === 'object' && name !== null && 'en' in name) {
-    return name.en;
-  }
-  return 'Unknown';
+// Utility function to create bilingual text object
+const createBilingualText = (en: string, ar?: string): IBilingualText => {
+  return {
+    en: en,
+    ar: ar || en // Fallback to English if Arabic not provided
+  };
+};
+
+// Utility function to get category key for translation files (using English name)
+const getCategoryKey = (category: ICategory): string => {
+  return category.name.en;
 };
 
 export const createCategory = async (
@@ -29,46 +33,38 @@ export const createCategory = async (
       descriptionAr 
     } = req.body;
 
+    // Validate that at least English name is provided
+    if (!name) {
+      res.status(400).json({ message: "English name is required" });
+      return;
+    }
+
     const image = req.file?.path ?? "";
 
-    // Use English name as the primary key in database
+    // Create category with bilingual names stored in database
     const category = new Category({ 
-      name: name || nameAr, // Fallback to Arabic if English not provided
-      description: description || descriptionAr, 
+      name: createBilingualText(name, nameAr),
+      description: createBilingualText(description || `${name} category`, descriptionAr),
       image, 
       items: [] 
     });
     
     await category.save();
 
-    // Add bilingual translations
-    console.log('🔄 Adding bilingual category translation');
+    // Optionally still update translation files for backward compatibility
+    console.log('🔄 Adding bilingual category translation to files');
     try {
-      const categoryName = extractCategoryName(category.name);
+      const categoryKey = getCategoryKey(category);
       
-      if (!categoryName) {
-        console.error('⚠️ Could not extract category name, skipping translation');
-        res.status(201).json(category);
-        return;
-      }
-
-      if (name && nameAr) {
-        // Both languages provided
-        await translationService.addCategoryTranslation(
-          categoryName, // Use extracted name as key
-          { en: name, ar: nameAr },
-          { en: description, ar: descriptionAr }
-        );
-      } else {
-        // Fallback to single language
-        await translationService.addCategoryTranslationSingle(
-          categoryName, 
-          description || descriptionAr
-        );
-      }
+      await translationService.addCategoryTranslation(
+        categoryKey,
+        { en: category.name.en, ar: category.name.ar },
+        { en: category.description.en, ar: category.description.ar }
+      );
+      
       console.log('✅ Bilingual translation added successfully');
     } catch (translationError) {
-      console.error('⚠️ Translation failed but category was created:', translationError);
+      console.error('⚠️ Translation file update failed but category was created:', translationError);
     }
 
     res.status(201).json(category);
@@ -77,24 +73,29 @@ export const createCategory = async (
     res.status(400).json({ message: (err as Error).message });
   }
 };
+
 export const getAllCategories = async (
   req: Request,
   res: Response
 ): Promise<void> => {
   try {
     const { skip, limit } = req.pagination;
+    const language = req.query.language as 'en' | 'ar' || 'en'; // Get preferred language
+
     const [categories, total] = await Promise.all([
       Category.find().skip(skip).limit(limit).lean(),
       Category.countDocuments(),
     ]);
 
-    // Transform categories to use simple string names
+    // Transform categories based on language preference
     const transformedCategories = categories.map(category => ({
       ...category,
-      name: extractCategoryName(category.name),
+      // Keep full bilingual data but add displayName for convenience
+      displayName: category.name[language] || category.name.en,
+      displayDescription: category.description[language] || category.description.en,
       items: category.items?.map((item: any) => ({
         ...item,
-        name: extractCategoryName(item.name)
+        displayName: item.name?.[language] || item.name?.en || item.name
       })) || []
     }));
 
@@ -104,27 +105,30 @@ export const getAllCategories = async (
     res.status(500).json({ message: (err as Error).message });
   }
 };
+
 export const getCategoriesWithPagination = async (
   req: Request,
   res: Response
 ) => {
   try {
     const role = req.query.role;
+    const language = req.query.language as 'en' | 'ar' || 'en';
+    
     const [categories, total] = await Promise.all([
       Category.find().skip(req.pagination.skip).limit(req.pagination.limit).lean(),
       Category.countDocuments(),
     ]);
 
-    // Transform categories to use simple string names
+    // Transform categories with language-specific display
     const transformedCategories = categories.map(category => {
-      const plainCategory = typeof category.toObject === "function" ? category.toObject() : category;
       return {
-        ...plainCategory,
-        name: extractCategoryName(plainCategory.name),
-        items: Array.isArray(plainCategory.items)
-          ? plainCategory.items.map((item: any) => ({
+        ...category,
+        displayName: category.name[language] || category.name.en,
+        displayDescription: category.description[language] || category.description.en,
+        items: Array.isArray(category.items)
+          ? category.items.map((item: any) => ({
               ...item,
-              name: extractCategoryName(item.name),
+              displayName: item.name?.[language] || item.name?.en || item.name,
               price: role === "buyer" && item.price 
                 ? Math.round(item.price * 1.5 * 100) / 100 
                 : item.price
@@ -166,13 +170,18 @@ export const createCategoryWithImage = async (
       measurement_unit 
     } = req.body;
 
+    if (!name || !itemName) {
+      res.status(400).json({ message: "English name and item name are required" });
+      return;
+    }
+
     const newCategory = new Category({
-      name: name || nameAr,
-      description: description || descriptionAr,
+      name: createBilingualText(name, nameAr),
+      description: createBilingualText(description || `${name} category`, descriptionAr),
       image: req.file?.path ?? "",
       items: [
         {
-          name: itemName || itemNameAr,
+          name: createBilingualText(itemName, itemNameAr),
           image: req.file?.path ?? "",
           points: Number(points),
           price: Number(price),
@@ -183,43 +192,23 @@ export const createCategoryWithImage = async (
 
     await newCategory.save();
 
-    console.log('🔄 Adding bilingual category and item translations');
+    console.log('🔄 Adding bilingual category and item translations to files');
     try {
-      const categoryName = extractCategoryName(newCategory.name);
+      const categoryKey = getCategoryKey(newCategory);
       
-      if (!categoryName) {
-        console.error('⚠️ Could not extract category name, skipping translations');
-        res.status(201).json(newCategory);
-        return;
-      }
+      // Add category translation to files
+      await translationService.addCategoryTranslation(
+        categoryKey,
+        { en: newCategory.name.en, ar: newCategory.name.ar },
+        { en: newCategory.description.en, ar: newCategory.description.ar }
+      );
 
-      // Add category translation
-      if (name && nameAr) {
-        await translationService.addCategoryTranslation(
-          categoryName,
-          { en: name, ar: nameAr },
-          { en: description, ar: descriptionAr }
-        );
-      } else {
-        await translationService.addCategoryTranslationSingle(
-          categoryName, 
-          description || descriptionAr
-        );
-      }
-
-      // Add item translation
-      if (itemName && itemNameAr) {
-        await translationService.addItemTranslation(
-          categoryName,
-          newCategory.items[0].name,
-          { en: itemName, ar: itemNameAr }
-        );
-      } else {
-        await translationService.addItemTranslationSingle(
-          categoryName, 
-          newCategory.items[0].name
-        );
-      }
+      // Add item translation to files
+      await translationService.addItemTranslation(
+        categoryKey,
+        newCategory.items[0].name.en, // Use English name as key
+        { en: newCategory.items[0].name.en, ar: newCategory.items[0].name.ar }
+      );
 
       console.log('✅ Both bilingual translations added successfully');
     } catch (translationError) {
@@ -233,7 +222,7 @@ export const createCategoryWithImage = async (
   }
 };
 
-export const updatedCategory = async (
+export const updateCategory = async (
   req: MulterRequest,
   res: Response
 ): Promise<void> => { 
@@ -248,12 +237,9 @@ export const updatedCategory = async (
     } = req.body;
     const imageFromFile = req.file?.path;
 
-    // Find category
+    // Find category by English name
     const category = await Category.findOne({ 
-      $or: [
-        { name: categoryName },
-        { "name.en": categoryName }
-      ]
+      "name.en": categoryName 
     });
 
     if (!category) {
@@ -261,85 +247,42 @@ export const updatedCategory = async (
       return;
     }
 
-    const oldName = extractCategoryName(category.name);
+    const oldNameEn = category.name.en;
 
     // Update database fields
-    if (name) {
-      if (typeof category.name === 'object') {
-        category.name.en = name;
-      } else {
-        category.name = name;
-      }
-    }
-    
-    if (nameAr && typeof category.name === 'object') {
-      category.name.ar = nameAr;
-    }
-    
-    if (description) category.description = description;
+    if (name) category.name.en = name;
+    if (nameAr) category.name.ar = nameAr;
+    if (description) category.description.en = description;
+    if (descriptionAr) category.description.ar = descriptionAr;
     if (imageFromFile) category.image = imageFromFile;
     else if (imageFromBody) category.image = imageFromBody;
 
     const updated = await category.save();
-    const newName = extractCategoryName(updated.name);
+    const newNameEn = updated.name.en;
 
-    // Handle translations
+    // Handle translations in files
     try {
-      if (!oldName) {
-        console.error('⚠️ Could not extract old category name');
-        res.status(200).json(updated);
-        return;
-      }
+      // Check if the category key (English name) has changed
+      const categoryKeyChanged = oldNameEn.toLowerCase() !== newNameEn?.toLowerCase();
 
-      // Check if the category key (name) has changed
-      const categoryKeyChanged = oldName.toLowerCase() !== newName?.toLowerCase();
-
-      if (categoryKeyChanged && newName) {
-        // If the category key changed, we need to rename the category key
-        console.log(`🔄 Category key changed from "${oldName}" to "${newName}"`);
+      if (categoryKeyChanged && newNameEn) {
+        // If the category key changed, rename in translation files
+        console.log(`🔄 Category key changed from "${oldNameEn}" to "${newNameEn}"`);
         
-        const updatedNames = {
-          en: name || newName,
-          ar: nameAr || newName
-        };
-
-        const updatedDescriptions = {
-          en: description || category.description,
-          ar: descriptionAr || category.description
-        };
-
-        // Use renameCategoryKey to move from old key to new key
         await translationService.renameCategoryKey(
-          oldName,
-          newName,
-          updatedNames,
-          updatedDescriptions
+          oldNameEn,
+          newNameEn,
+          { en: updated.name.en, ar: updated.name.ar },
+          { en: updated.description.en, ar: updated.description.ar }
         );
       } else {
-        // If only the display names changed (not the key), update in place
-        console.log(`📝 Updating category translations for "${oldName}"`);
+        // If only the display names changed, update in place
+        console.log(`📝 Updating category translations for "${oldNameEn}"`);
         
-        // Get current translations to preserve existing values
-        const currentTranslations = await translationService.getCategoryTranslation(oldName) || {
-          name: { en: '', ar: '' },
-          description: { en: '', ar: '' }
-        };
-
-        const updatedNames = {
-          en: name || currentTranslations.name.en || oldName,
-          ar: nameAr || currentTranslations.name.ar || currentTranslations.name.en || oldName
-        };
-
-        const updatedDescriptions = {
-          en: description || currentTranslations.description.en || category.description,
-          ar: descriptionAr || currentTranslations.description.ar || category.description
-        };
-
-        // Use updateCategoryTranslation to update existing category
         await translationService.updateCategoryTranslation(
-          oldName, // Keep the same key
-          updatedNames,
-          updatedDescriptions
+          oldNameEn,
+          { en: updated.name.en, ar: updated.name.ar },
+          { en: updated.description.en, ar: updated.description.ar }
         );
       }
 
@@ -362,12 +305,9 @@ export const deleteCategory = async (
   try {
     const { categoryName } = req.params;
     
-    // Find and delete category with both string and object name formats
+    // Find and delete category by English name
     const deleted = await Category.findOneAndDelete({ 
-      $or: [
-        { name: categoryName }, // For string names
-        { "name.en": categoryName } // For object names with English key
-      ]
+      "name.en": categoryName 
     });
 
     if (!deleted) {
@@ -378,14 +318,8 @@ export const deleteCategory = async (
     // Remove from translation files
     console.log('🔄 Removing category translation for:', categoryName);
     try {
-      const extractedName = extractCategoryName(deleted.name);
-      
-      if (extractedName) {
-        await translationService.removeCategoryTranslation(extractedName);
-        console.log('✅ Translation removed successfully');
-      } else {
-        console.error('⚠️ Could not extract category name, skipping translation removal');
-      }
+      await translationService.removeCategoryTranslation(deleted.name.en);
+      console.log('✅ Translation removed successfully');
     } catch (translationError) {
       console.error('⚠️ Translation removal failed:', translationError);
     }
@@ -403,13 +337,11 @@ export const getCategoryByName = async (
 ): Promise<void> => {
   try {
     const { categoryName } = req.params;
+    const language = req.query.language as 'en' | 'ar' || 'en';
     
-    // Find category with both string and object name formats
+    // Find category by English name
     const category = await Category.findOne({ 
-      $or: [
-        { name: categoryName }, // For string names
-        { "name.en": categoryName } // For object names with English key
-      ]
+      "name.en": categoryName 
     });
 
     if (!category) {
@@ -417,72 +349,16 @@ export const getCategoryByName = async (
       return;
     }
 
-    res.status(200).json(category);
+    // Add display fields for convenience
+    const categoryWithDisplay = {
+      ...category.toObject(),
+      displayName: category.name[language] || category.name.en,
+      displayDescription: category.description[language] || category.description.en
+    };
+
+    res.status(200).json(categoryWithDisplay);
   } catch (err) {
     console.error('❌ Get category error:', err);
-    res.status(500).json({ message: (err as Error).message });
-  }
-};
-
-export const createCategoryWithTranslation = async (
-  req: MulterRequest,
-  res: Response
-): Promise<void> => {
-  try {
-    const { name, description } = req.body;
-    const image = req.file?.path ?? "";
-
-    const category = new Category({ name, description, image, items: [] });
-    await category.save();
-
-    // Auto-update translation files
-    const categoryName = extractCategoryName(category.name);
-    
-    if (categoryName) {
-      await translationService.addCategoryTranslation(categoryName, description);
-      console.log('✅ Translation added successfully');
-    } else {
-      console.error('⚠️ Could not extract category name, skipping translation');
-    }
-
-    res.status(201).json(category);
-  } catch (err) {
-    res.status(400).json({ message: (err as Error).message });
-  }
-};
-
-export const deleteCategoryWithTranslation = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    const { categoryName } = req.params;
-    
-    // Find and delete category with both string and object name formats
-    const deleted = await Category.findOneAndDelete({ 
-      $or: [
-        { name: categoryName }, // For string names
-        { "name.en": categoryName } // For object names with English key
-      ]
-    });
-
-    if (!deleted) {
-      res.status(404).json({ message: "Category not found" });
-      return;
-    }
-
-    // Remove from translation files
-    const extractedName = extractCategoryName(deleted.name);
-    
-    if (extractedName) {
-      await translationService.removeCategoryTranslation(extractedName);
-      console.log('✅ Translation removed successfully');
-    } else {
-      console.error('⚠️ Could not extract category name, skipping translation removal');
-    }
-
-    res.status(200).json({ message: "Category deleted successfully" });
-  } catch (err) {
     res.status(500).json({ message: (err as Error).message });
   }
 };
