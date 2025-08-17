@@ -46,7 +46,7 @@ const ItemSchema = new mongoose.Schema({
     required: true,
   },
   image: { type: String, required: true },
-  itemName: {
+  name: {
     type: bilingualTextSchema, // Now bilingual
     required: true,
   },
@@ -76,7 +76,7 @@ const ItemSchema = new mongoose.Schema({
 
 // Add helper methods to ItemSchema
 ItemSchema.methods.getDisplayName = function(language: 'en' | 'ar' = 'en'): string {
-  return this.itemName[language] || this.itemName.en;
+  return this.name[language] || this.name.en;
 };
 
 ItemSchema.methods.getDisplayCategoryName = function(language: 'en' | 'ar' = 'en'): string {
@@ -239,8 +239,8 @@ const OrderSchema = new mongoose.Schema({
 
 // Helper methods for bilingual support
 OrderSchema.methods.getItemDisplayName = function(itemIndex: number, language: 'en' | 'ar' = 'en'): string {
-  if (!this.items[itemIndex] || !this.items[itemIndex].itemName) return '';
-  return this.items[itemIndex].itemName[language] || this.items[itemIndex].itemName.en;
+  if (!this.items[itemIndex] || !this.items[itemIndex].name) return '';
+  return this.items[itemIndex].name[language] || this.items[itemIndex].name.en;
 };
 
 OrderSchema.methods.getItemDisplayCategoryName = function(itemIndex: number, language: 'en' | 'ar' = 'en'): string {
@@ -304,7 +304,7 @@ export interface IItem {
   _id: Types.ObjectId;
   categoryId: mongoose.Types.ObjectId;
   image: string;
-  itemName: IBilingualText; // Now bilingual
+  name: IBilingualText; // Now bilingual
   measurement_unit: 1 | 2;
   points: number;
   price: number;

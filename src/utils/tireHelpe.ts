@@ -174,8 +174,14 @@ export async function processUserPoints(
   if (reachedNewTier && tier) {
     await createAndEmitNotification({
       userId,
-      title: `Tier Upgrade: ${tier.name}`,
-      body: `🎉 Congrats! You reached the ${tier.name} tier! Keep it up!`,
+      title: {
+        en: `Tier Upgrade: ${tier.name}`,
+        ar: `ترقية المستوى: ${tier.name}`
+      },
+      body: {
+        en: `🎉 Congrats! You reached the ${tier.name} tier! Keep it up!`,
+        ar: `🎉 تهانينا! لقد وصلت إلى مستوى ${tier.name}! استمر في التقدم!`
+      },
       type: "system",
     });
     console.log(`🎉 User ${userId} upgraded to ${tier.name} tier!`);

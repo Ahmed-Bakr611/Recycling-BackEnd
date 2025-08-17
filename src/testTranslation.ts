@@ -8,7 +8,7 @@ const messagesPath = path.join(
 
 console.log("Resolved messages path:", messagesPath);
 
-const translationService = new TranslationService(messagesPath);
+const translationService = new TranslationService([messagesPath]);
 
 (async () => {
   const enData = await translationService.readTranslationFile("en");
