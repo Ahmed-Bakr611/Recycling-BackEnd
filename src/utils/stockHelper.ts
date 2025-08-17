@@ -63,7 +63,7 @@ export const updateItemQuantities = async (
           } → "${displayName}"`
         );
       } catch (error: any) {
-        const displayName = orderItem.itemName?.en || orderItem.itemName || "Unknown item";
+        const displayName = orderItem.name?.en || orderItem.name || "Unknown item";
         console.error(
           `❌ Error updating item ${index + 1} (${displayName}):`,
           error.message
@@ -80,7 +80,7 @@ export function mapCartItemsToOrderItems(cartItems: ICartItem[]): IItem[] {
     _id: new mongoose.Types.ObjectId(item._id),
     categoryId: new mongoose.Types.ObjectId(item.categoryId),
     categoryName: item.categoryName, // Already bilingual
-    itemName: item.name, // Already bilingual
+    name: item.name, // Already bilingual
     image: item.image,
     points: item.points,
     price: item.price,

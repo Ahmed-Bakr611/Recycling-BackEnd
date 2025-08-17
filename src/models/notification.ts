@@ -1,5 +1,11 @@
 import mongoose, { Document, Model } from 'mongoose';
 
+// Multi-language message interface
+export interface MultiLangMessage {
+  en: string;
+  ar: string;
+}
+
 // Notification Schema
 const NotificationSchema = new mongoose.Schema({
   userId: { 
@@ -8,11 +14,17 @@ const NotificationSchema = new mongoose.Schema({
     required: true 
   },
   title: { 
-    type: String, 
+    type: {
+      en: { type: String, required: true },
+      ar: { type: String, required: true }
+    },
     required: true 
   },
   body: { 
-    type: String, 
+    type: {
+      en: { type: String, required: true },
+      ar: { type: String, required: true }
+    },
     required: true 
   },
   type: { 
@@ -46,8 +58,8 @@ NotificationSchema.index({ userId: 1, isRead: 1 });
 // TypeScript interface
 export interface INotification extends Document {
   userId: mongoose.Types.ObjectId;
-  title: string;
-  body: string;
+  title: MultiLangMessage;
+  body: MultiLangMessage;
   type: 'order_status' | 'order_assigned' | 'order_cancelled' | 'order_completed' | 'system';
   orderId?: mongoose.Types.ObjectId;
   data?: any;
