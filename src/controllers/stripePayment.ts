@@ -1,5 +1,7 @@
 import User from "../models/users";
-import Stripe from "stripe";
+import Stripe from "stripe";import nodemailer from "nodemailer";
+
+
 import { Request, Response } from "express";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2025-06-30.basil" });
@@ -560,10 +562,166 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+const sendRefundNotification = async (refundData: {
+  customerEmail?: string;
+  refundId: string;
+  amount: number;
+  currency: string;
+  originalAmount?: number;
+  reason: string;
+  isPartial: boolean;
+}) => {
+  try {
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.MAIL_USER,
+        pass: process.env.MAIL_PASS,
+      },
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
+
+    const { customerEmail, refundId, amount, currency, originalAmount, reason, isPartial } = refundData;
+    
+    const formatAmount = (cents: number) => (cents / 100).toFixed(2);
+    const refundAmount = formatAmount(amount);
+    const refundType = isPartial ? 'Partial Refund' : 'Full Refund';
+    const refundPercentage = originalAmount ? ((amount / originalAmount) * 100).toFixed(1) : '100';
+    
+    // Enhanced admin notification
+    await transporter.sendMail({
+      from: `"EcoCycle Payments" <${process.env.MAIL_USER}>`,
+      to: process.env.MAIL_USER,
+      subject: `${refundType} Processed - ${refundId}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #f97316;">🔄 ${refundType} Processed</h2>
+          <div style="background-color: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold;">Refund ID:</td>
+                <td style="padding: 8px 0; font-family: monospace;">${refundId}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold;">Amount:</td>
+                <td style="padding: 8px 0; color: #059669; font-weight: bold;">${currency.toUpperCase()} $${refundAmount}</td>
+              </tr>
+              ${isPartial && originalAmount ? `
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold;">Original Amount:</td>
+                <td style="padding: 8px 0;">${currency.toUpperCase()} $${formatAmount(originalAmount)}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold;">Refund Percentage:</td>
+                <td style="padding: 8px 0;">${refundPercentage}%</td>
+              </tr>
+              ` : ''}
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold;">Reason:</td>
+                <td style="padding: 8px 0;">${reason.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold;">Customer Email:</td>
+                <td style="padding: 8px 0;">${customerEmail || 'Not available'}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; font-weight: bold;">Processed At:</td>
+                <td style="padding: 8px 0;">${new Date().toLocaleString()}</td>
+              </tr>
+            </table>
+          </div>
+          <p style="color: #6b7280; font-size: 14px;">
+            ${customerEmail ? 'Customer notification sent successfully.' : 'Customer email not available - no customer notification sent.'}
+          </p>
+        </div>
+      `,
+    });
+
+    // Enhanced customer notification if email available
+    if (customerEmail) {
+      await transporter.sendMail({
+        from: `"EcoCycle" <${process.env.MAIL_USER}>`,
+        to: customerEmail,
+        subject: `Your ${refundType} Confirmation - ${refundId}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="text-align: center; padding: 20px;">
+              <h2 style="color: #059669;">✅ Your Refund Has Been Processed</h2>
+            </div>
+            
+            <div style="background-color: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 8px; padding: 20px; margin: 20px 0;">
+              <h3 style="color: #0369a1; margin-top: 0;">Refund Details</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; font-weight: bold;">Refund Amount:</td>
+                  <td style="padding: 8px 0; color: #059669; font-weight: bold; font-size: 18px;">
+                    ${currency.toUpperCase()} ${refundAmount}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; font-weight: bold;">Refund ID:</td>
+                  <td style="padding: 8px 0; font-family: monospace;">${refundId}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; font-weight: bold;">Type:</td>
+                  <td style="padding: 8px 0;">${refundType}</td>
+                </tr>
+                ${isPartial ? `
+                <tr>
+                  <td style="padding: 8px 0; font-weight: bold;">Original Amount:</td>
+                  <td style="padding: 8px 0;">${currency.toUpperCase()} ${formatAmount(originalAmount || 0)}</td>
+                </tr>
+                ` : ''}
+                <tr>
+                  <td style="padding: 8px 0; font-weight: bold;">Processing Date:</td>
+                  <td style="padding: 8px 0;">${new Date().toLocaleDateString()}</td>
+                </tr>
+              </table>
+            </div>
+
+            <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0;">
+              <p style="margin: 0; color: #92400e;">
+                <strong>⏰ Processing Time:</strong> The refund will appear in your bank account within 5-10 business days, 
+                depending on your bank or card provider.
+              </p>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <p style="color: #6b7280;">
+                If you have any questions about this refund, please don't hesitate to contact our support team.
+              </p>
+              <p style="color: #059669; font-weight: bold; margin: 20px 0;">
+                Thank you for choosing EcoCycle! 🌱
+              </p>
+            </div>
+
+            <div style="border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 30px;">
+              <p style="color: #9ca3af; font-size: 12px; text-align: center;">
+                This is an automated message. Please do not reply to this email.
+                <br>
+                EcoCycle Payment Processing System
+              </p>
+            </div>
+          </div>
+        `,
+      });
+    }
+
+    console.log('✅ Email notifications sent successfully');
+    console.log('Admin notification: ✅ Sent');
+    console.log('Customer notification:', customerEmail ? '✅ Sent' : '❌ No email available');
+
+  } catch (error) {
+    console.error('❌ Failed to send refund notification emails:', error);
+    throw error; // Re-throw to let the calling function handle it
+  }
+};
 export const refundPayment = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { amount, reason } = req.body;
+    const { amount, reason, customerEmail } = req.body;
 
     console.log('=== BACKEND REFUND DEBUG ===');
     console.log('Received ID:', id);  
@@ -572,9 +730,12 @@ export const refundPayment = async (req: Request, res: Response) => {
     console.log('ID starts with:', id.substring(0, 3));
     console.log('Amount:', amount);
     console.log('Reason:', reason);
+    console.log('Customer Email (from body):', customerEmail);
     console.log('============================');
 
     let refund;
+    let originalAmount = 0;
+    let paymentObject = null;
     
     // Handle different ID types
     if (id.startsWith('pi_')) {
@@ -582,7 +743,9 @@ export const refundPayment = async (req: Request, res: Response) => {
       console.log('Attempting refund with Payment Intent ID...');
       
       // First verify the payment intent exists
-      const paymentIntent = await stripe.paymentIntents.retrieve(id);
+      const paymentIntent = await stripe.paymentIntents.retrieve(id, {
+        expand: ['customer']
+      });
       console.log('Payment Intent status:', paymentIntent.status);
       console.log('Payment Intent amount:', paymentIntent.amount);
       
@@ -593,10 +756,21 @@ export const refundPayment = async (req: Request, res: Response) => {
         });
       }
 
+      originalAmount = paymentIntent.amount;
+      paymentObject = paymentIntent;
+
+      // Determine refund amount - if amount is provided, use it, otherwise full refund
+      const refundAmount = amount && amount > 0 ? amount : undefined;
+
       refund = await stripe.refunds.create({
         payment_intent: id,
-        amount: amount || undefined,
-        reason: reason || 'requested_by_customer'
+        amount: refundAmount,
+        reason: reason || 'requested_by_customer',
+        metadata: {
+          custom_reason: reason === 'custom' ? 'Custom refund reason' : undefined,
+          requested_by: 'admin_dashboard',
+          refund_type: refundAmount ? 'partial' : 'full'
+        }
       });
       
     } else if (id.startsWith('ch_')) {
@@ -604,7 +778,9 @@ export const refundPayment = async (req: Request, res: Response) => {
       console.log('Attempting refund with Charge ID...');
       
       // First verify the charge exists
-      const charge = await stripe.charges.retrieve(id);
+      const charge = await stripe.charges.retrieve(id, {
+        expand: ['customer']
+      });
       console.log('Charge status:', charge.status);
       console.log('Charge amount:', charge.amount);
       console.log('Charge paid:', charge.paid);
@@ -616,10 +792,21 @@ export const refundPayment = async (req: Request, res: Response) => {
         });
       }
 
+      originalAmount = charge.amount;
+      paymentObject = charge;
+
+      // Determine refund amount - if amount is provided, use it, otherwise full refund
+      const refundAmount = amount && amount > 0 ? amount : undefined;
+
       refund = await stripe.refunds.create({
         charge: id,
-        amount: amount || undefined,
-        reason: reason || 'requested_by_customer'
+        amount: refundAmount,
+        reason: reason || 'requested_by_customer',
+        metadata: {
+          custom_reason: reason === 'custom' ? 'Custom refund reason' : undefined,
+          requested_by: 'admin_dashboard',
+          refund_type: refundAmount ? 'partial' : 'full'
+        }
       });
       
     } else {
@@ -629,26 +816,50 @@ export const refundPayment = async (req: Request, res: Response) => {
       // Try to retrieve as different object types
       try {
         console.log('Trying as Payment Intent...');
-        const paymentIntent = await stripe.paymentIntents.retrieve(id);
+        const paymentIntent = await stripe.paymentIntents.retrieve(id, {
+          expand: ['customer']
+        });
         console.log('Found as Payment Intent:', paymentIntent.id);
+        
+        originalAmount = paymentIntent.amount;
+        paymentObject = paymentIntent;
+        
+        const refundAmount = amount && amount > 0 ? amount : undefined;
         
         refund = await stripe.refunds.create({
           payment_intent: id,
-          amount: amount || undefined,
-          reason: reason || 'requested_by_customer'
+          amount: refundAmount,
+          reason: reason || 'requested_by_customer',
+          metadata: {
+            custom_reason: reason === 'custom' ? 'Custom refund reason' : undefined,
+            requested_by: 'admin_dashboard',
+            refund_type: refundAmount ? 'partial' : 'full'
+          }
         });
         
       } catch (piError) {
         console.log('Not a Payment Intent, trying as Charge...');
         
         try {
-          const charge = await stripe.charges.retrieve(id);
+          const charge = await stripe.charges.retrieve(id, {
+            expand: ['customer']
+          });
           console.log('Found as Charge:', charge.id);
+          
+          originalAmount = charge.amount;
+          paymentObject = charge;
+          
+          const refundAmount = amount && amount > 0 ? amount : undefined;
           
           refund = await stripe.refunds.create({
             charge: id,
-            amount: amount || undefined,
-            reason: reason || 'requested_by_customer'
+            amount: refundAmount,
+            reason: reason || 'requested_by_customer',
+            metadata: {
+              custom_reason: reason === 'custom' ? 'Custom refund reason' : undefined,
+              requested_by: 'admin_dashboard',
+              refund_type: refundAmount ? 'partial' : 'full'
+            }
           });
           
         } catch (chargeError) {
@@ -670,16 +881,92 @@ export const refundPayment = async (req: Request, res: Response) => {
     }
 
     console.log('Refund successful:', refund.id);
+    console.log('Refund amount:', refund.amount);
+    console.log('Original amount:', originalAmount);
 
+    // Determine if this is a partial refund
+    const refundAmount = refund.amount;
+    const isPartialRefund = refundAmount < originalAmount;
+
+    console.log('Is partial refund:', isPartialRefund);
+
+    // Get customer email - priority order:
+    // 1. Email provided in request body (highest priority)
+    // 2. Email from billing details
+    // 3. Receipt email
+    // 4. Customer object email
+    let customerEmailToUse = customerEmail;
+    
+    if (!customerEmailToUse && paymentObject) {
+      console.log('No email provided in request, searching payment object...');
+      
+      // Try to get email from different sources
+      if (paymentObject.receipt_email) {
+        customerEmailToUse = paymentObject.receipt_email;
+        console.log('Found receipt_email:', customerEmailToUse);
+      } else if (paymentObject.billing_details?.email) {
+        customerEmailToUse = paymentObject.billing_details.email;
+        console.log('Found billing_details.email:', customerEmailToUse);
+      } else if (paymentObject.customer && typeof paymentObject.customer === 'object' && paymentObject.customer.email) {
+        customerEmailToUse = paymentObject.customer.email;
+        console.log('Found customer.email:', customerEmailToUse);
+      } else if (paymentObject.metadata?.customer_email) {
+        customerEmailToUse = paymentObject.metadata.customer_email;
+        console.log('Found metadata.customer_email:', customerEmailToUse);
+      }
+      
+      // If we have a customer ID but no email yet, try to fetch the customer
+      if (!customerEmailToUse && paymentObject.customer && typeof paymentObject.customer === 'string') {
+        try {
+          console.log('Fetching customer details for ID:', paymentObject.customer);
+          const customer = await stripe.customers.retrieve(paymentObject.customer);
+          if ('email' in customer && customer.email) {
+            customerEmailToUse = customer.email;
+            console.log('Found customer email from API:', customerEmailToUse);
+          }
+        } catch (custError) {
+          console.log('Could not fetch customer details:', custError);
+        }
+      }
+    }
+
+    console.log('Final customer email to use:', customerEmailToUse);
+
+    // Send email notifications
+    try {
+      await sendRefundNotification({
+        customerEmail: customerEmailToUse,
+        refundId: refund.id,
+        amount: refundAmount,
+        currency: refund.currency,
+        originalAmount: originalAmount,
+        reason: reason || 'requested_by_customer',
+        isPartial: isPartialRefund
+      });
+      console.log('Email notifications sent successfully');
+    } catch (emailError) {
+      console.error('Failed to send email notifications:', emailError);
+      // Don't fail the entire request if email fails
+    }
+
+    // Successful response
     res.status(200).json({
       success: true,
-      message: "Payment refunded successfully",
+      message: `${isPartialRefund ? 'Partial payment' : 'Payment'} refunded successfully`,
       refund: {
         id: refund.id,
         amount: refund.amount,
         currency: refund.currency,
         status: refund.status,
-        created: refund.created
+        created: refund.created,
+        isPartial: isPartialRefund,
+        originalAmount: originalAmount,
+        refundType: isPartialRefund ? 'partial' : 'full'
+      },
+      emailNotification: {
+        sent: !!customerEmailToUse,
+        email: customerEmailToUse,
+        adminNotificationSent: true
       }
     });
 
@@ -697,7 +984,8 @@ export const refundPayment = async (req: Request, res: Response) => {
         debug: {
           type: error.type,
           code: error.code,
-          param: error.param
+          param: error.param,
+          docUrl: error.doc_url
         }
       });
     }
