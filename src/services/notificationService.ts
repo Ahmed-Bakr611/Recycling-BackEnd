@@ -79,7 +79,7 @@ export const createOrderAssignedNotification = async (
     },
     body: {
       en: "Your order has been assigned to a courier. Expect them within 48 hours.",
-      ar: "تم تعيين طلبك إلى ساعي البريد. توقعه خلال 48 ساعة."
+      ar: "تم تعيين طلبك إلى المندوب. توقع وصوله خلال 48 ساعة."
     },
     type: "order_assigned",
     orderId,
@@ -151,7 +151,7 @@ export const createOrderStatusChangeNotification = async (
     case "assigntocourier":
       body = {
         en: "Your order has been assigned to a courier. Expect them within 48 hours.",
-        ar: "تم تعيين طلبك إلى ساعي البريد. توقعه خلال 48 ساعة."
+        ar: "تم تعيين طلبك إلى المندوب. توقع وصوله خلال 48 ساعة."
       };
       break;
     case "completed":
