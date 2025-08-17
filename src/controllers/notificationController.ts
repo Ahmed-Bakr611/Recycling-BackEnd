@@ -1,6 +1,6 @@
 import express from "express";
 import mongoose from 'mongoose';
-import Notification, { INotification } from '../models/notification';
+import Notification, { INotification, MultiLangMessage } from '../models/notification';
 
 // Use interfaces from other files
 interface IAuthenticatedRequest extends express.Request {
