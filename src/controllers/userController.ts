@@ -254,7 +254,8 @@ export const getUserTransactions = async (req: Request, res: Response) => {
 
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    res.status(200).json(user.attachments.transactions || []);
+    const transactions = user.attachments?.transactions;
+    res.status(200).json(Array.isArray(transactions) ? transactions : []);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server Error" });
