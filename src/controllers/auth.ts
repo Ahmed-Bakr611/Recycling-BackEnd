@@ -12,6 +12,7 @@ import Cart from "../models/cart";
 import { OAuth2Client } from "google-auth-library";
 import { getDeliveryUserStatus } from "../utils/getDeliveryStatus";
 import Order from "../models/pickupOrder";
+import { welcomeUser } from "../utils/tireHelpe";
 export const client = new OAuth2Client(process.env.GOOGLE_WEB_CLIENT_ID);
 
 ////////////////////////////////////////////////
@@ -61,11 +62,30 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
       role,
       imgUrl,
       attachments,
-      idToken, // used if provider is Google
+      idToken,
     } = req.body;
 
-    let user;
+    let user = null;
 
+    // Process attachments for ALL users
+    const attachmentsData = {
+      ...(attachments || {}), // Spread the incoming attachments
+      // Add role-specific fields
+      ...(role === "delivery" && {
+        status: "pending",
+        submittedAt: new Date(),
+      }),
+      // Add common fields for all users if needed
+      processedAt: new Date(),
+    };
+
+    console.log("🔍 DEBUGGING ATTACHMENTS:");
+    console.log("📝 Raw attachments from req.body:", attachments);
+    console.log("📝 Role:", role);
+    console.log("📝 Processed attachmentsData:", attachmentsData);
+    console.log("📝 AttachmentsData keys:", Object.keys(attachmentsData));
+
+    // ✅ Google Sign-Up
     if (provider === "google") {
       if (!idToken) {
         return res.status(400).json({ message: "Google ID token is required" });
@@ -87,7 +107,13 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
 
       // Check if user already exists
       user = await User.findOne({ email: payload.email });
+
       if (!user) {
+        console.log(
+          "🔍 Creating Google user with attachments:",
+          attachmentsData
+        );
+
         user = await User.create({
           name: payload.name || name,
           email: payload.email,
@@ -95,49 +121,50 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
           phoneNumber: phoneNumber?.padStart(11, "0") || "",
           role: role || "customer",
           imgUrl: payload.picture || imgUrl,
-          // ✅ FIX: Set initial pending status for delivery users
-          attachments:
-            role === "delivery"
-              ? {
-                  status: "pending",
-                  submittedAt: new Date(),
-                  ...attachments,
-                }
-              : attachments || {},
-          // ✅ FIX: Delivery users start as not approved
+          attachments: attachmentsData,
           isApproved: role === "delivery" ? false : true,
         });
+
+        console.log(
+          "🔍 Google user created. Attachments in DB:",
+          user.attachments
+        );
       }
-    } else {
-      // Traditional email/password registration
+    }
+
+    // ✅ Email/Password Sign-Up
+    else {
+      console.log("🔍 Creating Email user with attachments:", attachmentsData);
+
       user = await User.create({
         name,
         email,
         password,
         provider: provider || "none",
-        phoneNumber: phoneNumber.padStart(11, "0"),
+        phoneNumber: phoneNumber?.padStart(11, "0") || "",
         role: role || "customer",
-        imgUrl: imgUrl,
-        // ✅ FIX: Set initial pending status for delivery users
-        attachments:
-          role === "delivery"
-            ? {
-                status: "pending",
-                submittedAt: new Date(),
-                ...attachments,
-              }
-            : attachments || {},
-        // ✅ FIX: Delivery users start as not approved
+        imgUrl,
+        attachments: attachmentsData,
         isApproved: role === "delivery" ? false : true,
       });
+
+      console.log(
+        "🔍 Email user created. Attachments in DB:",
+        user.attachments
+      );
     }
 
-    // Create tokens
+    // ✅ Create Tokens
     const accessToken = generateAccessToken(user._id.toString(), user.role);
     const refreshToken = generateRefreshToken(user._id.toString(), user.role);
 
     user.refreshToken = refreshToken;
+
+    // Mark attachments as modified for Mixed type (safety measure)
+    user.markModified("attachments");
+
     await user.save();
+    await welcomeUser(user._id);
 
     return res
       .status(201)
@@ -149,13 +176,15 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
         path: "/",
       })
       .header("Authorization", `Bearer ${accessToken}`)
-      .json({ accessToken, user });
+      .json({
+        accessToken,
+        user,
+      });
   } catch (err: any) {
-    console.error(err);
+    console.error("❌ Registration error:", err);
     return res.status(500).json({ message: err.message || "Signup failed" });
   }
 };
-
 ////////////////////////////////////////////////
 // Login logic
 ////////////////////////////////////////////////
@@ -376,6 +405,11 @@ export const forgotPassword = async (req: Request, res: Response) => {
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
+    }
+    if (user.provider === "google") {
+      return res
+        .status(404)
+        .json({ message: "Cannot Reset password For Google User " });
     }
 
     await createAndSendOtp(email);
