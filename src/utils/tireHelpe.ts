@@ -176,11 +176,11 @@ export async function processUserPoints(
       userId,
       title: {
         en: `Tier Upgrade: ${tier.name}`,
-        ar: `ترقية المستوى: ${tier.name}`
+        ar: `ترقية المستوى: ${tier.name}`,
       },
       body: {
         en: `🎉 Congrats! You reached the ${tier.name} tier! Keep it up!`,
-        ar: `🎉 تهانينا! لقد وصلت إلى مستوى ${tier.name}! استمر في التقدم!`
+        ar: `🎉 تهانينا! لقد وصلت إلى مستوى ${tier.name}! استمر في التقدم!`,
       },
       type: "system",
     });
@@ -206,4 +206,47 @@ const handleCashBack = async (userId: string, points: number) => {
   user.attachments.balance += cashbackAmount;
   user.markModified("attachments");
   await user.save();
+};
+export const welcomeUser = async (userId) => {
+  // Give welcome bonus points
+  const welcomePoints = rewardLevels[0].bonusPerReachedTier; // Or whatever amount you want
+
+  try {
+    // Update user's points and history
+    await User.findByIdAndUpdate(
+      userId,
+      {
+        $inc: { totalPoints: welcomePoints },
+        $push: {
+          pointsHistory: {
+            points: welcomePoints,
+            type: "earned",
+            reason: "Welcome bonus",
+            timestamp: new Date(),
+          },
+        },
+      },
+      { new: true }
+    );
+
+    // Send welcome notification
+    await createAndEmitNotification({
+      userId,
+      title: {
+        en: `Welcome to ${rewardLevels[0].name} Tier!`,
+        ar: `أهلاً بك في مستوى ${rewardLevels[0].name}!`,
+      },
+      body: {
+        en: `🎉 Welcome aboard! You've received ${welcomePoints} bonus points and started your journey at the ${rewardLevels[0].name} tier. Complete orders to earn more points and unlock amazing rewards!`,
+        ar: `🎉 أهلاً وسهلاً! لقد حصلت على ${welcomePoints} نقطة إضافية وبدأت رحلتك في مستوى ${rewardLevels[0].name}. أكمل الطلبات لتكسب المزيد من النقاط وتفتح مكافآت رائعة!`,
+      },
+      type: "system",
+    });
+
+    console.log(
+      `✅ Welcome bonus of ${welcomePoints} points given to user ${userId}`
+    );
+  } catch (error) {
+    console.error(`❌ Error giving welcome bonus to user ${userId}:`, error);
+  }
 };
