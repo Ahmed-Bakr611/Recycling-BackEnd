@@ -26,6 +26,7 @@ import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
 import { paginate } from "../middlewares/paginate";
 import { handleMulterError } from "../middlewares/multerError";
+import { getItemsIndex, searchItems } from "../controllers/searchController";
 
 const uploadCategory = multer({ storage: categoryStorage, fileFilter });
 const uploadSubcategory = multer({ storage: subcategoryStorage, fileFilter });
@@ -38,7 +39,7 @@ export default (router: express.Router) => {
     uploadCategory.single("image"),
     createCategory
   );
-  router.post('/migrate',migrateToBilingual)
+  router.post("/migrate", migrateToBilingual);
   router.get("/categories", paginate(), getCategoriesWithPagination);
   router.post(
     "/categories/with-image",
@@ -90,4 +91,8 @@ export default (router: express.Router) => {
     authorize(["admin"]),
     deleteItem
   );
+
+  //search
+  router.get("/search-index", getItemsIndex);
+  router.get("/search", searchItems);
 };

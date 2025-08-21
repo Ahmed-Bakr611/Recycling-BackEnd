@@ -2,7 +2,6 @@ import { getSocketIO } from "../socket/socketServer";
 import User, { IUser } from "../models/users"; // adjust import path
 import { createAndEmitNotification } from "../services/notificationService";
 import Order from "../models/pickupOrder";
-import { get } from "http";
 
 export const rewardLevels = [
   {
@@ -170,6 +169,14 @@ export async function processUserPoints(
 
   await user.save();
 
+  await notifyClientWithPointsUpdate({
+    userId,
+    points,
+    newTotalPoints,
+    bonusPointsAdded,
+    msg,
+  });
+
   // Only notify when the tier was reached now
   if (reachedNewTier && tier) {
     await createAndEmitNotification({
@@ -249,4 +256,74 @@ export const welcomeUser = async (userId) => {
   } catch (error) {
     console.error(`❌ Error giving welcome bonus to user ${userId}:`, error);
   }
+};
+
+const notifyClientWithPointsUpdate = async ({
+  userId,
+  newTotalPoints,
+  points,
+  bonusPointsAdded,
+  msg,
+}) => {
+  const io = getSocketIO();
+  if (!io) {
+    console.error("❌ Socket.IO instance not found!");
+    return;
+  }
+
+  console.log(`📡 Emitting points update to user ${userId}`);
+
+  // Get the user with their points history
+  const user = await User.findById(userId).select("pointsHistory");
+  if (!user) {
+    console.error(`❌ User ${userId} not found`);
+    return;
+  }
+
+  // Get completed orders count
+  const completedOrdersCount = await getCompletedOrdersCount(userId);
+
+  // Build payload
+  const pointsUpdateData = {
+    userId,
+    totalPoints: newTotalPoints,
+    pointsChange: points + bonusPointsAdded,
+    bonusPoints: bonusPointsAdded,
+    totalPointsHistoryLength: user.pointsHistory.length,
+    reason: msg,
+    timestamp: new Date().toISOString(),
+    totalCompletedOrders: completedOrdersCount,
+    pointsHistory:
+      user.pointsHistory
+        ?.sort(
+          (a, b) =>
+            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        )
+        .slice(0, 3) || [],
+  };
+
+  // Emit to the user’s room
+  const room = `user_${userId}`;
+  const socketsInRoom = io.sockets.adapter.rooms.get(room);
+
+  if (socketsInRoom && socketsInRoom.size > 0) {
+    console.log(
+      `📤 Emitting to room "${room}" with ${socketsInRoom.size} sockets`
+    );
+    io.to(room).emit("points:updated", pointsUpdateData);
+    console.log(
+      `✅ Points update emitted successfully for user ${userId}:`,
+      pointsUpdateData
+    );
+  } else {
+    console.warn(
+      `⚠️ No sockets found in room "${room}" - user might be offline`
+    );
+  }
+
+  // Debug: list all rooms
+  console.log(
+    "🔍 All available rooms:",
+    Array.from(io.sockets.adapter.rooms.keys())
+  );
 };
