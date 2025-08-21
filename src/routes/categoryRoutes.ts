@@ -64,6 +64,7 @@ import {
   getAllItems,
   getItemByName,
   getItems,
+  getItemsByIds,
   updateItem,
 } from "../controllers/itemsController";
 import {
@@ -124,7 +125,7 @@ export default (router: express.Router) => {
     handleMulterError,
     updateCategory
   );
-  
+  router.post('/items/get-by-id', getItemsByIds);
   router.delete(
     "/categories/:categoryName",
     authenticate,

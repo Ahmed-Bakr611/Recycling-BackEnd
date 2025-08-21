@@ -80,41 +80,52 @@ export const getAllItems = async (
     res.status(500).json({ message: (err as Error).message });
   }
 };
-
 export const getItems = async (req: Request, res: Response): Promise<void> => {
   try {
     const { categoryName } = req.params;
     const { skip, limit } = req.pagination;
     const role = req.query.role;
     const language = req.query.language as 'en' | 'ar' || 'en';
+    const search = req.query.search as string;
 
     // Find category by English name
-    const category = await Category.findOne({ "name.en": categoryName }).slice(
-      "items",
-      [skip, limit]
-    );
+    const category = await Category.findOne({ "name.en": categoryName });
 
     if (!category) {
       res.status(404).json({ message: "Category not found" });
       return;
     }
 
-    // Get total items count in this category
-    const fullCategory = await Category.findOne({ "name.en": categoryName });
-    const totalItems = fullCategory?.items.length || 0;
+    // Get all items from this category
+    let allItems = Array.isArray(category.items) ? category.items : [];
 
-    let items = Array.isArray(category.items)
-      ? category.items.map(item => {
-          const obj = item.toObject ? item.toObject() : { ...item };
-          return {
-            ...obj,
-            categoryId: category._id,
-            categoryName: category.name,
-            displayName: obj.name?.[language] || obj.name?.en || obj.name,
-            categoryDisplayName: category.name[language] || category.name.en,
-          };
-        })
-      : [];
+    // Apply search filter if search term exists
+    if (search && search.trim()) {
+      const searchTerm = search.trim().toLowerCase();
+      allItems = allItems.filter(item => {
+        const nameEn = item.name?.en?.toLowerCase() || '';
+        const nameAr = item.name?.ar?.toLowerCase() || '';
+        return nameEn.includes(searchTerm) || nameAr.includes(searchTerm);
+      });
+    }
+
+    // Get total count after filtering
+    const totalItems = allItems.length;
+
+    // Apply pagination to filtered results
+    const paginatedItems = allItems.slice(skip, skip + limit);
+
+    // Transform items
+    let items = paginatedItems.map(item => {
+      const obj = item.toObject ? item.toObject() : { ...item };
+      return {
+        ...obj,
+        categoryId: category._id,
+        categoryName: category.name,
+        displayName: obj.name?.[language] || obj.name?.en || obj.name,
+        categoryDisplayName: category.name[language] || category.name.en,
+      };
+    });
       
     if (role === "buyer") {
       items = items.map(item => ({
@@ -125,10 +136,97 @@ export const getItems = async (req: Request, res: Response): Promise<void> => {
 
     res.paginated(items, totalItems);
   } catch (err) {
+    console.error("getItems error:", err);
     res.status(500).json({ message: (err as Error).message });
   }
 };
+// Add this new function to your items controller file
 
+export const getItemsByIds = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { itemIds, userRole } = req.body;
+    const language = req.query.language as 'en' | 'ar' || 'en';
+
+    // Validate input
+    if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+      res.status(400).json({ 
+        message: 'itemIds array is required',
+        success: false 
+      });
+      return;
+    }
+
+    // Validate itemIds are valid MongoDB ObjectIds
+    const validItemIds = itemIds.filter(id => 
+      typeof id === 'string' && mongoose.Types.ObjectId.isValid(id)
+    );
+
+    if (validItemIds.length === 0) {
+      res.status(400).json({ 
+        message: 'No valid item IDs provided',
+        success: false 
+      });
+      return;
+    }
+
+    // Convert string IDs to ObjectIds
+    const objectIds = validItemIds.map(id => new mongoose.Types.ObjectId(id));
+
+    // Find items across all categories using aggregation
+    const items = await Category.aggregate([
+      { $unwind: '$items' },
+      {
+        $match: {
+          'items._id': { $in: objectIds }
+        }
+      },
+      {
+        $project: {
+          _id: '$items._id',
+          name: '$items.name',
+          points: '$items.points',
+          price: '$items.price',
+          measurement_unit: '$items.measurement_unit',
+          image: '$items.image',
+          quantity: '$items.quantity',
+          categoryName: '$name',
+          categoryId: '$_id',
+        }
+      }
+    ]);
+
+    // Transform items with language-specific display names and role-based pricing
+    const transformedItems = items.map(item => {
+      const result: any = {
+        ...item,
+        displayName: item.name?.[language] || item.name?.en || item.name,
+        categoryDisplayName: item.categoryName?.[language] || item.categoryName?.en || item.categoryName
+      };
+
+      // Apply buyer pricing (1.5x markup)
+      if (userRole === "buyer") {
+        result.price = item.price ? Math.round(item.price * 1.5 * 100) / 100 : item.price;
+      }
+
+      return result;
+    });
+
+    res.status(200).json({
+      data: transformedItems,
+      success: true,
+    });
+
+  } catch (error) {
+    console.error('Error fetching items by IDs:', error);
+    res.status(500).json({
+      message: 'Internal server error',
+      success: false,
+    });
+  }
+};
 export const addItem = async (
   req: MulterRequest,
   res: Response
