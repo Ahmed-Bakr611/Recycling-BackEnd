@@ -699,6 +699,7 @@ export const getItemsWithSearch = async (
     });
   }
 };
+
 // NEW: Get all unique category names for filter dropdown
 export const getCategoryNames = async (
   req: Request,
