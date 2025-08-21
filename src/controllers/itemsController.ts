@@ -25,9 +25,9 @@ export const getAllItems = async (
     const role = req.query.role;
     const language = req.query.language as 'en' | 'ar' || 'en';
     const categoryName = req.query.category as string;
+  const allFlag = req.query.all === 'true';
 
     let matchStage = {};
-
     if (categoryName && categoryName !== 'all') {
       matchStage = { "name.en": categoryName };
     }
@@ -39,25 +39,30 @@ export const getAllItems = async (
     ]);
     const totalItems = totalAggregation[0]?.totalItems || 0;
 
-    let items = await Category.aggregate([
+    // Build aggregation pipeline
+    const pipeline: any[] = [
       { $match: matchStage },
       { $unwind: "$items" },
-      { $skip: skip },
-      { $limit: limit },
-      {
-        $project: {
-          _id: "$items._id",
-          name: "$items.name",
-          points: "$items.points",
-          price: "$items.price",
-          measurement_unit: "$items.measurement_unit",
-          image: "$items.image",
-          quantity: "$items.quantity",
-          categoryName: "$name",
-          categoryId: "$_id",
-        },
+    ];
+    if (!allFlag) {
+      pipeline.push({ $skip: skip });
+      pipeline.push({ $limit: limit });
+    }
+    pipeline.push({
+      $project: {
+        _id: "$items._id",
+        name: "$items.name",
+        points: "$items.points",
+        price: "$items.price",
+        measurement_unit: "$items.measurement_unit",
+        image: "$items.image",
+        quantity: "$items.quantity",
+        categoryName: "$name",
+        categoryId: "$_id",
       },
-    ]) as Array<Record<string, any>>;
+    });
+
+    let items = await Category.aggregate(pipeline) as Array<Record<string, any>>;
 
     // Transform items with language-specific display names
     const transformedItems = items.map(item => {
@@ -66,15 +71,17 @@ export const getAllItems = async (
         displayName: item.name?.[language] || item.name?.en || item.name,
         categoryDisplayName: item.categoryName?.[language] || item.categoryName?.en || item.categoryName
       };
-
       if (role === "buyer") {
         result.price = item.price ? Math.round(item.price * 1.5 * 100) / 100 : item.price;
       }
-
       return result;
     });
 
-    res.paginated(transformedItems, totalItems);
+    if (allFlag) {
+      res.status(200).json({ items: transformedItems, total: totalItems });
+    } else {
+      res.paginated(transformedItems, totalItems);
+    }
   } catch (err) {
     console.error("getAllItems error:", err);
     res.status(500).json({ message: (err as Error).message });
