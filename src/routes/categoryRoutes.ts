@@ -1,5 +1,51 @@
-import express from "express";
 import multer from "multer";
+
+export const handleMulterError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    switch (err.code) {
+      case "LIMIT_FILE_SIZE":
+        return res.status(400).json({
+          success: false,
+          message: "File too large. Maximum size allowed is 5MB.",
+          error: "FILE_TOO_LARGE"
+        });
+      case "LIMIT_UNEXPECTED_FILE":
+        return res.status(400).json({
+          success: false,
+          message: "Unexpected field name. Please check your form field.",
+          error: "UNEXPECTED_FIELD"
+        });
+      default:
+        return res.status(400).json({
+          success: false,
+          message: "File upload error occurred.",
+          error: err.code
+        });
+    }
+  }
+
+  // Handle custom fileFilter errors
+  if (err.code === "INVALID_FILE_TYPE") {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+      error: "INVALID_FILE_TYPE"
+    });
+  }
+
+  // Handle other errors
+  if (err.message && err.message.includes("files are allowed")) {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+      error: "INVALID_FILE_TYPE"
+    });
+  }
+
+  next(err);
+};
+
+import express from "express";
 import {
   createCategory,
   getAllCategories,
@@ -8,13 +54,16 @@ import {
   updateCategory,
   getCategoryByName,
   getCategoriesWithPagination,
+  getItemsWithSearch,
+  getCategoryNames,
+  getSearchSuggestions,
 } from "../controllers/categoryController";
 import {
   addItem,
   deleteItem,
   getAllItems,
+  getItemByName,
   getItems,
-  migrateToBilingual,
   updateItem,
 } from "../controllers/itemsController";
 import {
@@ -25,7 +74,6 @@ import {
 import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
 import { paginate } from "../middlewares/paginate";
-import { handleMulterError } from "../middlewares/multerError";
 
 const uploadCategory = multer({ storage: categoryStorage, fileFilter });
 const uploadSubcategory = multer({ storage: subcategoryStorage, fileFilter });
@@ -36,32 +84,37 @@ export default (router: express.Router) => {
     authenticate,
     authorize(["admin"]),
     uploadCategory.single("image"),
+    handleMulterError,
     createCategory
   );
-  router.post('/migrate',migrateToBilingual)
+  
+  
   router.get("/categories", paginate(), getCategoriesWithPagination);
+  
   router.post(
     "/categories/with-image",
     authenticate,
     authorize(["admin"]),
     uploadCategory.single("image"),
+    handleMulterError,
     createCategoryWithImage
   );
+  
   router.post(
     "/categories/add-item/:categoryName",
     authenticate,
     authorize(["admin"]),
     uploadSubcategory.single("image"),
     handleMulterError,
-
     addItem
   );
+  
   router.get("/get-items/:categoryName", getCategoryByName);
-
+  
   router.get("/categories/get-items/:categoryName", paginate(), getItems);
-
+  
   router.get("/categories/get-items", paginate(), getAllItems);
-
+  
   router.put(
     "/categories/:categoryName",
     authenticate,
@@ -70,12 +123,14 @@ export default (router: express.Router) => {
     handleMulterError,
     updateCategory
   );
+  
   router.delete(
     "/categories/:categoryName",
     authenticate,
     authorize(["admin"]),
     deleteCategory
   );
+  
   router.put(
     "/categories/item/:categoryName/:itemId",
     authenticate,
@@ -84,10 +139,19 @@ export default (router: express.Router) => {
     handleMulterError,
     updateItem
   );
+  
   router.delete(
     "/categories/item/:categoryName/:itemId",
     authenticate,
     authorize(["admin"]),
     deleteItem
   );
+  router.get('/get-items', paginate(), getItemsWithSearch);
+
+// Get category names for dropdown filter
+router.get('/category-names', getCategoryNames);
+router.get('/items/by-name/:itemName', getItemByName);
+
+// Optional: Search suggestions for autocomplete
+router.get('/search-suggestions', getSearchSuggestions);
 };

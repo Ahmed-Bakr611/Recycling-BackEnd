@@ -1281,18 +1281,23 @@ export const getTopMaterialsRecycled = async (
     
     console.log('Fetching top materials, category filter:', category);
 
-    // Build the aggregation pipeline for your new schema
     const pipeline: any[] = [
-      // Only include completed orders
       { $match: { status: "completed" } },
-      
-      // Unwind items
       { $unwind: "$items" },
       
-      // Add category filter if specified (now filtering by categoryName string)
-      ...(category ? [{ $match: { "items.categoryName": category } }] : []),
+      // Add category filter if specified - check both categoryName and subcategory
+      ...(category ? [{
+        $match: {
+          $or: [
+            { "items.categoryName": category },
+            { "items.subcategory": category },
+            // Handle bilingual category names
+            { "items.categoryName.en": category },
+            { "items.categoryName.ar": category }
+          ]
+        }
+      }] : []),
       
-      // Convert quantities and points to numbers and handle bilingual item names
       {
         $addFields: {
           "items.quantity": { 
@@ -1326,21 +1331,42 @@ export const getTopMaterialsRecycled = async (
               }
             }
           },
-          // Create normalized name for grouping (lowercase)
+          // Create normalized name for grouping (lowercase, trimmed)
           "items.normalizedItemName": {
-            $toLower: {
-              $cond: {
-                if: { $and: [
-                  { $type: "$items.name" },
-                  { $eq: [{ $type: "$items.name" }, "object"] }
-                ]},
-                then: { $ifNull: ["$items.name.en", "$items.name.ar"] },
-                else: {
+            $trim: {
+              input: {
+                $toLower: {
                   $cond: {
-                    if: { $type: "$items.name" },
-                    then: "$items.name",
-                    else: "unknown"
+                    if: { $and: [
+                      { $type: "$items.name" },
+                      { $eq: [{ $type: "$items.name" }, "object"] }
+                    ]},
+                    then: { $ifNull: ["$items.name.en", "$items.name.ar"] },
+                    else: {
+                      $cond: {
+                        if: { $type: "$items.name" },
+                        then: "$items.name",
+                        else: "unknown"
+                      }
+                    }
                   }
+                }
+              }
+            }
+          },
+          // Extract category display name
+          "items.categoryDisplayName": {
+            $cond: {
+              if: { $and: [
+                { $type: "$items.categoryName" },
+                { $eq: [{ $type: "$items.categoryName" }, "object"] }
+              ]},
+              then: { $ifNull: ["$items.categoryName.en", "$items.categoryName.ar"] },
+              else: {
+                $cond: {
+                  if: { $type: "$items.categoryName" },
+                  then: "$items.categoryName",
+                  else: "$items.subcategory"
                 }
               }
             }
@@ -1352,18 +1378,17 @@ export const getTopMaterialsRecycled = async (
       {
         $group: {
           _id: "$items.normalizedItemName",
-          displayName: { $first: "$items.displayName" }, // Display name (string)
-          name: { $first: "$items.name" }, // Original bilingual object
+          displayName: { $first: "$items.displayName" },
+          name: { $first: "$items.name" },
           totalQuantity: { $sum: "$items.quantity" },
           totalPoints: { $sum: { $multiply: ["$items.points", "$items.quantity"] } },
           image: { $first: "$items.image" },
-          categoryName: { $first: "$items.categoryName" },
+          categoryName: { $first: "$items.categoryDisplayName" },
           measurementUnit: { $first: "$items.measurement_unit" },
           orderCount: { $sum: 1 }
         }
       },
       
-      // Add display unit based on measurement_unit
       {
         $addFields: {
           displayUnit: {
@@ -1376,24 +1401,16 @@ export const getTopMaterialsRecycled = async (
         }
       },
       
-      // Sort by quantity descending
       { $sort: { totalQuantity: -1 } },
-      
-      // Limit results
-      { $limit: 10 }
+      { $limit: 4 } // Changed from 10 to 4
     ];
-
-    console.log('Aggregation pipeline:', JSON.stringify(pipeline, null, 2));
 
     const materials = await Order.aggregate(pipeline);
     
-    console.log('Raw materials result:', materials);
-    
-    // Format the response
     const formattedMaterials = materials.map(material => ({
       _id: material._id,
-      displayName: material.displayName, // Extracted string name for display
-      name: material.name, // Original bilingual object
+      displayName: material.displayName,
+      name: material.name,
       totalQuantity: material.totalQuantity || 0,
       totalPoints: material.totalPoints || 0,
       image: material.image || null,
@@ -1401,8 +1418,6 @@ export const getTopMaterialsRecycled = async (
       unit: material.displayUnit || 'pieces',
       orderCount: material.orderCount || 0
     }));
-
-    console.log('Formatted materials:', formattedMaterials);
 
     res.json({
       success: true,

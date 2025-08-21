@@ -340,278 +340,347 @@ interface OldItem {
   [key: string]: any;
 }
 
-export const migrateToBilingual = async (req: Request, res: Response): Promise<void> => {
-  try {
-    // Debug logging
-    console.log('📋 Request details:');
-    console.log('Headers:', req.headers);
-    console.log('Content-Type:', req.get('Content-Type'));
-    console.log('Raw body:', req.body);
-    console.log('Body type:', typeof req.body);
-    console.log('Body keys:', req.body ? Object.keys(req.body) : 'No body');
+// export const migrateToBilingual = async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     // Debug logging
+//     console.log('📋 Request details:');
+//     console.log('Headers:', req.headers);
+//     console.log('Content-Type:', req.get('Content-Type'));
+//     console.log('Raw body:', req.body);
+//     console.log('Body type:', typeof req.body);
+//     console.log('Body keys:', req.body ? Object.keys(req.body) : 'No body');
 
-    // Check if body exists
-    if (!req.body) {
-      res.status(400).json({
-        error: 'No request body found',
-        message: 'Make sure to send JSON data in the request body',
-        debug: {
-          contentType: req.get('Content-Type'),
-          bodyExists: !!req.body,
-          bodyType: typeof req.body
-        }
-      });
-      return;
-    }
+//     // Check if body exists
+//     if (!req.body) {
+//       res.status(400).json({
+//         error: 'No request body found',
+//         message: 'Make sure to send JSON data in the request body',
+//         debug: {
+//           contentType: req.get('Content-Type'),
+//           bodyExists: !!req.body,
+//           bodyType: typeof req.body
+//         }
+//       });
+//       return;
+//     }
 
-    const { action, confirm } = req.body;
+//     const { action, confirm } = req.body;
 
-    // Safety check - require confirmation
-    if (confirm !== 'YES_MIGRATE_DATA') {
-      res.status(400).json({
-        error: 'Migration requires confirmation',
-        message: 'Send { "action": "migrate", "confirm": "YES_MIGRATE_DATA" } to proceed',
-        warning: 'This will modify your database structure. Make sure you have a backup!',
-        received: { action, confirm }
-      });
-      return;
-    }
+//     // Safety check - require confirmation
+//     if (confirm !== 'YES_MIGRATE_DATA') {
+//       res.status(400).json({
+//         error: 'Migration requires confirmation',
+//         message: 'Send { "action": "migrate", "confirm": "YES_MIGRATE_DATA" } to proceed',
+//         warning: 'This will modify your database structure. Make sure you have a backup!',
+//         received: { action, confirm }
+//       });
+//       return;
+//     }
 
-    if (action !== 'migrate') {
-      res.status(400).json({
-        error: 'Invalid action',
-        validActions: ['migrate'],
-        received: action
-      });
-      return;
-    }
+//     if (action !== 'migrate') {
+//       res.status(400).json({
+//         error: 'Invalid action',
+//         validActions: ['migrate'],
+//         received: action
+//       });
+//       return;
+//     }
 
-    console.log('🔄 Starting migration to bilingual format via API...');
+//     console.log('🔄 Starting migration to bilingual format via API...');
 
-    // Get all existing categories
-    const categories = await mongoose.connection.db
-      .collection('categories')
-      .find({})
-      .toArray() as OldCategory[];
+//     // Get all existing categories
+//     const categories = await mongoose.connection.db
+//       .collection('categories')
+//       .find({})
+//       .toArray() as OldCategory[];
 
-    console.log(`📊 Found ${categories.length} categories to migrate`);
+//     console.log(`📊 Found ${categories.length} categories to migrate`);
 
-    let migratedCategoriesCount = 0;
-    let migratedItemsCount = 0;
-    const migrationLog: string[] = [];
-    const errors: string[] = [];
+//     let migratedCategoriesCount = 0;
+//     let migratedItemsCount = 0;
+//     const migrationLog: string[] = [];
+//     const errors: string[] = [];
 
-    for (const category of categories) {
-      try {
-        migrationLog.push(`\n🔄 Migrating category: ${JSON.stringify(category.name)}`);
+//     for (const category of categories) {
+//       try {
+//         migrationLog.push(`\n🔄 Migrating category: ${JSON.stringify(category.name)}`);
 
-        // Prepare the updated category
-        const updatedCategory: any = { ...category };
-        let categoryChanged = false;
+//         // Prepare the updated category
+//         const updatedCategory: any = { ...category };
+//         let categoryChanged = false;
 
-        // Convert category name to bilingual format
-        if (typeof category.name === 'string') {
-          updatedCategory.name = {
-            en: category.name,
-            ar: category.name // Fallback to English
-          };
-          migrationLog.push(`  ✓ Converted string name "${category.name}" to bilingual format`);
-          categoryChanged = true;
-        } else if (typeof category.name === 'object' && category.name.en) {
-          updatedCategory.name = {
-            en: category.name.en,
-            ar: category.name.ar || category.name.en
-          };
-          migrationLog.push(`  ✓ Enhanced existing object name structure`);
-          if (!category.name.ar) categoryChanged = true;
-        } else {
-          const errorMsg = `Unexpected name format for category ${category._id}: ${JSON.stringify(category.name)}`;
-          errors.push(errorMsg);
-          migrationLog.push(`  ❌ ${errorMsg}`);
-          continue;
-        }
+//         // Convert category name to bilingual format
+//         if (typeof category.name === 'string') {
+//           updatedCategory.name = {
+//             en: category.name,
+//             ar: category.name // Fallback to English
+//           };
+//           migrationLog.push(`  ✓ Converted string name "${category.name}" to bilingual format`);
+//           categoryChanged = true;
+//         } else if (typeof category.name === 'object' && category.name.en) {
+//           updatedCategory.name = {
+//             en: category.name.en,
+//             ar: category.name.ar || category.name.en
+//           };
+//           migrationLog.push(`  ✓ Enhanced existing object name structure`);
+//           if (!category.name.ar) categoryChanged = true;
+//         } else {
+//           const errorMsg = `Unexpected name format for category ${category._id}: ${JSON.stringify(category.name)}`;
+//           errors.push(errorMsg);
+//           migrationLog.push(`  ❌ ${errorMsg}`);
+//           continue;
+//         }
 
-        // Convert category description to bilingual format
-        if (typeof category.description === 'string') {
-          updatedCategory.description = {
-            en: category.description,
-            ar: category.description // Fallback to English
-          };
-          migrationLog.push(`  ✓ Converted description to bilingual format`);
-          categoryChanged = true;
-        } else if (typeof category.description === 'object' && category.description?.en) {
-          updatedCategory.description = {
-            en: category.description.en,
-            ar: category.description.ar || category.description.en
-          };
-          migrationLog.push(`  ✓ Enhanced existing description structure`);
-          if (!category.description.ar) categoryChanged = true;
-        } else if (!category.description) {
-          // Handle missing description
-          updatedCategory.description = {
-            en: `${updatedCategory.name.en} category`,
-            ar: `${updatedCategory.name.ar} category`
-          };
-          migrationLog.push(`  ✓ Added default bilingual description`);
-          categoryChanged = true;
-        }
+//         // Convert category description to bilingual format
+//         if (typeof category.description === 'string') {
+//           updatedCategory.description = {
+//             en: category.description,
+//             ar: category.description // Fallback to English
+//           };
+//           migrationLog.push(`  ✓ Converted description to bilingual format`);
+//           categoryChanged = true;
+//         } else if (typeof category.description === 'object' && category.description?.en) {
+//           updatedCategory.description = {
+//             en: category.description.en,
+//             ar: category.description.ar || category.description.en
+//           };
+//           migrationLog.push(`  ✓ Enhanced existing description structure`);
+//           if (!category.description.ar) categoryChanged = true;
+//         } else if (!category.description) {
+//           // Handle missing description
+//           updatedCategory.description = {
+//             en: `${updatedCategory.name.en} category`,
+//             ar: `${updatedCategory.name.ar} category`
+//           };
+//           migrationLog.push(`  ✓ Added default bilingual description`);
+//           categoryChanged = true;
+//         }
 
-        // Convert item names to bilingual format
-        let itemsChanged = false;
-        if (category.items && Array.isArray(category.items)) {
-          updatedCategory.items = category.items.map((item: OldItem, index: number) => {
-            const updatedItem = { ...item };
-            let itemChanged = false;
+//         // Convert item names to bilingual format
+//         let itemsChanged = false;
+//         if (category.items && Array.isArray(category.items)) {
+//           updatedCategory.items = category.items.map((item: OldItem, index: number) => {
+//             const updatedItem = { ...item };
+//             let itemChanged = false;
             
-            if (typeof item.name === 'string') {
-              updatedItem.name = {
-                en: item.name,
-                ar: item.name // Fallback to English
-              };
-              migrationLog.push(`    ✓ Item ${index + 1}: Converted "${item.name}" to bilingual`);
-              itemChanged = true;
-              migratedItemsCount++;
-            } else if (typeof item.name === 'object' && item.name?.en) {
-              updatedItem.name = {
-                en: item.name.en,
-                ar: item.name.ar || item.name.en
-              };
-              migrationLog.push(`    ✓ Item ${index + 1}: Enhanced existing bilingual structure`);
-              if (!item.name.ar) {
-                itemChanged = true;
-                migratedItemsCount++;
-              }
-            } else if (!item.name) {
-              // Handle items with missing names
-              updatedItem.name = {
-                en: `Item ${index + 1}`,
-                ar: `Item ${index + 1}`
-              };
-              migrationLog.push(`    ✓ Item ${index + 1}: Added default bilingual name`);
-              itemChanged = true;
-              migratedItemsCount++;
-            } else {
-              migrationLog.push(`    ⚠️ Item ${index + 1}: Unexpected name format: ${JSON.stringify(item.name)}`);
-            }
+//             if (typeof item.name === 'string') {
+//               updatedItem.name = {
+//                 en: item.name,
+//                 ar: item.name // Fallback to English
+//               };
+//               migrationLog.push(`    ✓ Item ${index + 1}: Converted "${item.name}" to bilingual`);
+//               itemChanged = true;
+//               migratedItemsCount++;
+//             } else if (typeof item.name === 'object' && item.name?.en) {
+//               updatedItem.name = {
+//                 en: item.name.en,
+//                 ar: item.name.ar || item.name.en
+//               };
+//               migrationLog.push(`    ✓ Item ${index + 1}: Enhanced existing bilingual structure`);
+//               if (!item.name.ar) {
+//                 itemChanged = true;
+//                 migratedItemsCount++;
+//               }
+//             } else if (!item.name) {
+//               // Handle items with missing names
+//               updatedItem.name = {
+//                 en: `Item ${index + 1}`,
+//                 ar: `Item ${index + 1}`
+//               };
+//               migrationLog.push(`    ✓ Item ${index + 1}: Added default bilingual name`);
+//               itemChanged = true;
+//               migratedItemsCount++;
+//             } else {
+//               migrationLog.push(`    ⚠️ Item ${index + 1}: Unexpected name format: ${JSON.stringify(item.name)}`);
+//             }
 
-            if (itemChanged) itemsChanged = true;
-            return updatedItem;
-          });
+//             if (itemChanged) itemsChanged = true;
+//             return updatedItem;
+//           });
           
-          migrationLog.push(`  📦 Processed ${category.items.length} items (${updatedCategory.items.filter((item: any) => typeof item.name === 'object').length} migrated)`);
-        } else {
-          migrationLog.push(`  📦 No items found in this category`);
-        }
+//           migrationLog.push(`  📦 Processed ${category.items.length} items (${updatedCategory.items.filter((item: any) => typeof item.name === 'object').length} migrated)`);
+//         } else {
+//           migrationLog.push(`  📦 No items found in this category`);
+//         }
 
-        // Only update if something changed
-        if (categoryChanged || itemsChanged) {
-          // Update the category in database
-          await mongoose.connection.db
-            .collection('categories')
-            .replaceOne({ _id: category._id }, updatedCategory);
+//         // Only update if something changed
+//         if (categoryChanged || itemsChanged) {
+//           // Update the category in database
+//           await mongoose.connection.db
+//             .collection('categories')
+//             .replaceOne({ _id: category._id }, updatedCategory);
           
-          migratedCategoriesCount++;
-          migrationLog.push(`✅ Successfully migrated category: ${updatedCategory.name.en}`);
+//           migratedCategoriesCount++;
+//           migrationLog.push(`✅ Successfully migrated category: ${updatedCategory.name.en}`);
 
-          // Update translation files if category names changed
-          if (categoryChanged) {
-            try {
-              await translationService.addCategoryTranslation(
-                updatedCategory.name.en,
-                { en: updatedCategory.name.en, ar: updatedCategory.name.ar },
-                { en: updatedCategory.description.en, ar: updatedCategory.description.ar }
-              );
+//           // Update translation files if category names changed
+//           if (categoryChanged) {
+//             try {
+//               await translationService.addCategoryTranslation(
+//                 updatedCategory.name.en,
+//                 { en: updatedCategory.name.en, ar: updatedCategory.name.ar },
+//                 { en: updatedCategory.description.en, ar: updatedCategory.description.ar }
+//               );
 
-              // Add item translations to files
-              if (updatedCategory.items && Array.isArray(updatedCategory.items)) {
-                for (const item of updatedCategory.items) {
-                  if (item.name && typeof item.name === 'object') {
-                    await translationService.addItemTranslation(
-                      updatedCategory.name.en,
-                      item.name.en,
-                      { en: item.name.en, ar: item.name.ar }
-                    );
-                  }
-                }
-              }
+//               // Add item translations to files
+//               if (updatedCategory.items && Array.isArray(updatedCategory.items)) {
+//                 for (const item of updatedCategory.items) {
+//                   if (item.name && typeof item.name === 'object') {
+//                     await translationService.addItemTranslation(
+//                       updatedCategory.name.en,
+//                       item.name.en,
+//                       { en: item.name.en, ar: item.name.ar }
+//                     );
+//                   }
+//                 }
+//               }
 
-              migrationLog.push(`  ✅ Translation files updated for category and ${updatedCategory.items?.length || 0} items`);
-            } catch (translationError) {
-              migrationLog.push(`  ⚠️ Translation file update failed: ${translationError}`);
-            }
-          }
-        } else {
-          migrationLog.push(`  ℹ️ Category already in bilingual format, skipping`);
-        }
+//               migrationLog.push(`  ✅ Translation files updated for category and ${updatedCategory.items?.length || 0} items`);
+//             } catch (translationError) {
+//               migrationLog.push(`  ⚠️ Translation file update failed: ${translationError}`);
+//             }
+//           }
+//         } else {
+//           migrationLog.push(`  ℹ️ Category already in bilingual format, skipping`);
+//         }
 
-      } catch (error) {
-        const errorMsg = `Failed to migrate category ${category._id}: ${error}`;
-        errors.push(errorMsg);
-        migrationLog.push(`❌ ${errorMsg}`);
-        console.error(errorMsg);
-      }
+//       } catch (error) {
+//         const errorMsg = `Failed to migrate category ${category._id}: ${error}`;
+//         errors.push(errorMsg);
+//         migrationLog.push(`❌ ${errorMsg}`);
+//         console.error(errorMsg);
+//       }
+//     }
+
+//     // Verify migration
+//     migrationLog.push('\n🔍 Verifying migration...');
+//     const verificationCategory = await Category.findOne({});
+//     let verificationData = {};
+    
+//     if (verificationCategory) {
+//       const sampleItem = verificationCategory.items.length > 0 ? verificationCategory.items[0] : null;
+//       verificationData = {
+//         sampleCategoryStructure: {
+//           name: verificationCategory.name,
+//           description: verificationCategory.description,
+//           itemsCount: verificationCategory.items.length,
+//           sampleItemName: sampleItem ? sampleItem.name : null
+//         }
+//       };
+//       migrationLog.push('✅ Verification successful - sample data structure looks correct');
+//     } else {
+//       migrationLog.push('⚠️ No categories found for verification');
+//     }
+
+//     // Generate detailed summary
+//     const totalItems = categories.reduce((acc, cat) => acc + (cat.items?.length || 0), 0);
+    
+//     const result = {
+//       success: true,
+//       message: `Migration completed! ${migratedCategoriesCount}/${categories.length} categories and ${migratedItemsCount}/${totalItems} items migrated successfully`,
+//       summary: {
+//         categories: {
+//           total: categories.length,
+//           migrated: migratedCategoriesCount,
+//           successRate: `${((migratedCategoriesCount / categories.length) * 100).toFixed(1)}%`
+//         },
+//         items: {
+//           total: totalItems,
+//           migrated: migratedItemsCount,
+//           successRate: totalItems > 0 ? `${((migratedItemsCount / totalItems) * 100).toFixed(1)}%` : '0%'
+//         },
+//         errors: {
+//           count: errors.length,
+//           list: errors
+//         }
+//       },
+//       migrationLog,
+//       verificationData
+//     };
+
+//     console.log(`🎉 Migration completed!`);
+//     console.log(`   Categories: ${migratedCategoriesCount}/${categories.length}`);
+//     console.log(`   Items: ${migratedItemsCount}/${totalItems}`);
+    
+//     res.status(200).json(result);
+
+//   } catch (error) {
+//     console.error('❌ Migration failed:', error);
+//     res.status(500).json({
+//       success: false,
+//       error: 'Migration failed',
+//       message: error instanceof Error ? error.message : 'Unknown error occurred',
+//       details: 'Check server logs for more information'
+//     });
+//   }
+// };
+
+
+
+export const getItemByName = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { itemName } = req.params;
+    const language = req.query.language as 'en' | 'ar' || 'en';
+    const role = req.query.role as string;
+
+    if (!itemName) {
+      res.status(400).json({ message: "Item name is required" });
+      return;
     }
 
-    // Verify migration
-    migrationLog.push('\n🔍 Verifying migration...');
-    const verificationCategory = await Category.findOne({});
-    let verificationData = {};
-    
-    if (verificationCategory) {
-      const sampleItem = verificationCategory.items.length > 0 ? verificationCategory.items[0] : null;
-      verificationData = {
-        sampleCategoryStructure: {
-          name: verificationCategory.name,
-          description: verificationCategory.description,
-          itemsCount: verificationCategory.items.length,
-          sampleItemName: sampleItem ? sampleItem.name : null
-        }
-      };
-      migrationLog.push('✅ Verification successful - sample data structure looks correct');
-    } else {
-      migrationLog.push('⚠️ No categories found for verification');
-    }
-
-    // Generate detailed summary
-    const totalItems = categories.reduce((acc, cat) => acc + (cat.items?.length || 0), 0);
-    
-    const result = {
-      success: true,
-      message: `Migration completed! ${migratedCategoriesCount}/${categories.length} categories and ${migratedItemsCount}/${totalItems} items migrated successfully`,
-      summary: {
-        categories: {
-          total: categories.length,
-          migrated: migratedCategoriesCount,
-          successRate: `${((migratedCategoriesCount / categories.length) * 100).toFixed(1)}%`
-        },
-        items: {
-          total: totalItems,
-          migrated: migratedItemsCount,
-          successRate: totalItems > 0 ? `${((migratedItemsCount / totalItems) * 100).toFixed(1)}%` : '0%'
-        },
-        errors: {
-          count: errors.length,
-          list: errors
+    // Search for item by name across all categories
+    const result = await Category.aggregate([
+      { $unwind: '$items' },
+      {
+        $match: {
+          $or: [
+            { 'items.name.en': { $regex: new RegExp(`^${itemName}$`, 'i') } },
+            { 'items.name.ar': { $regex: new RegExp(`^${itemName}$`, 'i') } }
+          ]
         }
       },
-      migrationLog,
-      verificationData
+      {
+        $project: {
+          _id: '$items._id',
+          name: '$items.name',
+          points: '$items.points',
+          price: '$items.price',
+          measurement_unit: '$items.measurement_unit',
+          image: '$items.image',
+          quantity: '$items.quantity',
+          categoryName: '$name',
+          categoryId: '$_id',
+        }
+      },
+      { $limit: 1 } // Get only the first match
+    ]);
+
+    if (result.length === 0) {
+      res.status(404).json({ message: "Item not found" });
+      return;
+    }
+
+    const item = result[0];
+
+    // Transform item with language-specific display names
+    const transformedItem = {
+      ...item,
+      displayName: item.name?.[language] || item.name?.en || item.name,
+      categoryDisplayName: item.categoryName?.[language] || item.categoryName?.en || item.categoryName,
+      price: role === "buyer" && item.price 
+        ? Math.round(item.price * 1.5 * 100) / 100 
+        : item.price
     };
 
-    console.log(`🎉 Migration completed!`);
-    console.log(`   Categories: ${migratedCategoriesCount}/${categories.length}`);
-    console.log(`   Items: ${migratedItemsCount}/${totalItems}`);
-    
-    res.status(200).json(result);
-
-  } catch (error) {
-    console.error('❌ Migration failed:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Migration failed',
-      message: error instanceof Error ? error.message : 'Unknown error occurred',
-      details: 'Check server logs for more information'
+    res.status(200).json({
+      success: true,
+      data: transformedItem
     });
+  } catch (err) {
+    console.error("getItemByName error:", err);
+    res.status(500).json({ message: (err as Error).message });
   }
 };
-
