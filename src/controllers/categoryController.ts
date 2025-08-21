@@ -362,3 +362,435 @@ export const getCategoryByName = async (
     res.status(500).json({ message: (err as Error).message });
   }
 };
+export const getItemsWithSearch = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { skip, limit } = req.pagination;
+    
+    // Extract and validate query parameters
+    const search = typeof req.query.search === 'string' ? req.query.search : '';
+    const category = typeof req.query.category === 'string' ? req.query.category : '';
+    const role = typeof req.query.role === 'string' ? req.query.role : '';
+    const language = (typeof req.query.language === 'string' && (req.query.language === 'en' || req.query.language === 'ar')) 
+      ? req.query.language as 'en' | 'ar' 
+      : 'en';
+    
+    console.log('🚀 === SEARCH DEBUG START ===');
+    console.log('📥 Query params:', { search, category, role, language, skip, limit });
+    
+    // Arabic text normalization function
+    const normalizeArabicText = (text: string): string => {
+      if (!text) return text;
+      
+      return text
+        // Normalize different forms of Alef
+        .replace(/[آأإا]/g, 'ا')
+        // Normalize different forms of Hamza
+        .replace(/[ؤئء]/g, 'ء')
+        // Normalize different forms of Yaa
+        .replace(/[يى]/g, 'ي')
+        // Normalize different forms of Haa
+        .replace(/[هة]/g, 'ه')
+        // Remove diacritics/tashkeel
+        .replace(/[ًٌٍَُِّْٰ]/g, '')
+        // Normalize Taa Marbouta
+        .replace(/ة/g, 'ه');
+    };
+
+    // Enhanced search matching that works across languages
+    const createSearchMatch = (searchTerm: string) => {
+      if (!searchTerm || !searchTerm.trim()) return null;
+      
+      const trimmedTerm = searchTerm.trim();
+      const normalizedArabicTerm = normalizeArabicText(trimmedTerm);
+      
+      // Create multiple search patterns
+      const searchPatterns = [];
+      
+      // Original term (case-insensitive)
+      searchPatterns.push(new RegExp(trimmedTerm, 'i'));
+      
+      // If the term contains Arabic, add normalized version
+      if (/[\u0600-\u06FF]/.test(trimmedTerm)) {
+        searchPatterns.push(new RegExp(normalizedArabicTerm, 'i'));
+      }
+      
+      // Create the match conditions for both languages
+      const matchConditions = [];
+      
+      searchPatterns.forEach(pattern => {
+        // Search in English names
+        matchConditions.push({ 'items.name.en': pattern });
+        // Search in Arabic names
+        matchConditions.push({ 'items.name.ar': pattern });
+        
+        // Also search in normalized Arabic text using $function for more complex normalization
+        matchConditions.push({
+          $expr: {
+            $regexMatch: {
+              input: {
+                $replaceAll: {
+                  input: {
+                    $replaceAll: {
+                      input: {
+                        $replaceAll: {
+                          input: {
+                            $replaceAll: {
+                              input: {
+                                $replaceAll: {
+                                  input: '$items.name.ar',
+                                  find: 'آ',
+                                  replacement: 'ا'
+                                }
+                              },
+                              find: 'أ',
+                              replacement: 'ا'
+                            }
+                          },
+                          find: 'إ',
+                          replacement: 'ا'
+                        }
+                      },
+                      find: 'ة',
+                      replacement: 'ه'
+                    }
+                  },
+                  find: 'ى',
+                  replacement: 'ي'
+                }
+              },
+              regex: normalizedArabicTerm,
+              options: 'i'
+            }
+          }
+        });
+      });
+      
+      return { $or: matchConditions };
+    };
+    
+    // Build aggregation pipeline step by step
+    const pipeline: any[] = [];
+    
+    // Step 1: Match categories if category filter is applied (BEFORE unwind)
+    if (category && category !== 'all') {
+      const categoryRegex = new RegExp(category.trim(), 'i');
+      const categoryMatch = {
+        $or: [
+          { 'name.en': categoryRegex },
+          { 'name.ar': categoryRegex }
+        ]
+      };
+      pipeline.push({ $match: categoryMatch });
+      console.log('🔍 Added category filter:', categoryMatch);
+    }
+    
+    // Step 2: Unwind the items array to work with individual items
+    pipeline.push({ $unwind: '$items' });
+    console.log('🔍 Added $unwind stage');
+    
+    // Step 3: Enhanced search matching (AFTER unwind)
+    if (search && search.trim()) {
+      const searchMatch = createSearchMatch(search);
+      if (searchMatch) {
+        pipeline.push({ $match: searchMatch });
+        console.log('🔍 Added enhanced search filter');
+        console.log('🔍 Searching for term:', search.trim());
+        console.log('🔍 Normalized Arabic term:', normalizeArabicText(search.trim()));
+      }
+    }
+    
+    // Step 4: Add category info to each item
+    pipeline.push({
+      $addFields: {
+        'items.categoryName': '$name',
+        'items.categoryId': '$_id'
+      }
+    });
+    
+    // Step 5: Replace root with item data
+    pipeline.push({ $replaceRoot: { newRoot: '$items' } });
+    
+    // Step 6: Add display names and normalized versions
+    pipeline.push({
+      $addFields: {
+        displayName: { $ifNull: [`$name.${language}`, '$name.en'] },
+        displayCategoryName: { $ifNull: [`$categoryName.${language}`, '$categoryName.en'] },
+        // Add normalized Arabic names for better sorting/matching
+        normalizedArabicName: {
+          $replaceAll: {
+            input: {
+              $replaceAll: {
+                input: {
+                  $replaceAll: {
+                    input: {
+                      $replaceAll: {
+                        input: {
+                          $replaceAll: {
+                            input: '$name.ar',
+                            find: 'آ',
+                            replacement: 'ا'
+                          }
+                        },
+                        find: 'أ',
+                        replacement: 'ا'
+                      }
+                    },
+                    find: 'إ',
+                    replacement: 'ا'
+                  }
+                },
+                find: 'ة',
+                replacement: 'ه'
+              }
+            },
+            find: 'ى',
+            replacement: 'ي'
+          }
+        }
+      }
+    });
+    
+    // Step 7: Add price modification for buyers
+    if (role === 'buyer') {
+      pipeline.push({
+        $addFields: {
+          price: {
+            $round: [{ $multiply: ['$price', 1.5] }, 2]
+          }
+        }
+      });
+      console.log('🔍 Added buyer price modification');
+    }
+    
+    // Step 8: Sort for consistent results (prioritize exact matches)
+    if (search && search.trim()) {
+      // Sort with search relevance - exact matches first
+      const searchTerm = search.trim().toLowerCase();
+      pipeline.push({
+        $addFields: {
+          searchScore: {
+            $add: [
+              // Exact match in English gets highest score
+              {
+                $cond: [
+                  { $eq: [{ $toLower: '$name.en' }, searchTerm] },
+                  100,
+                  0
+                ]
+              },
+              // Exact match in Arabic gets highest score
+              {
+                $cond: [
+                  { $eq: [{ $toLower: '$name.ar' }, searchTerm] },
+                  100,
+                  0
+                ]
+              },
+              // Starts with match gets medium score
+              {
+                $cond: [
+                  {
+                    $or: [
+                      { $regexMatch: { input: '$name.en', regex: `^${searchTerm}`, options: 'i' } },
+                      { $regexMatch: { input: '$name.ar', regex: `^${searchTerm}`, options: 'i' } }
+                    ]
+                  },
+                  50,
+                  0
+                ]
+              },
+              // Contains match gets low score
+              10
+            ]
+          }
+        }
+      });
+      
+      pipeline.push({
+        $sort: { searchScore: -1, 'name.en': 1 }
+      });
+    } else {
+      pipeline.push({
+        $sort: { 'name.en': 1 }
+      });
+    }
+    
+    console.log('📋 Final pipeline stages:', pipeline.length);
+    
+    // Execute aggregation - first get total count
+    const countPipeline = [...pipeline];
+    // Remove sort and addFields for searchScore from count pipeline for efficiency
+    const cleanCountPipeline = countPipeline.filter(stage => 
+      !stage.$sort && 
+      !stage.$addFields?.searchScore
+    );
+    cleanCountPipeline.push({ $count: 'total' });
+    
+    const totalCountResult = await Category.aggregate(cleanCountPipeline);
+    const total = totalCountResult[0]?.total || 0;
+    
+    console.log('📊 Total items found before pagination:', total);
+    
+    // If no results found and we have search/category filters, log it
+    if (total === 0 && (search || (category && category !== 'all'))) {
+      console.log('❌ No results found for search/category filter');
+      console.log('🔍 Search term:', search);
+      console.log('🔍 Normalized search term:', search ? normalizeArabicText(search.trim()) : 'N/A');
+      console.log('🔍 Category:', category);
+    }
+    
+    // Then get paginated results
+    const resultPipeline = [
+      ...pipeline,
+      { $skip: skip },
+      { $limit: limit }
+    ];
+    
+    const items = await Category.aggregate(resultPipeline);
+    
+    console.log('📦 Items returned after pagination:', items.length);
+    if (items.length > 0) {
+      console.log('📦 First few items:', items.slice(0, 2).map(item => ({
+        name: item.name,
+        displayName: item.displayName,
+        searchScore: item.searchScore || 0
+      })));
+    }
+    
+    console.log('✅ === SEARCH DEBUG END ===');
+    
+    // Remove searchScore from final results for cleaner output
+    const cleanItems = items.map(item => {
+      const { searchScore, normalizedArabicName, ...cleanItem } = item;
+      return cleanItem;
+    });
+    
+    res.json({
+      success: true,
+      data: cleanItems,
+      pagination: {
+        currentPage: req.pagination.page,
+        itemsPerPage: req.pagination.limit,
+        totalItems: total,
+        totalPages: Math.ceil(total / req.pagination.limit),
+        hasNextPage: req.pagination.skip + req.pagination.limit < total,
+        hasPreviousPage: req.pagination.skip > 0
+      },
+      // Add debug info in development
+      ...(process.env.NODE_ENV === 'development' && {
+        debug: {
+          searchTerm: search,
+          normalizedSearchTerm: search ? normalizeArabicText(search.toString().trim()) : null,
+          category,
+          pipelineStages: pipeline.length,
+          totalBeforePagination: total
+        }
+      })
+    });
+  } catch (error) {
+    console.error('❌ Get items with search error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Server error",
+      message: (error as Error).message 
+    });
+  }
+};
+// NEW: Get all unique category names for filter dropdown
+export const getCategoryNames = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const language = req.query.language as 'en' | 'ar' || 'en';
+    
+    const categories = await Category.find()
+      .select('name')
+      .lean();
+    
+    // Extract category names based on language preference
+    const categoryNames = categories.map(cat => 
+      cat.name[language] || cat.name.en
+    ).filter(Boolean);
+    
+    // Remove duplicates and sort
+    const uniqueNames = [...new Set(categoryNames)].sort();
+    
+    res.json({
+      success: true,
+      data: uniqueNames
+    });
+  } catch (error) {
+    console.error('❌ Get category names error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: "Server error" 
+    });
+  }
+};
+
+// NEW: Search suggestions endpoint (optional - for autocomplete)
+export const getSearchSuggestions = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { query } = req.query;
+    const language = req.query.language as 'en' | 'ar' || 'en';
+    
+    if (!query || (query as string).length < 2) {
+      res.json({ success: true, data: [] });
+      return;
+    }
+    
+    const searchRegex = new RegExp(query as string, 'i');
+    
+    const suggestions = await Category.aggregate([
+      { $unwind: '$items' },
+      {
+        $match: {
+          $or: [
+            { [`items.name.${language}`]: searchRegex },
+            { [`items.name.en`]: searchRegex }, // Fallback to English
+            { [`name.${language}`]: searchRegex },
+            { [`name.en`]: searchRegex }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          itemNames: { $addToSet: `$items.name.${language}` },
+          categoryNames: { $addToSet: `$name.${language}` }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          suggestions: {
+            $slice: [
+              { $setUnion: ['$itemNames', '$categoryNames'] },
+              10 // Limit to 10 suggestions
+            ]
+          }
+        }
+      }
+    ]);
+    
+    const results = suggestions[0]?.suggestions || [];
+    
+    res.json({
+      success: true,
+      data: results.filter(Boolean) // Remove null/undefined values
+    });
+  } catch (error) {
+    console.error('❌ Get search suggestions error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: "Server error" 
+    });
+  }
+};
