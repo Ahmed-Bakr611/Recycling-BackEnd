@@ -70,6 +70,76 @@ export const getAllUsers = async (req: Request, res: Response) => {
     });
   }
 };
+
+export const getBlockedUsers = async (req: Request, res: Response) => {
+  try {
+    const {
+      role = "delivery",
+      search,
+      page = 1,
+      limit = 10,
+      sortBy = "blockedAt",
+      sortOrder = "desc",
+    } = req.query;
+
+    const filter: any = { isBlocked: true };
+    if (role) filter.role = role;
+    if (search) {
+      const searchRegex = new RegExp(search as string, "i");
+      filter.$or = [{ name: searchRegex }, { email: searchRegex }];
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+    const sort: any = {};
+    sort[sortBy as string] = sortOrder === "desc" ? -1 : 1;
+
+    const [users, totalUsers] = await Promise.all([
+      User.find(filter)
+        .select("-password -refreshToken")
+        .sort(sort)
+        .skip(skip)
+        .limit(Number(limit)),
+      User.countDocuments(filter),
+    ]);
+
+    const totalPages = Math.ceil(totalUsers / Number(limit));
+    res.status(200).json({
+      success: true,
+      data: users,
+      pagination: {
+        currentPage: Number(page),
+        totalPages,
+        totalUsers,
+        hasNextPage: Number(page) < totalPages,
+        hasPrevPage: Number(page) > 1,
+        limit: Number(limit),
+      },
+    });
+  } catch (err) {
+    console.error("Error fetching blocked users:", err);
+    res.status(500).json({ success: false, message: "Server Error" });
+  }
+};
+
+export const unblockUserByAdmin = async (req: Request, res: Response) => {
+  try {
+    const userId = req.params.id;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.isBlocked = false;
+    user.blockedAt = undefined as any;
+    user.blockReason = undefined as any;
+    user.warningsCount = 0;
+    user.warnings = [];
+    await user.save();
+
+    res.status(200).json({ message: "User unblocked successfully", user });
+  } catch (err) {
+    console.error("Error unblocking user:", err);
+    res.status(500).json({ message: "Failed to unblock user" });
+  }
+};
 export const getUserById = async (req: Request, res: Response) => {
   try {
     const userId = req.params.id;

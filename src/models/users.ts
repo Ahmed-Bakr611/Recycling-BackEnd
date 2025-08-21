@@ -9,6 +9,13 @@ interface PointsHistoryEntry {
   timestamp: Date;
 }
 
+interface WarningEntry {
+  reporterId: string;
+  reason: string;
+  orderId?: string;
+  createdAt: Date;
+}
+
 export interface SafeUser {
   id: string;
   name: string;
@@ -51,6 +58,13 @@ export interface IUser extends Document {
   // Add rating fields for delivery users only
   rating?: number;
   totalReviews?: number;
+
+  // Warnings and blocking fields
+  warningsCount?: number;
+  isBlocked?: boolean;
+  blockedAt?: Date;
+  blockReason?: string;
+  warnings?: WarningEntry[];
 
   comparePassword(candidate: string): Promise<boolean>;
   toSafeObject(): SafeUser;
@@ -106,6 +120,20 @@ const userSchema = new Schema<IUser>(
       default: {},
     },
     lastActiveAt: { type: Date },
+
+    // Warnings / Blocking
+    warningsCount: { type: Number, default: 0, min: 0 },
+    isBlocked: { type: Boolean, default: false },
+    blockedAt: { type: Date },
+    blockReason: { type: String },
+    warnings: [
+      {
+        reporterId: { type: String, required: true },
+        reason: { type: String, required: true },
+        orderId: { type: String },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
 
     // Rating fields - only for delivery users
     rating: {

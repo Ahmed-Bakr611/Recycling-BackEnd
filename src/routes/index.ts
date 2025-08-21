@@ -13,6 +13,7 @@ import delivery from "./delivery";
 import subscribe from "../routes/subscribe";
 import payment from "./payment";
 import contactus from './contact-us'
+import reportRoutes from "./reportRoutes";
 const router = express.Router();
 
 export default (): express.Router => {
@@ -31,6 +32,7 @@ export default (): express.Router => {
   subscribe(router);
   contactus(router);
   payment(router);
+  router.use("/reports", reportRoutes);
   router.use("/notifications", notificationRoutes);
   return router;
 };

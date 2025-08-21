@@ -9,6 +9,8 @@ import {
   updateUserByAdmin,
   addUserTransaction,
   getUserTransactions,
+  getBlockedUsers,
+  unblockUserByAdmin,
   // Add these new imports for points management
 } from "../controllers/userController";
 import {
@@ -38,7 +40,9 @@ export default (appRouter: express.Router) => {
 
   // User management (admin only)
   appRouter.get("/users", authenticate, authorize(["admin"]), getAllUsers);
+  appRouter.get("/users/blocked", authenticate, authorize(["admin"]), getBlockedUsers);
   appRouter.get("/users/:id", authenticate, getUserById);
+  appRouter.post("/users/:id/unblock", authenticate, authorize(["admin"]), unblockUserByAdmin);
   appRouter.delete(
     "/users/:id",
     authenticate,

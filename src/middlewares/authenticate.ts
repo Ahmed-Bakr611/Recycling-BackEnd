@@ -32,18 +32,31 @@ export const authenticate = (
 
     console.log("start authenticate middleware");
     console.log("user Id", decoded.userId);
-    User.findByIdAndUpdate(decoded.userId, {
-      lastActiveAt: new Date(),
-    })
-      .then((res) => {
-        if (!res) console.log("User not found!");
-        else console.log("User updated:", res._id);
+
+    User.findById(decoded.userId)
+      .then(async (userDoc) => {
+        if (!userDoc) {
+          console.log("User not found!");
+          return res.status(404).json({ message: "User not found" });
+        }
+
+        // Update last active
+        userDoc.lastActiveAt = new Date();
+        await userDoc.save();
+
+        if (userDoc.isBlocked) {
+          return res
+            .status(403)
+            .json({ message: "Account blocked due to repeated reports" });
+        }
+
+        console.log("end authenticate Middleware");
+        next();
       })
-      .catch((err) => console.error("Failed to update lastActiveAt", err));
-
-    console.log("end authenticate Middleware");
-
-    next();
+      .catch((err) => {
+        console.error("Failed in authenticate middleware", err);
+        return res.status(500).json({ message: "Auth check failed" });
+      });
   } catch (err: any) {
     if (err.name === "TokenExpiredError") {
       return res.status(401).json({ message: "Access token expired" });

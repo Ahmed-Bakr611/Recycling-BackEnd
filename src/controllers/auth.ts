@@ -171,6 +171,13 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
+    // Blocked guard
+    if (user.isBlocked) {
+      return res.status(403).json({
+        message: "Account blocked due to repeated reports. Contact support.",
+      });
+    }
+
     // Enhanced delivery user status handling
     if (user.role === "delivery") {
       const declineReason = user.attachments?.declineReason || null;

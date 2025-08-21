@@ -1,6 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import jwt from 'jsonwebtoken';
+import User from '../models/users';
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET!;
 
 let io: SocketIOServer | null = null;
@@ -21,7 +22,7 @@ export const initializeSocketIO = (server: HTTPServer): SocketIOServer => {
   });
 
   // Middleware for authentication
-io.use((socket, next) => {
+io.use(async (socket, next) => {
 const token =
   socket.handshake.auth?.token ||
   socket.handshake.auth?.jwt ||
@@ -32,6 +33,10 @@ const token =
 
   try {
     const decoded = jwt.verify(token, JWT_ACCESS_SECRET) as any;
+    const dbUser = await User.findById(decoded.userId).lean();
+    if (!dbUser) return next(new Error('Authentication error: user not found'));
+    if (dbUser.isBlocked) return next(new Error('Account blocked due to repeated reports'));
+
     socket.userId = decoded.userId;
     socket.userRole = decoded.role;
     next();
