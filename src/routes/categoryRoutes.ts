@@ -74,6 +74,7 @@ import {
 import { authenticate } from "../middlewares/authenticate";
 import { authorize } from "../middlewares/authorize";
 import { paginate } from "../middlewares/paginate";
+import { getItemsIndex, searchItems } from "../controllers/searchController";
 
 const uploadCategory = multer({ storage: categoryStorage, fileFilter });
 const uploadSubcategory = multer({ storage: subcategoryStorage, fileFilter });
@@ -146,6 +147,10 @@ export default (router: express.Router) => {
     authorize(["admin"]),
     deleteItem
   );
+
+  //search
+  router.get("/search-index", getItemsIndex);
+  router.get("/search", searchItems);
   router.get('/get-items', paginate(), getItemsWithSearch);
 
 // Get category names for dropdown filter
