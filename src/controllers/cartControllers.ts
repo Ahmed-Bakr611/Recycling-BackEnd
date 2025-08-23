@@ -152,7 +152,18 @@ export const updateCartItem = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
-    const { _id, quantity } = req.body;
+    const { 
+      _id, 
+      quantity,
+      // NEW: Accept item details for creating new items
+      categoryId,
+      categoryName,
+      name,
+      image,
+      points,
+      price,
+      measurement_unit
+    } = req.body;
 
     if (!_id || typeof quantity !== "number") {
       return res
@@ -166,9 +177,45 @@ export const updateCartItem = async (req: Request, res: Response) => {
       await cart.save();
     }
 
-    const item = cart.items.find((i) => i._id === _id);
-    if (!item)
-      return res.status(404).json({ message: "Item not found in cart" });
+    let item = cart.items.find((i) => i._id === _id);
+    
+    if (!item) {
+      // NEW: Create new item if it doesn't exist (only if we have the required data)
+      if (!categoryId || !name || !categoryName) {
+        return res.status(400).json({ 
+          message: "Item not found in cart. To create new item, provide categoryId, name, and categoryName." 
+        });
+      }
+
+      // Validate that name and categoryName are bilingual objects for new items
+      if (typeof name !== 'object' || !name.en || !name.ar) {
+        return res.status(400).json({ 
+          message: "Item name must be a bilingual object with 'en' and 'ar' properties" 
+        });
+      }
+
+      if (typeof categoryName !== 'object' || !categoryName.en || !categoryName.ar) {
+        return res.status(400).json({ 
+          message: "Category name must be a bilingual object with 'en' and 'ar' properties" 
+        });
+      }
+
+      // Create new item
+      const newItem = {
+        _id,
+        categoryId,
+        categoryName,
+        name,
+        image: image || '',
+        points: points || 0,
+        price: price || 0,
+        measurement_unit: measurement_unit || 1,
+        quantity: 0 // Will be set below
+      };
+
+      cart.items.push(newItem);
+      item = cart.items[cart.items.length - 1]; // Get reference to the newly added item
+    }
 
     // Validate quantity based on measurement unit
     const validation = validateQuantity(quantity, item.measurement_unit);
@@ -176,7 +223,14 @@ export const updateCartItem = async (req: Request, res: Response) => {
       return res.status(400).json({ message: validation.message });
     }
 
+    // Update quantity
     item.quantity = quantity;
+    
+    // If quantity is 0 or less, remove the item from cart
+    if (quantity <= 0) {
+      cart.items = cart.items.filter((i) => i._id !== _id);
+    }
+
     await cart.save();
     return res.status(200).json(cart);
   } catch (error) {
