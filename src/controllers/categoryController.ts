@@ -795,3 +795,282 @@ export const getSearchSuggestions = async (
     });
   }
 };
+
+export const getCategoriesWithSearch = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { skip, limit } = req.pagination;
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const language = (typeof req.query.language === 'string' && (req.query.language === 'en' || req.query.language === 'ar')) 
+      ? req.query.language as 'en' | 'ar' 
+      : 'en';
+
+    console.log('🔍 === CATEGORY SEARCH DEBUG START ===');
+    console.log('📥 Query params:', { search, language, skip, limit, page: req.pagination.page });
+
+    // Build search query - SIMPLIFIED VERSION
+    let searchQuery: any = {};
+    
+    if (search && search.length > 0) {
+      console.log('🔍 Building search query for term:', search);
+      
+      // Create simple regex for case-insensitive search
+      const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); // Escape special regex characters
+      
+      // Simple search conditions - test one by one
+      const searchConditions = [
+        // Direct text search in category names
+        { 'name.en': { $regex: searchRegex } },
+        { 'name.ar': { $regex: searchRegex } },
+        
+        // Direct text search in category descriptions
+        { 'description.en': { $regex: searchRegex } },
+        { 'description.ar': { $regex: searchRegex } },
+        
+        // Search in items within categories
+        { 'items.name.en': { $regex: searchRegex } },
+        { 'items.name.ar': { $regex: searchRegex } }
+      ];
+
+      searchQuery = { $or: searchConditions };
+      
+      console.log('🔍 Final search query:', JSON.stringify(searchQuery, null, 2));
+    } else {
+      console.log('🔍 No search term provided, fetching all categories');
+    }
+
+    // DEBUGGING: Let's first check what we get without pagination
+    console.log('📊 Testing search query without pagination...');
+    const testResults = await Category.find(searchQuery).lean().limit(50);
+    console.log('📊 Test results count:', testResults.length);
+    console.log('📊 First few test results:', testResults.slice(0, 2).map(cat => ({
+      id: cat._id,
+      nameEn: cat.name?.en,
+      nameAr: cat.name?.ar,
+      itemsCount: cat.items?.length || 0
+    })));
+
+    // Execute search with pagination
+    const [categories, total] = await Promise.all([
+      Category.find(searchQuery)
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .sort({ 'name.en': 1 }),
+      Category.countDocuments(searchQuery),
+    ]);
+
+    console.log('📊 Paginated results count:', categories.length);
+    console.log('📊 Total matching documents:', total);
+    console.log('📊 Should return empty for "paper" if no matches');
+
+    // If we have a search term but got all categories, something is wrong
+    if (search && total > 0) {
+      console.log('📊 Sample of returned categories:');
+      categories.slice(0, 3).forEach((cat, index) => {
+        console.log(`📊 Category ${index + 1}:`, {
+          id: cat._id,
+          nameEn: cat.name?.en,
+          nameAr: cat.name?.ar,
+          descEn: cat.description?.en?.substring(0, 50),
+          itemsCount: cat.items?.length || 0,
+          hasMatchingItems: cat.items?.some((item: any) => 
+            item?.name?.en?.toLowerCase().includes(search.toLowerCase()) ||
+            item?.name?.ar?.toLowerCase().includes(search.toLowerCase())
+          )
+        });
+      });
+    }
+
+    // Transform categories with language-specific display names
+    const transformedCategories = categories.map(category => {
+      // Filter items that match search if searching
+      let filteredItems = category.items || [];
+      
+      if (search) {
+        const itemSearchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        filteredItems = category.items?.filter((item: any) => 
+          (item?.name?.en && itemSearchRegex.test(item.name.en)) || 
+          (item?.name?.ar && itemSearchRegex.test(item.name.ar))
+        ) || [];
+      }
+
+      return {
+        ...category,
+        displayName: category.name[language] || category.name.en,
+        displayDescription: category.description[language] || category.description.en,
+        items: filteredItems.map((item: any) => ({
+          ...item,
+          displayName: item?.name?.[language] || item?.name?.en || item?.name || '',
+        })),
+      };
+    });
+
+    const totalPages = Math.ceil(total / req.pagination.limit);
+    const hasNextPage = req.pagination.page < totalPages;
+    const hasPreviousPage = req.pagination.page > 1;
+
+    console.log('📊 Final response summary:', {
+      searchTerm: search,
+      categoriesReturned: transformedCategories.length,
+      totalMatching: total,
+      currentPage: req.pagination.page,
+      totalPages
+    });
+
+    console.log('✅ === CATEGORY SEARCH DEBUG END ===');
+
+    // If search term is provided but we're returning all categories, log a warning
+    if (search && total > 10) {
+      console.warn('⚠️  WARNING: Search term provided but many results returned. Check if search is working correctly.');
+    }
+
+    res.json({
+      success: true,
+      data: transformedCategories,
+      pagination: {
+        currentPage: req.pagination.page,
+        itemsPerPage: req.pagination.limit,
+        totalItems: total,
+        totalPages: totalPages,
+        hasNextPage: hasNextPage,
+        hasPreviousPage: hasPreviousPage,
+      },
+      searchInfo: {
+        searchTerm: search,
+        hasSearch: Boolean(search),
+        resultsCount: total,
+        currentPageResults: categories.length
+      },
+      debug: {
+        queryUsed: searchQuery,
+        testResultsCount: testResults.length,
+        expectedBehavior: search ? `Should return only categories matching "${search}"` : 'Should return all categories'
+      }
+    });
+  } catch (error) {
+    console.error('❌ Get categories with search error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: "Server error", 
+      message: (error as Error).message 
+    });
+  }
+};
+
+// Alternative simpler version - use this if the above still doesn't work
+export const getCategoriesWithSearchSimple = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { skip, limit } = req.pagination;
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const language = (typeof req.query.language === 'string' && (req.query.language === 'en' || req.query.language === 'ar')) 
+      ? req.query.language as 'en' | 'ar' 
+      : 'en';
+
+    let filter: any = {};
+    
+    // VERY SIMPLE SEARCH - test this first
+    if (search) {
+      filter = {
+        $or: [
+          { 'name.en': new RegExp(search, 'i') },
+          { 'name.ar': new RegExp(search, 'i') }
+        ]
+      };
+    }
+
+    console.log('Simple search filter:', JSON.stringify(filter, null, 2));
+
+    const [categories, total] = await Promise.all([
+      Category.find(filter).skip(skip).limit(limit).lean(),
+      Category.countDocuments(filter),
+    ]);
+
+    console.log(`Simple search: Found ${total} categories matching "${search}"`);
+
+    res.json({
+      success: true,
+      data: categories.map(cat => ({
+        ...cat,
+        displayName: cat.name[language] || cat.name.en,
+        displayDescription: cat.description[language] || cat.description.en,
+      })),
+      pagination: {
+        currentPage: req.pagination.page,
+        itemsPerPage: req.pagination.limit,
+        totalItems: total,
+        totalPages: Math.ceil(total / req.pagination.limit),
+        hasNextPage: req.pagination.page < Math.ceil(total / req.pagination.limit),
+        hasPreviousPage: req.pagination.page > 1,
+      }
+    });
+  } catch (error) {
+    console.error('Simple search error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: "Server error", 
+      message: (error as Error).message 
+    });
+  }
+};
+
+
+// Update your existing getCategoriesWithPagination to support search
+export const getCategoriesWithPaginationUpdated = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const role = req.query.role;
+    const language = req.query.language as 'en' | 'ar' || 'en';
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    
+    // If there's a search term, use the search-specific method
+    if (search) {
+      return getCategoriesWithSearch(req, res);
+    }
+    
+    // Otherwise, use the existing pagination logic
+    const [categories, total] = await Promise.all([
+      Category.find().skip(req.pagination.skip).limit(req.pagination.limit).lean(),
+      Category.countDocuments(),
+    ]);
+
+    // Transform categories with language-specific display
+    const transformedCategories = categories.map(category => {
+      return {
+        ...category,
+        displayName: category.name[language] || category.name.en,
+        displayDescription: category.description[language] || category.description.en,
+        items: Array.isArray(category.items)
+          ? category.items.map((item: any) => ({
+              ...item,
+              displayName: item.name?.[language] || item.name?.en || item.name,
+              price: role === "buyer" && item.price 
+                ? Math.round(item.price * 1.5 * 100) / 100 
+                : item.price
+            }))
+          : [],
+      };
+    });
+
+    res.json({
+      success: true,
+      data: transformedCategories,
+      pagination: {
+        currentPage: req.pagination.page,
+        itemsPerPage: req.pagination.limit,
+        totalItems: total,
+        totalPages: Math.ceil(total / req.pagination.limit),
+        hasNextPage: req.pagination.skip + req.pagination.limit < total,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Server error" });
+  }
+};
