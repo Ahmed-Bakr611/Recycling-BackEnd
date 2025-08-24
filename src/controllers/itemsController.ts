@@ -95,11 +95,82 @@ export const getItems = async (req: Request, res: Response): Promise<void> => {
     const language = req.query.language as 'en' | 'ar' || 'en';
     const search = req.query.search as string;
 
-    // Find category by English name
-    const category = await Category.findOne({ "name.en": categoryName });
+    // Debug logging
+    console.log('🔍 getItems Debug Info:');
+    console.log('  Raw categoryName from params:', categoryName);
+    console.log('  Decoded categoryName:', decodeURIComponent(categoryName));
+    console.log('  Request URL:', req.originalUrl);
+    console.log('  Request params:', req.params);
+
+    // Try to decode the category name
+    let decodedCategoryName = categoryName;
+    try {
+      decodedCategoryName = decodeURIComponent(categoryName);
+      console.log('  Successfully decoded to:', decodedCategoryName);
+    } catch (decodeError) {
+      console.log('  Decode failed, using original:', categoryName);
+    }
+
+    // Debug: Check what categories exist in the database
+    const allCategories = await Category.find({}, { name: 1 }).lean();
+    console.log('  Available categories in DB:');
+    allCategories.forEach((cat, index) => {
+      console.log(`    ${index + 1}. ${JSON.stringify(cat.name)}`);
+    });
+
+    // Try multiple search strategies
+    let category = null;
+    const searchStrategies = [
+      { name: decodedCategoryName, description: 'decoded name exact match' },
+      { name: categoryName, description: 'original name exact match' },
+    ];
+
+    for (const strategy of searchStrategies) {
+      console.log(`  Trying strategy: ${strategy.description} with "${strategy.name}"`);
+      
+      // Try exact match with English name
+      category = await Category.findOne({ "name.en": strategy.name });
+      if (category) {
+        console.log(`  ✅ Found category using ${strategy.description}:`, category.name);
+        break;
+      }
+
+      // Try case-insensitive match with English name
+      category = await Category.findOne({ "name.en": { $regex: new RegExp(`^${strategy.name}$`, 'i') } });
+      if (category) {
+        console.log(`  ✅ Found category using case-insensitive ${strategy.description}:`, category.name);
+        break;
+      }
+
+      // Try exact match with Arabic name
+      category = await Category.findOne({ "name.ar": strategy.name });
+      if (category) {
+        console.log(`  ✅ Found category using Arabic ${strategy.description}:`, category.name);
+        break;
+      }
+    }
 
     if (!category) {
-      res.status(404).json({ message: "Category not found" });
+      console.log('  ❌ Category not found with any strategy');
+      console.log('  Available category names for comparison:');
+      allCategories.forEach(cat => {
+        if (typeof cat.name === 'object') {
+          console.log(`    EN: "${cat.name.en}" | AR: "${cat.name.ar || 'N/A'}"`);
+        } else {
+          console.log(`    Legacy format: "${cat.name}"`);
+        }
+      });
+      
+      res.status(404).json({ 
+        message: "Category not found",
+        debug: {
+          searchedFor: {
+            original: categoryName,
+            decoded: decodedCategoryName
+          },
+          availableCategories: allCategories.map(cat => cat.name)
+        }
+      });
       return;
     }
 
@@ -141,10 +212,16 @@ export const getItems = async (req: Request, res: Response): Promise<void> => {
       }));
     }
 
+    console.log(`  ✅ Successfully returning ${items.length} items from category:`, category.name);
     res.paginated(items, totalItems);
   } catch (err) {
-    console.error("getItems error:", err);
-    res.status(500).json({ message: (err as Error).message });
+    console.error("❌ getItems error:", err);
+    res.status(500).json({ 
+      message: (err as Error).message,
+      debug: {
+        error: err instanceof Error ? err.stack : 'Unknown error'
+      }
+    });
   }
 };
 // Add this new function to your items controller file
