@@ -620,7 +620,7 @@ const sendRefundNotification = async (refundData: {
 
     // Enhanced admin notification
     await transporter.sendMail({
-      from: `"Karakeep Payments " <${process.env.MAIL_USER}>`,
+      from: `"Karakeeb Payments " <${process.env.MAIL_USER}>`,
       to: process.env.MAIL_USER,
       subject: `${refundType} Processed - ${refundId}`,
       html: `
@@ -684,7 +684,7 @@ const sendRefundNotification = async (refundData: {
     // Enhanced customer notification if email available
     if (customerEmail) {
       await transporter.sendMail({
-        from: `"Karakeep " <${process.env.MAIL_USER}>`,
+        from: `"Karakeeb " <${process.env.MAIL_USER}>`,
         to: customerEmail,
         subject: `Your ${refundType} Confirmation - ${refundId}`,
         html: `
@@ -741,7 +741,7 @@ const sendRefundNotification = async (refundData: {
                 If you have any questions about this refund, please don't hesitate to contact our support team.
               </p>
               <p style="color: #059669; font-weight: bold; margin: 20px 0;">
-                Thank you for choosing Karakeep! 🌱
+                Thank you for choosing Karakeeb! 🌱
               </p>
             </div>
 
@@ -749,7 +749,7 @@ const sendRefundNotification = async (refundData: {
               <p style="color: #9ca3af; font-size: 12px; text-align: center;">
                 This is an automated message. Please do not reply to this email.
                 <br>
-                Karakeep Payment Processing System
+                Karakeeb Payment Processing System
               </p>
             </div>
           </div>

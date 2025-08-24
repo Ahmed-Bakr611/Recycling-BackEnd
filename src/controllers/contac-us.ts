@@ -22,12 +22,12 @@ export const sendContactMessage = async (req: Request, res: Response) => {
     });
 
     await transporter.sendMail({
-      from: `"Karakeep Contact" <${process.env.MAIL_USER}>`,
+      from: `"Karakeeb Contact" <${process.env.MAIL_USER}>`,
       to: process.env.MAIL_USER,
       subject: `New Contact Message from ${name}`,
       html: `
         <div style="font-family:sans-serif;">
-          <h2>New Message from Karakeep Contact Form</h2>
+          <h2>New Message from Karakeeb Contact Form</h2>
           <p><strong>Name:</strong> ${name}</p>
           <p><strong>Email:</strong> ${email}</p>
           <p><strong>Message:</strong></p>
