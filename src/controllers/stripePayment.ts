@@ -1,12 +1,14 @@
 import User from "../models/users";
-import Stripe from "stripe";import nodemailer from "nodemailer";
-
+import Stripe from "stripe";
+import nodemailer from "nodemailer";
 
 import { Request, Response } from "express";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2025-06-30.basil" });
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2025-06-30.basil",
+});
 
-export const createStripeCustomer = async (req:Request, res:Response) => {
+export const createStripeCustomer = async (req: Request, res: Response) => {
   try {
     const userId = req.params.id;
     const user = await User.findById(userId);
@@ -30,7 +32,7 @@ export const createStripeCustomer = async (req:Request, res:Response) => {
   }
 };
 
-export const createPaymentIntent = async (req:Request, res:Response) => {
+export const createPaymentIntent = async (req: Request, res: Response) => {
   try {
     const userId = req.params.id;
     const { amount } = req.body;
@@ -74,7 +76,6 @@ export const getAllPaymentsForUser = async (req: Request, res: Response) => {
   }
 };
 
-
 interface PaymentsQueryParams {
   page?: string;
   limit?: string;
@@ -92,11 +93,11 @@ interface PaymentsQueryParams {
 
 export const getAllPayments = async (req: Request, res: Response) => {
   try {
-    console.log('Query params:', req.query);
+    console.log("Query params:", req.query);
 
     const {
-      page = '1',
-      limit = '25',
+      page = "1",
+      limit = "25",
       status,
       startDate,
       endDate,
@@ -113,7 +114,7 @@ export const getAllPayments = async (req: Request, res: Response) => {
     const pageNum = Math.max(1, parseInt(page, 10));
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10))); // Cap at 100
 
-    console.log('Parsed params:', { pageNum, limitNum, status, search });
+    console.log("Parsed params:", { pageNum, limitNum, status, search });
 
     // Build Stripe query parameters
     const stripeParams: Stripe.ChargeListParams = {
@@ -123,47 +124,53 @@ export const getAllPayments = async (req: Request, res: Response) => {
     // Date filtering
     if (startDate || endDate) {
       stripeParams.created = {};
-      
+
       if (startDate) {
         const start = new Date(startDate);
         if (!isNaN(start.getTime())) {
           stripeParams.created.gte = Math.floor(start.getTime() / 1000);
-          console.log('Start date filter:', new Date(stripeParams.created.gte * 1000));
+          console.log(
+            "Start date filter:",
+            new Date(stripeParams.created.gte * 1000)
+          );
         }
       }
-      
+
       if (endDate) {
         const end = new Date(endDate);
         if (!isNaN(end.getTime())) {
           // Add 23:59:59 to include the entire end date
           end.setHours(23, 59, 59, 999);
           stripeParams.created.lte = Math.floor(end.getTime() / 1000);
-          console.log('End date filter:', new Date(stripeParams.created.lte * 1000));
+          console.log(
+            "End date filter:",
+            new Date(stripeParams.created.lte * 1000)
+          );
         }
       }
     }
 
     // Customer filtering (if search includes email)
-    if (search && search.includes('@')) {
+    if (search && search.includes("@")) {
       try {
-        console.log('Searching for customer by email:', search);
+        console.log("Searching for customer by email:", search);
         const customers = await stripe.customers.list({
           email: search,
           limit: 1,
         });
-        
+
         if (customers.data.length > 0) {
           stripeParams.customer = customers.data[0].id;
-          console.log('Found customer:', customers.data[0].id);
+          console.log("Found customer:", customers.data[0].id);
         } else {
-          console.log('No customer found with email:', search);
+          console.log("No customer found with email:", search);
         }
       } catch (error) {
-        console.warn('Error searching customer by email:', error);
+        console.warn("Error searching customer by email:", error);
       }
     }
 
-    console.log('Stripe params:', stripeParams);
+    console.log("Stripe params:", stripeParams);
 
     // Fetch charges from Stripe with pagination
     let allCharges: Stripe.Charge[] = [];
@@ -172,7 +179,7 @@ export const getAllPayments = async (req: Request, res: Response) => {
     let totalFetched = 0;
     const maxToFetch = Math.min(pageNum * limitNum * 3, 300); // Reasonable limit
 
-    console.log('Starting to fetch charges...');
+    console.log("Starting to fetch charges...");
 
     while (hasMore && totalFetched < maxToFetch) {
       try {
@@ -182,12 +189,14 @@ export const getAllPayments = async (req: Request, res: Response) => {
           limit: Math.min(100, maxToFetch - totalFetched),
         });
 
-        console.log(`Fetched ${charges.data.length} charges, hasMore: ${charges.has_more}`);
+        console.log(
+          `Fetched ${charges.data.length} charges, hasMore: ${charges.has_more}`
+        );
 
         allCharges = allCharges.concat(charges.data);
         hasMore = charges.has_more;
         totalFetched += charges.data.length;
-        
+
         if (charges.data.length > 0) {
           startingAfter = charges.data[charges.data.length - 1].id;
         } else {
@@ -196,11 +205,11 @@ export const getAllPayments = async (req: Request, res: Response) => {
 
         // Safety break to avoid infinite loops
         if (totalFetched >= 500) {
-          console.warn('Breaking fetch loop at 500 charges to avoid timeout');
+          console.warn("Breaking fetch loop at 500 charges to avoid timeout");
           break;
         }
       } catch (stripeError) {
-        console.error('Stripe API error:', stripeError);
+        console.error("Stripe API error:", stripeError);
         throw stripeError;
       }
     }
@@ -232,26 +241,29 @@ export const getAllPayments = async (req: Request, res: Response) => {
       }
 
       // Country filtering
-      if (country && charge.billing_details?.address?.country !== country.toUpperCase()) {
+      if (
+        country &&
+        charge.billing_details?.address?.country !== country.toUpperCase()
+      ) {
         return false;
       }
 
       // Refunded filtering
       if (refunded !== undefined) {
         const isRefunded = charge.refunded || charge.amount_refunded > 0;
-        if (refunded === 'true' && !isRefunded) return false;
-        if (refunded === 'false' && isRefunded) return false;
+        if (refunded === "true" && !isRefunded) return false;
+        if (refunded === "false" && isRefunded) return false;
       }
 
       // Disputed filtering
       if (disputed !== undefined) {
         const isDisputed = charge.disputed;
-        if (disputed === 'true' && !isDisputed) return false;
-        if (disputed === 'false' && isDisputed) return false;
+        if (disputed === "true" && !isDisputed) return false;
+        if (disputed === "false" && isDisputed) return false;
       }
 
       // Search filtering (search in various fields)
-      if (search && !search.includes('@')) {
+      if (search && !search.includes("@")) {
         const searchTerm = search.toLowerCase();
         const searchableFields = [
           charge.id,
@@ -262,7 +274,7 @@ export const getAllPayments = async (req: Request, res: Response) => {
           charge.billing_details?.phone,
         ].filter(Boolean);
 
-        const matchesSearch = searchableFields.some(field => 
+        const matchesSearch = searchableFields.some((field) =>
           field?.toString().toLowerCase().includes(searchTerm)
         );
 
@@ -280,7 +292,10 @@ export const getAllPayments = async (req: Request, res: Response) => {
 
     // Apply pagination
     const startIndex = (pageNum - 1) * limitNum;
-    const paginatedCharges = filteredCharges.slice(startIndex, startIndex + limitNum);
+    const paginatedCharges = filteredCharges.slice(
+      startIndex,
+      startIndex + limitNum
+    );
 
     console.log(`Paginated charges: ${paginatedCharges.length}`);
 
@@ -314,7 +329,7 @@ export const getAllPayments = async (req: Request, res: Response) => {
       },
     };
 
-    console.log('Response stats:', {
+    console.log("Response stats:", {
       totalCharges: response.data.length,
       totalCount: response.pagination.total,
       page: response.pagination.page,
@@ -323,11 +338,11 @@ export const getAllPayments = async (req: Request, res: Response) => {
 
     res.json(response);
   } catch (error) {
-    console.error('❌ Error fetching payments:', error);
-    
+    console.error("❌ Error fetching payments:", error);
+
     // Handle specific Stripe errors
     if (error instanceof Stripe.errors.StripeError) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
         error: "Stripe API error",
         message: error.message,
@@ -335,10 +350,10 @@ export const getAllPayments = async (req: Request, res: Response) => {
       });
     }
 
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: "Internal server error",
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -346,46 +361,51 @@ export const getAllPayments = async (req: Request, res: Response) => {
 // Helper function to determine charge status
 function getChargeStatus(charge: Stripe.Charge): string {
   if (charge.refunded || charge.amount_refunded > 0) {
-    return 'refunded';
+    return "refunded";
   }
-  
+
   if (charge.disputed) {
-    return 'disputed';
+    return "disputed";
   }
-  
+
   if (charge.failure_code || charge.failure_message) {
-    return 'failed';
+    return "failed";
   }
-  
+
   if (charge.amount_captured === charge.amount) {
-    return 'succeeded';
+    return "succeeded";
   }
-  
+
   if (charge.amount_captured > 0 && charge.amount_captured < charge.amount) {
-    return 'partially_captured';
+    return "partially_captured";
   }
-  
-  return charge.status || 'pending';
+
+  return charge.status || "pending";
 }
 
 // Helper function to calculate payment statistics
 function calculatePaymentStats(charges: Stripe.Charge[]) {
   const totalAmount = charges.reduce((sum, charge) => sum + charge.amount, 0);
-  
-  const successfulCharges = charges.filter(charge => {
-    const status = getChargeStatus(charge);
-    return status === 'succeeded';
-  });
-  
-  const totalRevenue = successfulCharges.reduce((sum, charge) => 
-    sum + (charge.amount - charge.amount_refunded), 0
-  );
-  
-  const successRate = charges.length > 0 
-    ? Math.round((successfulCharges.length / charges.length) * 100) 
-    : 0;
 
-  const refundedAmount = charges.reduce((sum, charge) => sum + charge.amount_refunded, 0);
+  const successfulCharges = charges.filter((charge) => {
+    const status = getChargeStatus(charge);
+    return status === "succeeded";
+  });
+
+  const totalRevenue = successfulCharges.reduce(
+    (sum, charge) => sum + (charge.amount - charge.amount_refunded),
+    0
+  );
+
+  const successRate =
+    charges.length > 0
+      ? Math.round((successfulCharges.length / charges.length) * 100)
+      : 0;
+
+  const refundedAmount = charges.reduce(
+    (sum, charge) => sum + charge.amount_refunded,
+    0
+  );
 
   const statusCounts = charges.reduce((counts, charge) => {
     const status = getChargeStatus(charge);
@@ -400,19 +420,16 @@ function calculatePaymentStats(charges: Stripe.Charge[]) {
     refundedAmount,
     successRate,
     statusCounts,
-    averageAmount: charges.length > 0 ? Math.round(totalAmount / charges.length) : 0,
+    averageAmount:
+      charges.length > 0 ? Math.round(totalAmount / charges.length) : 0,
   };
 }
 
 // Additional endpoint for payment statistics only
 export const getPaymentStats = async (req: Request, res: Response) => {
   try {
-    const {
-      startDate,
-      endDate,
-      status,
-      currency,
-    } = req.query as PaymentsQueryParams;
+    const { startDate, endDate, status, currency } =
+      req.query as PaymentsQueryParams;
 
     const stripeParams: Stripe.ChargeListParams = {
       limit: 100,
@@ -421,14 +438,14 @@ export const getPaymentStats = async (req: Request, res: Response) => {
     // Apply date filtering
     if (startDate || endDate) {
       stripeParams.created = {};
-      
+
       if (startDate) {
         const start = new Date(startDate);
         if (!isNaN(start.getTime())) {
           stripeParams.created.gte = Math.floor(start.getTime() / 1000);
         }
       }
-      
+
       if (endDate) {
         const end = new Date(endDate);
         if (!isNaN(end.getTime())) {
@@ -451,7 +468,7 @@ export const getPaymentStats = async (req: Request, res: Response) => {
 
       allCharges = allCharges.concat(charges.data);
       hasMore = charges.has_more;
-      
+
       if (charges.data.length > 0) {
         startingAfter = charges.data[charges.data.length - 1].id;
       } else {
@@ -461,9 +478,10 @@ export const getPaymentStats = async (req: Request, res: Response) => {
 
     // Apply filtering
     if (status || currency) {
-      allCharges = allCharges.filter(charge => {
+      allCharges = allCharges.filter((charge) => {
         if (status && getChargeStatus(charge) !== status) return false;
-        if (currency && charge.currency !== currency.toLowerCase()) return false;
+        if (currency && charge.currency !== currency.toLowerCase())
+          return false;
         return true;
       });
     }
@@ -475,10 +493,10 @@ export const getPaymentStats = async (req: Request, res: Response) => {
       data: stats,
     });
   } catch (error) {
-    console.error('Error fetching payment stats:', error);
-    res.status(500).json({ 
+    console.error("Error fetching payment stats:", error);
+    res.status(500).json({
       success: false,
-      error: "Internal server error" 
+      error: "Internal server error",
     });
   }
 };
@@ -491,12 +509,12 @@ export const getPaymentById = async (req: Request, res: Response) => {
     if (!id) {
       return res.status(400).json({
         success: false,
-        error: 'Payment ID is required',
+        error: "Payment ID is required",
       });
     }
 
     const charge = await stripe.charges.retrieve(id, {
-      expand: ['payment_method', 'customer'],
+      expand: ["payment_method", "customer"],
     });
 
     res.json({
@@ -504,19 +522,19 @@ export const getPaymentById = async (req: Request, res: Response) => {
       data: charge,
     });
   } catch (error) {
-    console.error('Error fetching payment:', error);
-    
+    console.error("Error fetching payment:", error);
+
     if (error instanceof Stripe.errors.StripeError) {
       return res.status(404).json({
         success: false,
-        error: 'Payment not found',
+        error: "Payment not found",
         message: error.message,
       });
     }
 
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: "Internal server error" 
+      error: "Internal server error",
     });
   }
 };
@@ -583,16 +601,26 @@ const sendRefundNotification = async (refundData: {
       },
     });
 
-    const { customerEmail, refundId, amount, currency, originalAmount, reason, isPartial } = refundData;
-    
+    const {
+      customerEmail,
+      refundId,
+      amount,
+      currency,
+      originalAmount,
+      reason,
+      isPartial,
+    } = refundData;
+
     const formatAmount = (cents: number) => (cents / 100).toFixed(2);
     const refundAmount = formatAmount(amount);
-    const refundType = isPartial ? 'Partial Refund' : 'Full Refund';
-    const refundPercentage = originalAmount ? ((amount / originalAmount) * 100).toFixed(1) : '100';
-    
+    const refundType = isPartial ? "Partial Refund" : "Full Refund";
+    const refundPercentage = originalAmount
+      ? ((amount / originalAmount) * 100).toFixed(1)
+      : "100";
+
     // Enhanced admin notification
     await transporter.sendMail({
-      from: `"EcoCycle Payments" <${process.env.MAIL_USER}>`,
+      from: `"Karakeep Payments " <${process.env.MAIL_USER}>`,
       to: process.env.MAIL_USER,
       subject: `${refundType} Processed - ${refundId}`,
       html: `
@@ -608,23 +636,33 @@ const sendRefundNotification = async (refundData: {
                 <td style="padding: 8px 0; font-weight: bold;">Amount:</td>
                 <td style="padding: 8px 0; color: #059669; font-weight: bold;">${currency.toUpperCase()} $${refundAmount}</td>
               </tr>
-              ${isPartial && originalAmount ? `
+              ${
+                isPartial && originalAmount
+                  ? `
               <tr>
                 <td style="padding: 8px 0; font-weight: bold;">Original Amount:</td>
-                <td style="padding: 8px 0;">${currency.toUpperCase()} $${formatAmount(originalAmount)}</td>
+                <td style="padding: 8px 0;">${currency.toUpperCase()} $${formatAmount(
+                      originalAmount
+                    )}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold;">Refund Percentage:</td>
                 <td style="padding: 8px 0;">${refundPercentage}%</td>
               </tr>
-              ` : ''}
+              `
+                  : ""
+              }
               <tr>
                 <td style="padding: 8px 0; font-weight: bold;">Reason:</td>
-                <td style="padding: 8px 0;">${reason.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</td>
+                <td style="padding: 8px 0;">${reason
+                  .replace(/_/g, " ")
+                  .replace(/\b\w/g, (l) => l.toUpperCase())}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold;">Customer Email:</td>
-                <td style="padding: 8px 0;">${customerEmail || 'Not available'}</td>
+                <td style="padding: 8px 0;">${
+                  customerEmail || "Not available"
+                }</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; font-weight: bold;">Processed At:</td>
@@ -633,7 +671,11 @@ const sendRefundNotification = async (refundData: {
             </table>
           </div>
           <p style="color: #6b7280; font-size: 14px;">
-            ${customerEmail ? 'Customer notification sent successfully.' : 'Customer email not available - no customer notification sent.'}
+            ${
+              customerEmail
+                ? "Customer notification sent successfully."
+                : "Customer email not available - no customer notification sent."
+            }
           </p>
         </div>
       `,
@@ -642,7 +684,7 @@ const sendRefundNotification = async (refundData: {
     // Enhanced customer notification if email available
     if (customerEmail) {
       await transporter.sendMail({
-        from: `"EcoCycle" <${process.env.MAIL_USER}>`,
+        from: `"Karakeep " <${process.env.MAIL_USER}>`,
         to: customerEmail,
         subject: `Your ${refundType} Confirmation - ${refundId}`,
         html: `
@@ -668,12 +710,18 @@ const sendRefundNotification = async (refundData: {
                   <td style="padding: 8px 0; font-weight: bold;">Type:</td>
                   <td style="padding: 8px 0;">${refundType}</td>
                 </tr>
-                ${isPartial ? `
+                ${
+                  isPartial
+                    ? `
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold;">Original Amount:</td>
-                  <td style="padding: 8px 0;">${currency.toUpperCase()} ${formatAmount(originalAmount || 0)}</td>
+                  <td style="padding: 8px 0;">${currency.toUpperCase()} ${formatAmount(
+                        originalAmount || 0
+                      )}</td>
                 </tr>
-                ` : ''}
+                `
+                    : ""
+                }
                 <tr>
                   <td style="padding: 8px 0; font-weight: bold;">Processing Date:</td>
                   <td style="padding: 8px 0;">${new Date().toLocaleDateString()}</td>
@@ -693,7 +741,7 @@ const sendRefundNotification = async (refundData: {
                 If you have any questions about this refund, please don't hesitate to contact our support team.
               </p>
               <p style="color: #059669; font-weight: bold; margin: 20px 0;">
-                Thank you for choosing EcoCycle! 🌱
+                Thank you for choosing Karakeep! 🌱
               </p>
             </div>
 
@@ -701,7 +749,7 @@ const sendRefundNotification = async (refundData: {
               <p style="color: #9ca3af; font-size: 12px; text-align: center;">
                 This is an automated message. Please do not reply to this email.
                 <br>
-                EcoCycle Payment Processing System
+                Karakeep Payment Processing System
               </p>
             </div>
           </div>
@@ -709,12 +757,14 @@ const sendRefundNotification = async (refundData: {
       });
     }
 
-    console.log('✅ Email notifications sent successfully');
-    console.log('Admin notification: ✅ Sent');
-    console.log('Customer notification:', customerEmail ? '✅ Sent' : '❌ No email available');
-
+    console.log("✅ Email notifications sent successfully");
+    console.log("Admin notification: ✅ Sent");
+    console.log(
+      "Customer notification:",
+      customerEmail ? "✅ Sent" : "❌ No email available"
+    );
   } catch (error) {
-    console.error('❌ Failed to send refund notification emails:', error);
+    console.error("❌ Failed to send refund notification emails:", error);
     throw error; // Re-throw to let the calling function handle it
   }
 };
@@ -723,36 +773,36 @@ export const refundPayment = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { amount, reason, customerEmail } = req.body;
 
-    console.log('=== BACKEND REFUND DEBUG ===');
-    console.log('Received ID:', id);  
-    console.log('ID type:', typeof id);
-    console.log('ID length:', id.length);
-    console.log('ID starts with:', id.substring(0, 3));
-    console.log('Amount:', amount);
-    console.log('Reason:', reason);
-    console.log('Customer Email (from body):', customerEmail);
-    console.log('============================');
+    console.log("=== BACKEND REFUND DEBUG ===");
+    console.log("Received ID:", id);
+    console.log("ID type:", typeof id);
+    console.log("ID length:", id.length);
+    console.log("ID starts with:", id.substring(0, 3));
+    console.log("Amount:", amount);
+    console.log("Reason:", reason);
+    console.log("Customer Email (from body):", customerEmail);
+    console.log("============================");
 
     let refund;
     let originalAmount = 0;
     let paymentObject = null;
-    
+
     // Handle different ID types
-    if (id.startsWith('pi_')) {
+    if (id.startsWith("pi_")) {
       // Payment Intent ID
-      console.log('Attempting refund with Payment Intent ID...');
-      
+      console.log("Attempting refund with Payment Intent ID...");
+
       // First verify the payment intent exists
       const paymentIntent = await stripe.paymentIntents.retrieve(id, {
-        expand: ['customer']
+        expand: ["customer"],
       });
-      console.log('Payment Intent status:', paymentIntent.status);
-      console.log('Payment Intent amount:', paymentIntent.amount);
-      
-      if (paymentIntent.status !== 'succeeded') {
+      console.log("Payment Intent status:", paymentIntent.status);
+      console.log("Payment Intent amount:", paymentIntent.amount);
+
+      if (paymentIntent.status !== "succeeded") {
         return res.status(400).json({
           success: false,
-          message: `Cannot refund payment with status: ${paymentIntent.status}`
+          message: `Cannot refund payment with status: ${paymentIntent.status}`,
         });
       }
 
@@ -765,30 +815,30 @@ export const refundPayment = async (req: Request, res: Response) => {
       refund = await stripe.refunds.create({
         payment_intent: id,
         amount: refundAmount,
-        reason: reason || 'requested_by_customer',
+        reason: reason || "requested_by_customer",
         metadata: {
-          custom_reason: reason === 'custom' ? 'Custom refund reason' : undefined,
-          requested_by: 'admin_dashboard',
-          refund_type: refundAmount ? 'partial' : 'full'
-        }
+          custom_reason:
+            reason === "custom" ? "Custom refund reason" : undefined,
+          requested_by: "admin_dashboard",
+          refund_type: refundAmount ? "partial" : "full",
+        },
       });
-      
-    } else if (id.startsWith('ch_')) {
+    } else if (id.startsWith("ch_")) {
       // Charge ID
-      console.log('Attempting refund with Charge ID...');
-      
+      console.log("Attempting refund with Charge ID...");
+
       // First verify the charge exists
       const charge = await stripe.charges.retrieve(id, {
-        expand: ['customer']
+        expand: ["customer"],
       });
-      console.log('Charge status:', charge.status);
-      console.log('Charge amount:', charge.amount);
-      console.log('Charge paid:', charge.paid);
-      
+      console.log("Charge status:", charge.status);
+      console.log("Charge amount:", charge.amount);
+      console.log("Charge paid:", charge.paid);
+
       if (!charge.paid) {
         return res.status(400).json({
           success: false,
-          message: 'Cannot refund unpaid charge'
+          message: "Cannot refund unpaid charge",
         });
       }
 
@@ -801,94 +851,94 @@ export const refundPayment = async (req: Request, res: Response) => {
       refund = await stripe.refunds.create({
         charge: id,
         amount: refundAmount,
-        reason: reason || 'requested_by_customer',
+        reason: reason || "requested_by_customer",
         metadata: {
-          custom_reason: reason === 'custom' ? 'Custom refund reason' : undefined,
-          requested_by: 'admin_dashboard',
-          refund_type: refundAmount ? 'partial' : 'full'
-        }
+          custom_reason:
+            reason === "custom" ? "Custom refund reason" : undefined,
+          requested_by: "admin_dashboard",
+          refund_type: refundAmount ? "partial" : "full",
+        },
       });
-      
     } else {
       // Unknown format - try to determine what it is
-      console.log('Unknown ID format, attempting to identify...');
-      
+      console.log("Unknown ID format, attempting to identify...");
+
       // Try to retrieve as different object types
       try {
-        console.log('Trying as Payment Intent...');
+        console.log("Trying as Payment Intent...");
         const paymentIntent = await stripe.paymentIntents.retrieve(id, {
-          expand: ['customer']
+          expand: ["customer"],
         });
-        console.log('Found as Payment Intent:', paymentIntent.id);
-        
+        console.log("Found as Payment Intent:", paymentIntent.id);
+
         originalAmount = paymentIntent.amount;
         paymentObject = paymentIntent;
-        
+
         const refundAmount = amount && amount > 0 ? amount : undefined;
-        
+
         refund = await stripe.refunds.create({
           payment_intent: id,
           amount: refundAmount,
-          reason: reason || 'requested_by_customer',
+          reason: reason || "requested_by_customer",
           metadata: {
-            custom_reason: reason === 'custom' ? 'Custom refund reason' : undefined,
-            requested_by: 'admin_dashboard',
-            refund_type: refundAmount ? 'partial' : 'full'
-          }
+            custom_reason:
+              reason === "custom" ? "Custom refund reason" : undefined,
+            requested_by: "admin_dashboard",
+            refund_type: refundAmount ? "partial" : "full",
+          },
         });
-        
       } catch (piError) {
-        console.log('Not a Payment Intent, trying as Charge...');
-        
+        console.log("Not a Payment Intent, trying as Charge...");
+
         try {
           const charge = await stripe.charges.retrieve(id, {
-            expand: ['customer']
+            expand: ["customer"],
           });
-          console.log('Found as Charge:', charge.id);
-          
+          console.log("Found as Charge:", charge.id);
+
           originalAmount = charge.amount;
           paymentObject = charge;
-          
+
           const refundAmount = amount && amount > 0 ? amount : undefined;
-          
+
           refund = await stripe.refunds.create({
             charge: id,
             amount: refundAmount,
-            reason: reason || 'requested_by_customer',
+            reason: reason || "requested_by_customer",
             metadata: {
-              custom_reason: reason === 'custom' ? 'Custom refund reason' : undefined,
-              requested_by: 'admin_dashboard',
-              refund_type: refundAmount ? 'partial' : 'full'
-            }
+              custom_reason:
+                reason === "custom" ? "Custom refund reason" : undefined,
+              requested_by: "admin_dashboard",
+              refund_type: refundAmount ? "partial" : "full",
+            },
           });
-          
         } catch (chargeError) {
-          console.log('Not a Charge either. Errors:');
-          console.log('PI Error:', piError.message);
-          console.log('Charge Error:', chargeError.message);
-          
+          console.log("Not a Charge either. Errors:");
+          console.log("PI Error:", piError.message);
+          console.log("Charge Error:", chargeError.message);
+
           return res.status(404).json({
             success: false,
             message: `Invalid payment ID: ${id}. Not found as Payment Intent or Charge.`,
             debug: {
               id,
               piError: piError.message,
-              chargeError: chargeError.message
-            }
+              chargeError: chargeError.message,
+            },
           });
         }
       }
     }
 
-    console.log('Refund successful:', refund.id);
-    console.log('Refund amount:', refund.amount);
-    console.log('Original amount:', originalAmount);
+    console.log("Refund successful:", refund.id);
+    console.log("Refund amount:", refund.amount);
+    console.log("Original amount:", originalAmount);
 
     // Determine if this is a partial refund
     const refundAmount = refund.amount;
     const isPartialRefund = refundAmount < originalAmount;
 
-    console.log('Is partial refund:', isPartialRefund);
+    console.log("Is partial refund:", isPartialRefund);
 
     // Get customer email - priority order:
     // 1. Email provided in request body (highest priority)
@@ -896,41 +946,54 @@ export const refundPayment = async (req: Request, res: Response) => {
     // 3. Receipt email
     // 4. Customer object email
     let customerEmailToUse = customerEmail;
-    
+
     if (!customerEmailToUse && paymentObject) {
-      console.log('No email provided in request, searching payment object...');
-      
+      console.log("No email provided in request, searching payment object...");
+
       // Try to get email from different sources
       if (paymentObject.receipt_email) {
         customerEmailToUse = paymentObject.receipt_email;
-        console.log('Found receipt_email:', customerEmailToUse);
+        console.log("Found receipt_email:", customerEmailToUse);
       } else if (paymentObject.billing_details?.email) {
         customerEmailToUse = paymentObject.billing_details.email;
-        console.log('Found billing_details.email:', customerEmailToUse);
-      } else if (paymentObject.customer && typeof paymentObject.customer === 'object' && paymentObject.customer.email) {
+        console.log("Found billing_details.email:", customerEmailToUse);
+      } else if (
+        paymentObject.customer &&
+        typeof paymentObject.customer === "object" &&
+        paymentObject.customer.email
+      ) {
         customerEmailToUse = paymentObject.customer.email;
-        console.log('Found customer.email:', customerEmailToUse);
+        console.log("Found customer.email:", customerEmailToUse);
       } else if (paymentObject.metadata?.customer_email) {
         customerEmailToUse = paymentObject.metadata.customer_email;
-        console.log('Found metadata.customer_email:', customerEmailToUse);
+        console.log("Found metadata.customer_email:", customerEmailToUse);
       }
-      
+
       // If we have a customer ID but no email yet, try to fetch the customer
-      if (!customerEmailToUse && paymentObject.customer && typeof paymentObject.customer === 'string') {
+      if (
+        !customerEmailToUse &&
+        paymentObject.customer &&
+        typeof paymentObject.customer === "string"
+      ) {
         try {
-          console.log('Fetching customer details for ID:', paymentObject.customer);
-          const customer = await stripe.customers.retrieve(paymentObject.customer);
-          if ('email' in customer && customer.email) {
+          console.log(
+            "Fetching customer details for ID:",
+            paymentObject.customer
+          );
+          const customer = await stripe.customers.retrieve(
+            paymentObject.customer
+          );
+          if ("email" in customer && customer.email) {
             customerEmailToUse = customer.email;
-            console.log('Found customer email from API:', customerEmailToUse);
+            console.log("Found customer email from API:", customerEmailToUse);
           }
         } catch (custError) {
-          console.log('Could not fetch customer details:', custError);
+          console.log("Could not fetch customer details:", custError);
         }
       }
     }
 
-    console.log('Final customer email to use:', customerEmailToUse);
+    console.log("Final customer email to use:", customerEmailToUse);
 
     // Send email notifications
     try {
@@ -940,19 +1003,21 @@ export const refundPayment = async (req: Request, res: Response) => {
         amount: refundAmount,
         currency: refund.currency,
         originalAmount: originalAmount,
-        reason: reason || 'requested_by_customer',
-        isPartial: isPartialRefund
+        reason: reason || "requested_by_customer",
+        isPartial: isPartialRefund,
       });
-      console.log('Email notifications sent successfully');
+      console.log("Email notifications sent successfully");
     } catch (emailError) {
-      console.error('Failed to send email notifications:', emailError);
+      console.error("Failed to send email notifications:", emailError);
       // Don't fail the entire request if email fails
     }
 
     // Successful response
     res.status(200).json({
       success: true,
-      message: `${isPartialRefund ? 'Partial payment' : 'Payment'} refunded successfully`,
+      message: `${
+        isPartialRefund ? "Partial payment" : "Payment"
+      } refunded successfully`,
       refund: {
         id: refund.id,
         amount: refund.amount,
@@ -961,23 +1026,22 @@ export const refundPayment = async (req: Request, res: Response) => {
         created: refund.created,
         isPartial: isPartialRefund,
         originalAmount: originalAmount,
-        refundType: isPartialRefund ? 'partial' : 'full'
+        refundType: isPartialRefund ? "partial" : "full",
       },
       emailNotification: {
         sent: !!customerEmailToUse,
         email: customerEmailToUse,
-        adminNotificationSent: true
-      }
+        adminNotificationSent: true,
+      },
     });
-
   } catch (error: any) {
-    console.error('=== REFUND ERROR ===');
-    console.error('Error type:', error.type);
-    console.error('Error message:', error.message);
-    console.error('Full error:', error);
-    console.error('====================');
-    
-    if (error.type === 'StripeInvalidRequestError') {
+    console.error("=== REFUND ERROR ===");
+    console.error("Error type:", error.type);
+    console.error("Error message:", error.message);
+    console.error("Full error:", error);
+    console.error("====================");
+
+    if (error.type === "StripeInvalidRequestError") {
       return res.status(400).json({
         success: false,
         message: `Stripe Error: ${error.message}`,
@@ -985,15 +1049,15 @@ export const refundPayment = async (req: Request, res: Response) => {
           type: error.type,
           code: error.code,
           param: error.param,
-          docUrl: error.doc_url
-        }
+          docUrl: error.doc_url,
+        },
       });
     }
 
     res.status(500).json({
       success: false,
       message: "Failed to process refund",
-      error: error.message
+      error: error.message,
     });
   }
 };

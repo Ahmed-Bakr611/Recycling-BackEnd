@@ -103,41 +103,134 @@ export const searchItems = async (
       matchStage[`name.${language}`] = categoryName;
     }
 
+    // Build relevance scoring
+    const relevanceStages = [
+      // Exact match in current language (highest priority)
+      {
+        $addFields: {
+          relevanceScore: {
+            $cond: {
+              if: {
+                $regexMatch: {
+                  input: `$items.name.${language}`,
+                  regex: new RegExp(`^${searchQuery}$`, "i"),
+                },
+              },
+              then: 100,
+              else: 0,
+            },
+          },
+        },
+      },
+      // Starts with in current language
+      {
+        $addFields: {
+          relevanceScore: {
+            $add: [
+              "$relevanceScore",
+              {
+                $cond: {
+                  if: {
+                    $regexMatch: {
+                      input: `$items.name.${language}`,
+                      regex: new RegExp(`^${searchQuery}`, "i"),
+                    },
+                  },
+                  then: 80,
+                  else: 0,
+                },
+              },
+            ],
+          },
+        },
+      },
+      // Contains in current language
+      {
+        $addFields: {
+          relevanceScore: {
+            $add: [
+              "$relevanceScore",
+              {
+                $cond: {
+                  if: {
+                    $regexMatch: {
+                      input: `$items.name.${language}`,
+                      regex: new RegExp(searchQuery, "i"),
+                    },
+                  },
+                  then: 60,
+                  else: 0,
+                },
+              },
+            ],
+          },
+        },
+      },
+      // Exact match in alternate language
+      {
+        $addFields: {
+          relevanceScore: {
+            $add: [
+              "$relevanceScore",
+              {
+                $cond: {
+                  if: {
+                    $regexMatch: {
+                      input: `$items.name.${language === "ar" ? "en" : "ar"}`,
+                      regex: new RegExp(`^${searchQuery}$`, "i"),
+                    },
+                  },
+                  then: 40,
+                  else: 0,
+                },
+              },
+            ],
+          },
+        },
+      },
+      // Contains in alternate language
+      {
+        $addFields: {
+          relevanceScore: {
+            $add: [
+              "$relevanceScore",
+              {
+                $cond: {
+                  if: {
+                    $regexMatch: {
+                      input: `$items.name.${language === "ar" ? "en" : "ar"}`,
+                      regex: new RegExp(searchQuery, "i"),
+                    },
+                  },
+                  then: 20,
+                  else: 0,
+                },
+              },
+            ],
+          },
+        },
+      },
+    ];
+
     // Build search conditions
-    let itemsMatchConditions: any = {};
-
-    if (searchQuery.length === 1) {
-      const letterRegex = new RegExp(`^${searchQuery}.*`);
-      itemsMatchConditions[`items.name.${language}`] = letterRegex;
-
-      console.log("🔡 Single-char search regex:", letterRegex);
-    } else {
-      itemsMatchConditions = {
-        $or: [
-          {
-            [`items.name.${language}`]: {
-              $regex: searchQuery,
-              $options: "i",
-            },
+    const searchConditions = {
+      $or: [
+        { [`items.name.${language}`]: { $regex: searchQuery, $options: "i" } },
+        {
+          [`items.name.${language === "ar" ? "en" : "ar"}`]: {
+            $regex: searchQuery,
+            $options: "i",
           },
-          {
-            [`items.name.${language === "ar" ? "en" : "ar"}`]: {
-              $regex: searchQuery,
-              $options: "i",
-            },
+        },
+        { [`name.${language}`]: { $regex: searchQuery, $options: "i" } },
+        {
+          [`name.${language === "ar" ? "en" : "ar"}`]: {
+            $regex: searchQuery,
+            $options: "i",
           },
-          { [`name.${language}`]: { $regex: searchQuery, $options: "i" } },
-          {
-            [`name.${language === "ar" ? "en" : "ar"}`]: {
-              $regex: searchQuery,
-              $options: "i",
-            },
-          },
-        ],
-      };
-
-      console.log("🔡 Multi-char search conditions:", itemsMatchConditions);
-    }
+        },
+      ],
+    };
 
     console.log("📦 Match stage:", matchStage);
 
@@ -145,7 +238,7 @@ export const searchItems = async (
     const totalAggregation = await Category.aggregate([
       { $match: matchStage },
       { $unwind: "$items" },
-      { $match: itemsMatchConditions },
+      { $match: searchConditions },
       { $count: "total" },
     ]);
 
@@ -153,12 +246,18 @@ export const searchItems = async (
 
     console.log("📊 Total matched items:", totalItems);
 
-    // Get paginated search results
+    // Get paginated search results with relevance scoring
     const items = (await Category.aggregate([
       { $match: matchStage },
       { $unwind: "$items" },
-      { $match: itemsMatchConditions },
-      { $sort: { [`items.name.${language}`]: 1 } },
+      { $match: searchConditions },
+      ...relevanceStages,
+      {
+        $sort: {
+          relevanceScore: -1,
+          [`items.name.${language}`]: 1,
+        },
+      },
       { $skip: skip },
       { $limit: limit },
       {
@@ -173,6 +272,7 @@ export const searchItems = async (
           categoryName: "$name",
           categoryId: "$_id",
           createdAt: "$items.createdAt",
+          relevanceScore: 1,
         },
       },
     ])) as Array<Record<string, any>>;
@@ -203,6 +303,7 @@ export const searchItems = async (
         quantity: item.quantity,
         categoryId: item.categoryId,
         createdAt: item.createdAt,
+        relevanceScore: item.relevanceScore, // Include relevance score for debugging
       };
 
       if (role === "buyer" && item.price) {
@@ -241,7 +342,6 @@ export const searchItems = async (
     });
   }
 };
-
 // Helper function to get alphabet statistics
 function getAlphabetStats(items: any[], language: "en" | "ar" = "en") {
   const stats: Record<string, number> = {};
