@@ -37,12 +37,12 @@ export const googleCheckFirstTime = async (req: Request, res: Response) => {
         return res.status(401).json({ message: "Delivery Not Approved Yet" });
       }
 
-      if (existingUser.provider === "none") {
-        return res.status(400).json({
-          exists: false,
-          message: "This email is registered with password login, not Google",
-        });
-      }
+      // if (existingUser.provider === "none") {
+      //   return res.status(400).json({
+      //     exists: false,
+      //     message: "This email is registered with password login, not Google",
+      //   });
+      // }
 
       const accessToken = generateAccessToken(
         existingUser.id,
