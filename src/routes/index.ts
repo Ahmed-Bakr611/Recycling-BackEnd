@@ -13,6 +13,7 @@ import delivery from "./delivery";
 import subscribe from "../routes/subscribe";
 import payment from "./payment";
 import contactus from './contact-us'
+import { createTestRoute } from '../utils/testStockUpdate';
 const router = express.Router();
 
 export default (): express.Router => {
@@ -32,5 +33,9 @@ export default (): express.Router => {
   contactus(router);
   payment(router);
   router.use("/notifications", notificationRoutes);
+  
+  // Add test route for stock updates
+  createTestRoute(router);
+  
   return router;
 };
