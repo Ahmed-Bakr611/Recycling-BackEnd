@@ -1,6 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import jwt from 'jsonwebtoken';
+import { emitCurrentStockState } from './stockWatcher';
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET!;
 
 let io: SocketIOServer | null = null;
@@ -48,9 +49,54 @@ const token =
     // Join user to their personal room for targeted notifications
     socket.join(`user_${socket.userId}`);
     
+    // Track subscription state to prevent duplicate emissions
+    let isSubscribedToStock = false;
+    let stockEmissionTimeout: NodeJS.Timeout | null = null;
+
+    // Emit current stock state to newly connected client (only once)
+    const emitStockStateOnce = () => {
+      if (stockEmissionTimeout) {
+        clearTimeout(stockEmissionTimeout);
+      }
+      
+      stockEmissionTimeout = setTimeout(() => {
+        emitCurrentStockState(socket.id).catch(error => {
+          console.error('❌ Error emitting stock state:', error);
+        });
+        stockEmissionTimeout = null;
+      }, 100); // Debounce by 100ms
+    };
+
+    // Emit initial stock state
+    emitStockStateOnce();
+
+    // Handle stock subscription requests with deduplication
+    socket.on('stock:subscribe', () => {
+      if (!isSubscribedToStock) {
+        isSubscribedToStock = true;
+        console.log(`📦 User ${socket.userId} subscribed to stock updates`);
+        socket.join('stock-updates'); // Join stock updates room
+        emitStockStateOnce();
+      } else {
+        console.log(`📦 User ${socket.userId} already subscribed to stock updates (ignored)`);
+      }
+    });
+
+    socket.on('stock:unsubscribe', () => {
+      if (isSubscribedToStock) {
+        isSubscribedToStock = false;
+        console.log(`📦 User ${socket.userId} unsubscribed from stock updates`);
+        socket.leave('stock-updates'); // Leave stock updates room
+      }
+    });
+    
     // Handle disconnection
     socket.on('disconnect', (reason) => {
       console.log(`❌ User ${socket.userId} disconnected:`, reason);
+      // Clean up any pending timeouts
+      if (stockEmissionTimeout) {
+        clearTimeout(stockEmissionTimeout);
+      }
     });
 
     // Optional: Handle ping/pong for connection health

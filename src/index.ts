@@ -5,6 +5,7 @@ import app from "./app";
 import connectDB from "./config/db";
 import router from "./routes";
 import { getSocketIO, initializeSocketIO } from "./socket/socketServer";
+import { initializeStockWatcher, closeStockWatcher } from "./socket/stockWatcher";
 
 dotenv.config();
 
@@ -19,11 +20,29 @@ const startServer = async () => {
     // Initialize Socket.IO
     initializeSocketIO(server);
 
+    // Initialize Stock Watcher (must be after database connection)
+    await initializeStockWatcher();
+
     const PORT = process.env.PORT || 5000;
     server.listen(PORT, () => {
       console.log(`🚀 Server running at http://localhost:${PORT}`);
       console.log(`🔌 Socket.IO server ready for connections`);
+      console.log(`📦 Stock monitoring system active`);
     });
+
+    // Handle graceful shutdown
+    process.on('SIGINT', async () => {
+      console.log('\n🛑 Received SIGINT. Graceful shutdown...');
+      await closeStockWatcher();
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', async () => {
+      console.log('\n🛑 Received SIGTERM. Graceful shutdown...');
+      await closeStockWatcher();
+      process.exit(0);
+    });
+
   } catch (error) {
     console.error("❌ Failed to start server:", error);
     process.exit(1);
