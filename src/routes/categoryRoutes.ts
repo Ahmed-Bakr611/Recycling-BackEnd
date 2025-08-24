@@ -158,7 +158,7 @@ export default (router: express.Router) => {
 // Get category names for dropdown filter
 router.get('/category-names', getCategoryNames);
 router.get('/items/by-name/:itemName', getItemByName);
-router.get('/categories/search', getCategoriesWithSearch);
+router.get('/categories/search', paginate(),getCategoriesWithSearch);
 router.get('/categories/search-suggestions', getSearchSuggestions);
 
 // Optional: Search suggestions for autocomplete
