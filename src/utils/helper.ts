@@ -76,7 +76,7 @@ export const sendOtpEmail = async (to: string, code: string) => {
   </div>
 `;
   await transporter.sendMail({
-    from: `"Karakeep App " <${process.env.MAIL_USER}>`, // Sender address
+    from: `"Karakeep Crew " <${process.env.MAIL_USER}>`, // Sender address
     to,
     subject: "Your OTP Code",
     html: emailHtml,
@@ -98,7 +98,7 @@ export const sendSubscriptionEmail = async (
   `;
 
   await transporter.sendMail({
-    from: `"Karakeep App" <${process.env.MAIL_USER}>`,
+    from: `"Karakeep Crew" <${process.env.MAIL_USER}>`,
     to,
     subject: "Subscription Confirmation",
     html: emailHtml,
