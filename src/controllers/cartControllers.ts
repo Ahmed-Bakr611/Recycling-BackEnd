@@ -65,6 +65,7 @@ export const getCart = async (req: Request, res: Response) => {
   return res.status(200).json(cart);
 };
 
+
 export const addItemToCart = async (req: Request, res: Response) => {
   console.log("in add to cart");
 
@@ -73,8 +74,8 @@ export const addItemToCart = async (req: Request, res: Response) => {
   const {
     _id,
     categoryId,
-    categoryName,
-    name,
+    categoryName, // Now expects bilingual object: { en: "...", ar: "..." }
+    name, // Now expects bilingual object: { en: "...", ar: "..." }
     image,
     points,
     price,
@@ -84,6 +85,19 @@ export const addItemToCart = async (req: Request, res: Response) => {
 
   if (!userId && !sessionId) {
     return res.status(400).json({ message: "Missing user or session" });
+  }
+
+  // Validate that name and categoryName are bilingual objects
+  if (typeof name !== 'object' || !name.en || !name.ar) {
+    return res.status(400).json({ 
+      message: "Item name must be a bilingual object with 'en' and 'ar' properties" 
+    });
+  }
+
+  if (typeof categoryName !== 'object' || !categoryName.en || !categoryName.ar) {
+    return res.status(400).json({ 
+      message: "Category name must be a bilingual object with 'en' and 'ar' properties" 
+    });
   }
 
   // Validate quantity based on measurement unit
@@ -97,7 +111,7 @@ export const addItemToCart = async (req: Request, res: Response) => {
     cart = new Cart({ ...(userId ? { userId } : { sessionId }), items: [] });
   }
 
-  // Find item by categoryId
+  // Find item by _id
   const existingItem = cart.items.find((item) => item._id === _id);
   if (existingItem) {
     const newQuantity = existingItem.quantity + quantity;
@@ -110,8 +124,9 @@ export const addItemToCart = async (req: Request, res: Response) => {
       return res.status(400).json({ message: newQuantityValidation.message });
     }
     existingItem.quantity = newQuantity;
-    // Optionally update other fields if needed
+    // Update bilingual fields
     if (name) existingItem.name = name;
+    if (categoryName) existingItem.categoryName = categoryName;
     if (image) existingItem.image = image;
     if (points) existingItem.points = points;
     if (price) existingItem.price = price;
@@ -133,12 +148,22 @@ export const addItemToCart = async (req: Request, res: Response) => {
   await cart.save();
   return res.json(cart);
 };
-
 export const updateCartItem = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
-    const { _id, quantity } = req.body;
+    const { 
+      _id, 
+      quantity,
+      // NEW: Accept item details for creating new items
+      categoryId,
+      categoryName,
+      name,
+      image,
+      points,
+      price,
+      measurement_unit
+    } = req.body;
 
     if (!_id || typeof quantity !== "number") {
       return res
@@ -152,9 +177,45 @@ export const updateCartItem = async (req: Request, res: Response) => {
       await cart.save();
     }
 
-    const item = cart.items.find((i) => i._id === _id);
-    if (!item)
-      return res.status(404).json({ message: "Item not found in cart" });
+    let item = cart.items.find((i) => i._id === _id);
+    
+    if (!item) {
+      // NEW: Create new item if it doesn't exist (only if we have the required data)
+      if (!categoryId || !name || !categoryName) {
+        return res.status(400).json({ 
+          message: "Item not found in cart. To create new item, provide categoryId, name, and categoryName." 
+        });
+      }
+
+      // Validate that name and categoryName are bilingual objects for new items
+      if (typeof name !== 'object' || !name.en || !name.ar) {
+        return res.status(400).json({ 
+          message: "Item name must be a bilingual object with 'en' and 'ar' properties" 
+        });
+      }
+
+      if (typeof categoryName !== 'object' || !categoryName.en || !categoryName.ar) {
+        return res.status(400).json({ 
+          message: "Category name must be a bilingual object with 'en' and 'ar' properties" 
+        });
+      }
+
+      // Create new item
+      const newItem = {
+        _id,
+        categoryId,
+        categoryName,
+        name,
+        image: image || '',
+        points: points || 0,
+        price: price || 0,
+        measurement_unit: measurement_unit || 1,
+        quantity: 0 // Will be set below
+      };
+
+      cart.items.push(newItem);
+      item = cart.items[cart.items.length - 1]; // Get reference to the newly added item
+    }
 
     // Validate quantity based on measurement unit
     const validation = validateQuantity(quantity, item.measurement_unit);
@@ -162,7 +223,14 @@ export const updateCartItem = async (req: Request, res: Response) => {
       return res.status(400).json({ message: validation.message });
     }
 
+    // Update quantity
     item.quantity = quantity;
+    
+    // If quantity is 0 or less, remove the item from cart
+    if (quantity <= 0) {
+      cart.items = cart.items.filter((i) => i._id !== _id);
+    }
+
     await cart.save();
     return res.status(200).json(cart);
   } catch (error) {
@@ -227,12 +295,6 @@ export const saveCart = async (req: Request, res: Response) => {
     console.log("User ID:", userId);
     console.log("Session ID:", sessionId);
     console.log("Items count:", items?.length);
-    console.log("Request headers:", {
-      authorization: req.headers.authorization,
-      cookie: req.headers.cookie,
-      "user-agent": req.headers["user-agent"],
-    });
-    console.log("========================");
 
     if (!userId && !sessionId) {
       return res.status(400).json({ message: "Missing user or session" });
@@ -242,7 +304,7 @@ export const saveCart = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid cart items" });
     }
 
-    // Validate all items before saving
+    // Validate all items before saving (including bilingual fields)
     const validationErrors: string[] = [];
     for (const item of items) {
       if (
@@ -256,10 +318,23 @@ export const saveCart = async (req: Request, res: Response) => {
         continue;
       }
 
+      // Validate bilingual fields
+      if (typeof item.name !== 'object' || !item.name.en || !item.name.ar) {
+        validationErrors.push(
+          `Item ${item._id}: name must be bilingual object with 'en' and 'ar' properties`
+        );
+      }
+
+      if (typeof item.categoryName !== 'object' || !item.categoryName.en || !item.categoryName.ar) {
+        validationErrors.push(
+          `Item ${item._id}: categoryName must be bilingual object with 'en' and 'ar' properties`
+        );
+      }
+
       const validation = validateQuantity(item.quantity, item.measurement_unit);
       if (!validation.isValid) {
         validationErrors.push(
-          `${item.name || item._id}: ${validation.message}`
+          `${item.name?.en || item.name || item._id}: ${validation.message}`
         );
       }
     }
@@ -274,26 +349,11 @@ export const saveCart = async (req: Request, res: Response) => {
     // Find cart using same logic as getCart
     let cart = await Cart.findOne(userId ? { userId } : { sessionId });
 
-    // DEBUG: Log the cart search
-    console.log("Found existing cart:", cart ? cart._id : "None");
-    if (cart) {
-      console.log(
-        "Cart belongs to:",
-        cart.userId ? `User ${cart.userId}` : `Session ${cart.sessionId}`
-      );
-      console.log("Current items in cart:", cart.items.length);
-    }
-
     if (!cart) {
-      // Create new cart with proper userId or sessionId
       cart = new Cart({
         ...(userId ? { userId } : { sessionId }),
         items: [],
       });
-      console.log(
-        "Created new cart for:",
-        userId ? `User ${userId}` : `Session ${sessionId}`
-      );
     }
 
     // Replace entire cart with incoming items

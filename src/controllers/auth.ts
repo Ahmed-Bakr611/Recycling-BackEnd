@@ -12,7 +12,8 @@ import Cart from "../models/cart";
 import { OAuth2Client } from "google-auth-library";
 import { getDeliveryUserStatus } from "../utils/getDeliveryStatus";
 import Order from "../models/pickupOrder";
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+import { welcomeUser } from "../utils/tireHelpe";
+export const client = new OAuth2Client(process.env.GOOGLE_WEB_CLIENT_ID);
 
 ////////////////////////////////////////////////
 // Sign Up logic
@@ -61,11 +62,30 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
       role,
       imgUrl,
       attachments,
-      idToken, // used if provider is Google
+      idToken,
     } = req.body;
 
-    let user;
+    let user = null;
 
+    // Process attachments for ALL users
+    const attachmentsData = {
+      ...(attachments || {}), // Spread the incoming attachments
+      // Add role-specific fields
+      ...(role === "delivery" && {
+        status: "pending",
+        submittedAt: new Date(),
+      }),
+      // Add common fields for all users if needed
+      processedAt: new Date(),
+    };
+
+    console.log("🔍 DEBUGGING ATTACHMENTS:");
+    console.log("📝 Raw attachments from req.body:", attachments);
+    console.log("📝 Role:", role);
+    console.log("📝 Processed attachmentsData:", attachmentsData);
+    console.log("📝 AttachmentsData keys:", Object.keys(attachmentsData));
+
+    // ✅ Google Sign-Up
     if (provider === "google") {
       if (!idToken) {
         return res.status(400).json({ message: "Google ID token is required" });
@@ -73,7 +93,10 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
 
       const ticket = await client.verifyIdToken({
         idToken,
-        audience: process.env.GOOGLE_CLIENT_ID,
+        audience: [
+          process.env.GOOGLE_WEB_CLIENT_ID,
+          process.env.GOOGLE_MOBILE_CLIENT_ID,
+        ],
       });
 
       const payload = ticket.getPayload();
@@ -84,7 +107,13 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
 
       // Check if user already exists
       user = await User.findOne({ email: payload.email });
+
       if (!user) {
+        console.log(
+          "🔍 Creating Google user with attachments:",
+          attachmentsData
+        );
+
         user = await User.create({
           name: payload.name || name,
           email: payload.email,
@@ -92,49 +121,50 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
           phoneNumber: phoneNumber?.padStart(11, "0") || "",
           role: role || "customer",
           imgUrl: payload.picture || imgUrl,
-          // ✅ FIX: Set initial pending status for delivery users
-          attachments:
-            role === "delivery"
-              ? {
-                  status: "pending",
-                  submittedAt: new Date(),
-                  ...attachments,
-                }
-              : attachments || {},
-          // ✅ FIX: Delivery users start as not approved
+          attachments: attachmentsData,
           isApproved: role === "delivery" ? false : true,
         });
+
+        console.log(
+          "🔍 Google user created. Attachments in DB:",
+          user.attachments
+        );
       }
-    } else {
-      // Traditional email/password registration
+    }
+
+    // ✅ Email/Password Sign-Up
+    else {
+      console.log("🔍 Creating Email user with attachments:", attachmentsData);
+
       user = await User.create({
         name,
         email,
         password,
         provider: provider || "none",
-        phoneNumber: phoneNumber.padStart(11, "0"),
+        phoneNumber: phoneNumber?.padStart(11, "0") || "",
         role: role || "customer",
-        imgUrl: imgUrl,
-        // ✅ FIX: Set initial pending status for delivery users
-        attachments:
-          role === "delivery"
-            ? {
-                status: "pending",
-                submittedAt: new Date(),
-                ...attachments,
-              }
-            : attachments || {},
-        // ✅ FIX: Delivery users start as not approved
+        imgUrl,
+        attachments: attachmentsData,
         isApproved: role === "delivery" ? false : true,
       });
+
+      console.log(
+        "🔍 Email user created. Attachments in DB:",
+        user.attachments
+      );
     }
 
-    // Create tokens
+    // ✅ Create Tokens
     const accessToken = generateAccessToken(user._id.toString(), user.role);
     const refreshToken = generateRefreshToken(user._id.toString(), user.role);
 
     user.refreshToken = refreshToken;
+
+    // Mark attachments as modified for Mixed type (safety measure)
+    user.markModified("attachments");
+
     await user.save();
+    await welcomeUser(user._id);
 
     return res
       .status(201)
@@ -146,13 +176,15 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
         path: "/",
       })
       .header("Authorization", `Bearer ${accessToken}`)
-      .json({ accessToken, user });
+      .json({
+        accessToken,
+        user,
+      });
   } catch (err: any) {
-    console.error(err);
+    console.error("❌ Registration error:", err);
     return res.status(500).json({ message: err.message || "Signup failed" });
   }
 };
-
 ////////////////////////////////////////////////
 // Login logic
 ////////////////////////////////////////////////
@@ -272,7 +304,9 @@ export const login = async (req: Request, res: Response) => {
                 }
               };
 
-              if (validateQuantity(newQuantity, existingItem.measurement_unit)) {
+              if (
+                validateQuantity(newQuantity, existingItem.measurement_unit)
+              ) {
                 existingItem.quantity = newQuantity;
                 // Update other fields from session item if needed
                 existingItem.name = sessionItem.name;
@@ -308,7 +342,9 @@ export const login = async (req: Request, res: Response) => {
         await Cart.deleteOne({ sessionId });
       } else {
         if (userCart) {
-          console.log(`User cart preserved with ${userCart.items.length} items`);
+          console.log(
+            `User cart preserved with ${userCart.items.length} items`
+          );
         }
       }
     } else {
@@ -370,6 +406,11 @@ export const forgotPassword = async (req: Request, res: Response) => {
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
+    if (user.provider === "google") {
+      return res
+        .status(404)
+        .json({ message: "Cannot Reset password For Google User " });
+    }
 
     await createAndSendOtp(email);
 
@@ -386,7 +427,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     console.log("Request body:", req.body);
     const { email, otpCode, newPassword } = req.body;
 
-    await verifyOtp(email, otpCode);
+    // await verifyOtp(email, otpCode);
 
     const user = await User.findOne({ email });
     if (!user) {
@@ -569,7 +610,10 @@ export const validateToken = async (req: Request, res: Response) => {
 
 // Add this endpoint to your auth controller
 
-export const getDeliveryAttachmentsEnhanced = async (req: Request, res: Response) => {
+export const getDeliveryAttachmentsEnhanced = async (
+  req: Request,
+  res: Response
+) => {
   try {
     const deliveryUsers = await User.find({
       role: "delivery",
@@ -962,10 +1006,12 @@ export const revokeDeliveryUser = async (req: Request, res: Response) => {
     // Check if user has active orders (but don't prevent revocation)
     const activeOrders = await Order.find({
       courier: userId,
-      status: { $in: ["assigntocourier", "collected"] }
+      status: { $in: ["assigntocourier", "collected"] },
     });
 
-    console.log(`🔍 Found ${activeOrders.length} active orders for user ${userId}`);
+    console.log(
+      `🔍 Found ${activeOrders.length} active orders for user ${userId}`
+    );
 
     // Set approval status to false and store revoke information
     deliveryUser.isApproved = false;
@@ -1001,7 +1047,10 @@ export const revokeDeliveryUser = async (req: Request, res: Response) => {
         revokedAt: new Date(),
       },
       activeOrdersCount: activeOrders.length,
-      note: activeOrders.length > 0 ? "User has active orders that will be preserved" : "No active orders found"
+      note:
+        activeOrders.length > 0
+          ? "User has active orders that will be preserved"
+          : "No active orders found",
     });
   } catch (err) {
     console.error("Error revoking delivery user:", err);
@@ -1019,8 +1068,8 @@ export const reapplyDeliveryUser = async (req: Request, res: Response) => {
     const existingUser = await User.findOne({ email, role: "delivery" });
 
     if (!existingUser) {
-      return res.status(404).json({ 
-        message: "Original delivery application not found" 
+      return res.status(404).json({
+        message: "Original delivery application not found",
       });
     }
 
@@ -1028,30 +1077,34 @@ export const reapplyDeliveryUser = async (req: Request, res: Response) => {
     const currentStatus = getDeliveryUserStatus(existingUser);
 
     if (currentStatus === "approved") {
-      return res.status(400).json({ 
-        message: "Cannot reapply - user is already approved" 
+      return res.status(400).json({
+        message: "Cannot reapply - user is already approved",
       });
     }
 
     if (currentStatus === "pending") {
-      return res.status(400).json({ 
-        message: "Cannot reapply - application is still pending review" 
+      return res.status(400).json({
+        message: "Cannot reapply - application is still pending review",
       });
     }
 
     // Delete the user
     await User.deleteOne({ _id: existingUser._id });
 
-    console.log(`❌ Deleted delivery user ${existingUser.email} for reapplication`);
+    console.log(
+      `❌ Deleted delivery user ${existingUser.email} for reapplication`
+    );
     console.log(`📋 Status was: ${currentStatus}`);
 
-    return res.status(200).json({ 
-      message: "Previous application deleted successfully. You can now reapply.",
-      previousStatus: currentStatus
+    return res.status(200).json({
+      message:
+        "Previous application deleted successfully. You can now reapply.",
+      previousStatus: currentStatus,
     });
-
   } catch (err) {
     console.error("Reapply delivery error:", err);
-    return res.status(500).json({ message: err.message || "Delivery reapplication failed" });
+    return res
+      .status(500)
+      .json({ message: err.message || "Delivery reapplication failed" });
   }
 };

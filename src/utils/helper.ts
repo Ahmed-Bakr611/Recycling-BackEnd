@@ -24,7 +24,7 @@ export const generateOtp = (): string => {
 
 export const createAndSendOtp = async (email: string): Promise<string> => {
   const code = generateOtp();
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); //1 hour
 
   await Otp.findOneAndUpdate(
     { email },
@@ -71,12 +71,12 @@ export const sendOtpEmail = async (to: string, code: string) => {
     <div style="padding: 16px 24px; font-size: 24px; font-weight: bold; border: 1px solid #ccc; border-radius: 8px; background-color: #f9f9f9; color: #2e6c80;">
       ${code}
     </div>
-    <p style="margin-top: 16px;">This code is valid for 5 minutes.</p>
+    <p style="margin-top: 16px;">This code is valid for 1 Hour.</p>
     <p style="font-size: 12px; color: #888;">Tip: You can copy this code and paste it in the app.</p>
   </div>
 `;
   await transporter.sendMail({
-    from: `"Recycle App" <${process.env.MAIL_USER}>`, // Sender address
+    from: `"Karakeeb Crew " <${process.env.MAIL_USER}>`, // Sender address
     to,
     subject: "Your OTP Code",
     html: emailHtml,
@@ -98,7 +98,7 @@ export const sendSubscriptionEmail = async (
   `;
 
   await transporter.sendMail({
-    from: `"Recycle App" <${process.env.MAIL_USER}>`,
+    from: `"Karakeeb Crew" <${process.env.MAIL_USER}>`,
     to,
     subject: "Subscription Confirmation",
     html: emailHtml,

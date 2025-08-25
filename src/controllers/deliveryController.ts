@@ -4,15 +4,16 @@ import User from "../models/users";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt";
 import mongoose from "mongoose";
 import Order from "../models/pickupOrder";
+import { client } from "./auth";
 
 export const registerDeliveryUser = async (req: Request, res: Response) => {
   try {
-    const { name, email, password, phoneNumber, provider } = req.body;
+    const { name, email, password, phoneNumber, provider, idToken } = req.body;
 
     const attachmentsFromBody = JSON.parse(req.body.attachments || "{}");
 
     const files = req.files as Record<string, Express.Multer.File[]>;
-
+    let user = null;
     const attachments = {
       ...attachmentsFromBody,
       deliveryImage: files?.deliveryImage?.[0]?.path || null,
@@ -20,16 +21,50 @@ export const registerDeliveryUser = async (req: Request, res: Response) => {
       criminalRecord: files?.criminalRecord?.[0]?.path || null,
     };
 
-    const user = await User.create({
-      name,
-      email,
-      password,
-      phoneNumber: phoneNumber?.padStart(11, "0"),
-      provider: provider,
-      role: "delivery",
-      attachments,
-      isApproved: false, // for admin approval
-    });
+    if (provider === "google") {
+      if (!idToken) {
+        return res.status(400).json({ message: "Google ID token is required" });
+      }
+
+      const ticket = await client.verifyIdToken({
+        idToken,
+        audience: [
+          process.env.GOOGLE_WEB_CLIENT_ID,
+          process.env.GOOGLE_MOBILE_CLIENT_ID,
+        ],
+      });
+
+      const payload = ticket.getPayload();
+
+      if (!payload?.email) {
+        return res.status(400).json({ message: "Invalid Google token" });
+      }
+
+      // Check if user already exists
+      user = await User.findOne({ email });
+      if (!user) {
+        user = await User.create({
+          name: name,
+          email: payload.email,
+          provider: "google",
+          phoneNumber: phoneNumber?.padStart(11, "0") || "",
+          role: "delivery",
+          attachments,
+          isApproved: false,
+        });
+      }
+    } else {
+      user = await User.create({
+        name,
+        email,
+        password,
+        phoneNumber: phoneNumber?.padStart(11, "0"),
+        provider: provider,
+        role: "delivery",
+        attachments,
+        isApproved: false, // for admin approval
+      });
+    }
 
     const accessToken = generateAccessToken(user._id.toString(), user.role);
     const refreshToken = generateRefreshToken(user._id.toString(), user.role);
@@ -58,9 +93,9 @@ export const getAllDeliveries = async (req: Request, res: Response) => {
       "name email phoneNumber isApproved attachments createdAt rating totalReviews" // Include rating fields
     );
 
-    return res.status(200).json({ 
+    return res.status(200).json({
       success: true,
-      deliveries: deliveries // Make sure this matches your frontend expectation
+      deliveries: deliveries, // Make sure this matches your frontend expectation
     });
   } catch (err) {
     console.error("Get deliveries error:", err);
@@ -72,7 +107,7 @@ export const getAllDeliveries = async (req: Request, res: Response) => {
 export const getDeliveryAttachments = async (req: Request, res: Response) => {
   try {
     console.log("📊 Fetching delivery attachments with rating data...");
-    
+
     // Get all delivery users with their rating information
     const deliveries = await User.find({ role: "delivery" }).select(
       "name email phoneNumber isApproved attachments createdAt rating totalReviews"
@@ -81,12 +116,12 @@ export const getDeliveryAttachments = async (req: Request, res: Response) => {
     console.log(`📋 Found ${deliveries.length} delivery users`);
 
     // Transform the data to include all needed fields
-    const transformedData = deliveries.map(delivery => {
+    const transformedData = deliveries.map((delivery) => {
       const deliveryObj = delivery.toObject();
-      
+
       // Determine current status based on attachments or approval status
       let currentStatus = "pending";
-      
+
       if (deliveryObj.attachments?.status) {
         currentStatus = deliveryObj.attachments.status;
       } else if (deliveryObj.attachments?.revokedAt) {
@@ -106,31 +141,33 @@ export const getDeliveryAttachments = async (req: Request, res: Response) => {
         currentStatus: currentStatus,
         attachments: deliveryObj.attachments,
         createdAt: deliveryObj.createdAt,
-        
+
         // ✅ Add rating data - This was missing!
         rating: deliveryObj.rating || 0,
         totalReviews: deliveryObj.totalReviews || 0,
-        
+
         // Add canReapply logic
-        canReapply: currentStatus === "declined" || currentStatus === "revoked"
+        canReapply: currentStatus === "declined" || currentStatus === "revoked",
       };
 
-      console.log(`👤 User ${deliveryObj.name}: rating=${result.rating}, reviews=${result.totalReviews}`);
-      
+      console.log(
+        `👤 User ${deliveryObj.name}: rating=${result.rating}, reviews=${result.totalReviews}`
+      );
+
       return result;
     });
 
     console.log("✅ Transformed data with rating fields");
 
-    return res.status(200).json({ 
+    return res.status(200).json({
       success: true,
-      data: transformedData // Make sure to use 'data' key to match your frontend
+      data: transformedData, // Make sure to use 'data' key to match your frontend
     });
   } catch (err) {
     console.error("❌ Get delivery attachments error:", err);
-    return res.status(500).json({ 
+    return res.status(500).json({
       success: false,
-      message: "Failed to fetch delivery attachments" 
+      message: "Failed to fetch delivery attachments",
     });
   }
 };
@@ -224,15 +261,15 @@ export const submitDeliveryReview = async (req: Request, res: Response) => {
     }
 
     if (!rating || rating < 1 || rating > 5) {
-      return res.status(400).json({ 
-        message: "Rating is required and must be between 1 and 5" 
+      return res.status(400).json({
+        message: "Rating is required and must be between 1 and 5",
       });
     }
 
     // Comments are optional, but if provided, validate length
     if (comments && comments.length > 1000) {
-      return res.status(400).json({ 
-        message: "Comments are too long (max 1000 characters)" 
+      return res.status(400).json({
+        message: "Comments are too long (max 1000 characters)",
       });
     }
 
@@ -247,22 +284,22 @@ export const submitDeliveryReview = async (req: Request, res: Response) => {
 
     // Check if user is authorized to review this order
     if (order.user.userId._id.toString() !== userId) {
-      return res.status(403).json({ 
-        message: "You are not authorized to review this order" 
+      return res.status(403).json({
+        message: "You are not authorized to review this order",
       });
     }
 
     // Check if order is completed
     if (order.status.toLowerCase() !== "completed") {
-      return res.status(400).json({ 
-        message: "Can only review completed orders" 
+      return res.status(400).json({
+        message: "Can only review completed orders",
       });
     }
 
     // Check if courier exists and is populated
     if (!order.courier) {
-      return res.status(400).json({ 
-        message: "No courier assigned to this order" 
+      return res.status(400).json({
+        message: "No courier assigned to this order",
       });
     }
 
@@ -271,8 +308,8 @@ export const submitDeliveryReview = async (req: Request, res: Response) => {
 
     // Check if review already exists
     if (order.deliveryReview) {
-      return res.status(409).json({ 
-        message: "Review has already been submitted for this order" 
+      return res.status(409).json({
+        message: "Review has already been submitted for this order",
       });
     }
 
@@ -281,7 +318,7 @@ export const submitDeliveryReview = async (req: Request, res: Response) => {
       stars: parseInt(rating),
       comment: comments ? comments.trim() : "", // Comments are optional
       reviewedAt: new Date(),
-      reviewedBy: new mongoose.Types.ObjectId(userId)
+      reviewedBy: new mongoose.Types.ObjectId(userId),
     };
 
     // Add review to order
@@ -289,7 +326,10 @@ export const submitDeliveryReview = async (req: Request, res: Response) => {
     await order.save();
 
     // Update courier's rating statistics
-    await updateCourierRating(populatedCourier._id.toString(), parseInt(rating));
+    await updateCourierRating(
+      populatedCourier._id.toString(),
+      parseInt(rating)
+    );
 
     console.log("✅ Delivery review submitted successfully");
 
@@ -303,11 +343,10 @@ export const submitDeliveryReview = async (req: Request, res: Response) => {
         reviewedAt: deliveryReview.reviewedAt,
         courier: {
           id: populatedCourier._id,
-          name: populatedCourier.name
-        }
-      }
+          name: populatedCourier.name,
+        },
+      },
     });
-
   } catch (error) {
     console.error("❌ Submit delivery review error:", error);
     res.status(500).json({
@@ -338,14 +377,14 @@ export const getDeliveryReview = async (req: Request, res: Response) => {
 
     // Check if user is authorized to view this review
     if (order.user.userId._id.toString() !== userId) {
-      return res.status(403).json({ 
-        message: "You are not authorized to view this review" 
+      return res.status(403).json({
+        message: "You are not authorized to view this review",
       });
     }
 
     if (!order.deliveryReview) {
-      return res.status(404).json({ 
-        message: "No review found for this order" 
+      return res.status(404).json({
+        message: "No review found for this order",
       });
     }
 
@@ -361,12 +400,11 @@ export const getDeliveryReview = async (req: Request, res: Response) => {
         reviewedAt: order.deliveryReview.reviewedAt,
         courier: {
           id: populatedCourier._id,
-          name: populatedCourier.name
+          name: populatedCourier.name,
         },
-        canEdit: true // User can edit their own review
-      }
+        canEdit: true, // User can edit their own review
+      },
     });
-
   } catch (error) {
     console.error("❌ Get delivery review error:", error);
     res.status(500).json({
@@ -397,14 +435,14 @@ export const updateDeliveryReview = async (req: Request, res: Response) => {
     }
 
     if (rating && (rating < 1 || rating > 5)) {
-      return res.status(400).json({ 
-        message: "Rating must be between 1 and 5" 
+      return res.status(400).json({
+        message: "Rating must be between 1 and 5",
       });
     }
 
     if (comments && comments.length > 1000) {
-      return res.status(400).json({ 
-        message: "Comments are too long (max 1000 characters)" 
+      return res.status(400).json({
+        message: "Comments are too long (max 1000 characters)",
       });
     }
 
@@ -419,15 +457,15 @@ export const updateDeliveryReview = async (req: Request, res: Response) => {
 
     // Check authorization
     if (order.user.userId._id.toString() !== userId) {
-      return res.status(403).json({ 
-        message: "You are not authorized to update this review" 
+      return res.status(403).json({
+        message: "You are not authorized to update this review",
       });
     }
 
     // Check if review exists
     if (!order.deliveryReview) {
-      return res.status(404).json({ 
-        message: "No review found to update" 
+      return res.status(404).json({
+        message: "No review found to update",
       });
     }
 
@@ -437,7 +475,8 @@ export const updateDeliveryReview = async (req: Request, res: Response) => {
     if (rating) {
       order.deliveryReview.stars = parseInt(rating);
     }
-    if (comments !== undefined) { // Allow empty string to clear comments
+    if (comments !== undefined) {
+      // Allow empty string to clear comments
       order.deliveryReview.comment = comments.trim();
     }
 
@@ -449,8 +488,8 @@ export const updateDeliveryReview = async (req: Request, res: Response) => {
     // Update courier rating if rating changed
     if (rating && oldRating !== parseInt(rating)) {
       await updateCourierRatingOnEdit(
-        populatedCourier._id.toString(), 
-        oldRating, 
+        populatedCourier._id.toString(),
+        oldRating,
         parseInt(rating)
       );
     }
@@ -467,11 +506,10 @@ export const updateDeliveryReview = async (req: Request, res: Response) => {
         reviewedAt: order.deliveryReview.reviewedAt,
         courier: {
           id: populatedCourier._id,
-          name: populatedCourier.name
-        }
-      }
+          name: populatedCourier.name,
+        },
+      },
     });
-
   } catch (error) {
     console.error("❌ Update delivery review error:", error);
     res.status(500).json({
@@ -488,7 +526,6 @@ export const getCourierReviews = async (req: Request, res: Response) => {
     const { page = 1, limit = 10 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    
     if (!courierId || !mongoose.Types.ObjectId.isValid(courierId)) {
       return res.status(400).json({ message: "Invalid courier ID" });
     }
@@ -497,13 +534,13 @@ export const getCourierReviews = async (req: Request, res: Response) => {
     // More specific query to ensure deliveryReview has the required fields
     const orders = await Order.find({
       courier: courierId,
-      deliveryReview: { 
-        $exists: true, 
+      deliveryReview: {
+        $exists: true,
         $ne: null,
-        $type: "object" // Ensure it's an object, not null
+        $type: "object", // Ensure it's an object, not null
       },
       "deliveryReview.stars": { $exists: true }, // Ensure stars field exists
-      "deliveryReview.reviewedAt": { $exists: true } // Ensure reviewedAt exists
+      "deliveryReview.reviewedAt": { $exists: true }, // Ensure reviewedAt exists
     })
       .populate("user.userId", "name")
       .select("deliveryReview createdAt user")
@@ -513,62 +550,72 @@ export const getCourierReviews = async (req: Request, res: Response) => {
 
     const totalReviews = await Order.countDocuments({
       courier: courierId,
-      deliveryReview: { 
-        $exists: true, 
+      deliveryReview: {
+        $exists: true,
         $ne: null,
-        $type: "object"
+        $type: "object",
       },
-      "deliveryReview.stars": { $exists: true }
+      "deliveryReview.stars": { $exists: true },
     });
 
     // Get courier info with rating stats
-    const courier = await User.findById(courierId).select("name rating totalReviews");
-// In your getCourierReviews function, add this:
-console.log("🔍 DEBUGGING: Let's see what's in the database...");
+    const courier = await User.findById(courierId).select(
+      "name rating totalReviews"
+    );
+    // In your getCourierReviews function, add this:
+    console.log("🔍 DEBUGGING: Let's see what's in the database...");
 
-// Check ALL orders for this courier (including those without reviews)
-const allOrdersForCourier = await Order.find({ courier: courierId })
-  .select("_id deliveryReview")
-  .sort({ createdAt: -1 });
+    // Check ALL orders for this courier (including those without reviews)
+    const allOrdersForCourier = await Order.find({ courier: courierId })
+      .select("_id deliveryReview")
+      .sort({ createdAt: -1 });
 
-console.log("📊 ALL orders for courier:", allOrdersForCourier.map(order => ({
-  orderId: order._id,
-  hasReview: !!order.deliveryReview,
-  reviewStars: order.deliveryReview?.stars || 'N/A'
-})));
-const ordersWithReviews = await Order.find({
-  courier: courierId,
-  "deliveryReview.stars": { $exists: true, $type: "number" }
-}).select("_id deliveryReview");
+    console.log(
+      "📊 ALL orders for courier:",
+      allOrdersForCourier.map((order) => ({
+        orderId: order._id,
+        hasReview: !!order.deliveryReview,
+        reviewStars: order.deliveryReview?.stars || "N/A",
+      }))
+    );
+    const ordersWithReviews = await Order.find({
+      courier: courierId,
+      "deliveryReview.stars": { $exists: true, $type: "number" },
+    }).select("_id deliveryReview");
 
-console.log("⭐ Orders WITH reviews:", ordersWithReviews.map(order => ({
-  orderId: order._id,
-  stars: order.deliveryReview.stars
-})));
+    console.log(
+      "⭐ Orders WITH reviews:",
+      ordersWithReviews.map((order) => ({
+        orderId: order._id,
+        stars: order.deliveryReview.stars,
+      }))
+    );
 
-console.log("🔍 END DEBUGGING");
+    console.log("🔍 END DEBUGGING");
     if (!courier) {
       return res.status(404).json({ message: "Courier not found" });
     }
 
     const reviews = orders
-      .filter(order => {
+      .filter((order) => {
         // Additional safety check to filter out any orders that might have slipped through
-        return order.deliveryReview && 
-               order.deliveryReview.stars !== undefined && 
-               order.deliveryReview.reviewedAt;
+        return (
+          order.deliveryReview &&
+          order.deliveryReview.stars !== undefined &&
+          order.deliveryReview.reviewedAt
+        );
       })
-      .map(order => {
+      .map((order) => {
         // Type assertions for populated fields
         const populatedUser = order.user.userId as any;
-        
+
         return {
           id: order._id,
           stars: order.deliveryReview.stars,
           comment: order.deliveryReview.comment || "", // Provide default for optional comment
           reviewedAt: order.deliveryReview.reviewedAt,
           customerName: populatedUser?.name || "Anonymous", // Handle case where user might not be populated
-          orderDate: order.createdAt
+          orderDate: order.createdAt,
         };
       });
 
@@ -578,7 +625,7 @@ console.log("🔍 END DEBUGGING");
         id: courier._id,
         name: courier.name,
         averageRating: courier.rating || 0,
-        totalReviews: courier.totalReviews || 0
+        totalReviews: courier.totalReviews || 0,
       },
       reviews,
       pagination: {
@@ -586,10 +633,9 @@ console.log("🔍 END DEBUGGING");
         totalPages: Math.ceil(totalReviews / Number(limit)),
         totalReviews,
         hasNext: skip + orders.length < totalReviews,
-        hasPrev: Number(page) > 1
-      }
+        hasPrev: Number(page) > 1,
+      },
     });
-
   } catch (error) {
     console.error("❌ Get courier reviews error:", error);
     res.status(500).json({
@@ -615,13 +661,13 @@ export const getUserReviewHistory = async (req: Request, res: Response) => {
     // FIXED: More specific query to ensure deliveryReview has the required fields
     const orders = await Order.find({
       "user.userId": userId,
-      deliveryReview: { 
-        $exists: true, 
+      deliveryReview: {
+        $exists: true,
         $ne: null,
-        $type: "object" // Ensure it's an object, not null
+        $type: "object", // Ensure it's an object, not null
       },
       "deliveryReview.stars": { $exists: true }, // Ensure stars field exists
-      "deliveryReview.reviewedAt": { $exists: true } // Ensure reviewedAt exists
+      "deliveryReview.reviewedAt": { $exists: true }, // Ensure reviewedAt exists
     })
       .populate("courier", "name")
       .select("deliveryReview createdAt courier items")
@@ -631,27 +677,31 @@ export const getUserReviewHistory = async (req: Request, res: Response) => {
 
     const totalReviews = await Order.countDocuments({
       "user.userId": userId,
-      deliveryReview: { 
-        $exists: true, 
+      deliveryReview: {
+        $exists: true,
         $ne: null,
-        $type: "object"
+        $type: "object",
       },
-      "deliveryReview.stars": { $exists: true }
+      "deliveryReview.stars": { $exists: true },
     });
 
-    console.log(`📊 Found ${orders.length} orders with valid reviews out of ${totalReviews} total`);
+    console.log(
+      `📊 Found ${orders.length} orders with valid reviews out of ${totalReviews} total`
+    );
 
     const reviews = orders
-      .filter(order => {
+      .filter((order) => {
         // Additional safety check to filter out any orders that might have slipped through
-        return order.deliveryReview && 
-               order.deliveryReview.stars !== undefined && 
-               order.deliveryReview.reviewedAt;
+        return (
+          order.deliveryReview &&
+          order.deliveryReview.stars !== undefined &&
+          order.deliveryReview.reviewedAt
+        );
       })
-      .map(order => {
+      .map((order) => {
         // Type assertions for populated fields
         const populatedCourier = order.courier as any;
-        
+
         return {
           orderId: order._id,
           stars: order.deliveryReview.stars,
@@ -659,10 +709,10 @@ export const getUserReviewHistory = async (req: Request, res: Response) => {
           reviewedAt: order.deliveryReview.reviewedAt,
           courier: {
             id: populatedCourier?._id || null,
-            name: populatedCourier?.name || "Unknown Courier" // Handle case where courier might not be populated
+            name: populatedCourier?.name || "Unknown Courier", // Handle case where courier might not be populated
           },
           orderDate: order.createdAt,
-          itemCount: order.items?.length || 0 // Handle potential undefined items
+          itemCount: order.items?.length || 0, // Handle potential undefined items
         };
       });
 
@@ -676,8 +726,8 @@ export const getUserReviewHistory = async (req: Request, res: Response) => {
         totalPages: Math.ceil(totalReviews / Number(limit)),
         totalReviews,
         hasNext: skip + orders.length < totalReviews,
-        hasPrev: Number(page) > 1
-      }
+        hasPrev: Number(page) > 1,
+      },
     });
   } catch (error) {
     console.error("❌ Get user review history error:", error);
@@ -699,21 +749,27 @@ async function updateCourierRating(courierId: string, newStars: number) {
 
     // Calculate new average rating
     const newTotal = currentTotal + 1;
-    const newRating = ((currentRating * currentTotal) + newStars) / newTotal;
+    const newRating = (currentRating * currentTotal + newStars) / newTotal;
 
     courier.rating = Math.round(newRating * 100) / 100; // Round to 2 decimal places
     courier.totalReviews = newTotal;
 
     await courier.save();
 
-    console.log(`✅ Updated courier ${courierId} rating: ${courier.rating} (${courier.totalReviews} reviews)`);
+    console.log(
+      `✅ Updated courier ${courierId} rating: ${courier.rating} (${courier.totalReviews} reviews)`
+    );
   } catch (error) {
     console.error("❌ Error updating courier rating:", error);
   }
 }
 
 // Helper function to update courier rating when review is edited
-async function updateCourierRatingOnEdit(courierId: string, oldStars: number, newStars: number) {
+async function updateCourierRatingOnEdit(
+  courierId: string,
+  oldStars: number,
+  newStars: number
+) {
   try {
     const courier = await User.findById(courierId);
     if (!courier) return;
@@ -724,14 +780,16 @@ async function updateCourierRatingOnEdit(courierId: string, oldStars: number, ne
     if (totalReviews === 0) return;
 
     // Remove old rating and add new rating
-    const totalStars = (currentRating * totalReviews) - oldStars + newStars;
+    const totalStars = currentRating * totalReviews - oldStars + newStars;
     const newRating = totalStars / totalReviews;
 
     courier.rating = Math.round(newRating * 100) / 100;
 
     await courier.save();
 
-    console.log(`✅ Updated courier ${courierId} rating after edit: ${courier.rating}`);
+    console.log(
+      `✅ Updated courier ${courierId} rating after edit: ${courier.rating}`
+    );
   } catch (error) {
     console.error("❌ Error updating courier rating on edit:", error);
   }
@@ -744,9 +802,9 @@ export const getReviewableOrders = async (req: Request, res: Response) => {
     const userId = req.user?.userId;
 
     if (!userId) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: "Unauthorized" 
+        message: "Unauthorized",
       });
     }
 
@@ -756,49 +814,53 @@ export const getReviewableOrders = async (req: Request, res: Response) => {
     const completedOrders = await Order.find({
       "user.userId": userId,
       status: "completed",
-      courier: { $exists: true, $ne: null }
+      courier: { $exists: true, $ne: null },
     })
-    .populate("courier", "name email")
-    .select("_id createdAt courier items address deliveryReview")
-    .sort({ createdAt: -1 });
+      .populate("courier", "name email")
+      .select("_id createdAt courier items address deliveryReview")
+      .sort({ createdAt: -1 });
 
-    console.log(`📊 Found ${completedOrders.length} completed orders with couriers`);
+    console.log(
+      `📊 Found ${completedOrders.length} completed orders with couriers`
+    );
 
     // Filter out orders that already have reviews
-    const reviewableOrders = completedOrders.filter(order => {
+    const reviewableOrders = completedOrders.filter((order) => {
       // Check if order already has a valid review
-      const hasValidReview = order.deliveryReview && 
-                            order.deliveryReview.stars && 
-                            order.deliveryReview.reviewedAt;
-      
+      const hasValidReview =
+        order.deliveryReview &&
+        order.deliveryReview.stars &&
+        order.deliveryReview.reviewedAt;
+
       return !hasValidReview; // Return orders without valid reviews
     });
 
-    console.log(`✅ Found ${reviewableOrders.length} orders that can be reviewed`);
+    console.log(
+      `✅ Found ${reviewableOrders.length} orders that can be reviewed`
+    );
 
     // Format the response
-    const formattedOrders = reviewableOrders.map(order => {
+    const formattedOrders = reviewableOrders.map((order) => {
       const populatedCourier = order.courier as any;
-      
+
       return {
         _id: order._id.toString(),
         createdAt: order.createdAt,
         courier: {
           _id: populatedCourier?._id?.toString() || null,
-          name: populatedCourier?.name || "Unknown Courier"
+          name: populatedCourier?.name || "Unknown Courier",
         },
         items: order.items || [],
         address: order.address,
-        status: "completed"
+        status: "completed",
       };
     });
 
     res.status(200).json({
       success: true,
       orders: formattedOrders,
-      total: formattedOrders.length
+      total: formattedOrders.length,
     });
-
   } catch (error) {
     console.error("❌ Get reviewable orders error:", error);
     res.status(500).json({
@@ -821,14 +883,14 @@ export const deleteDeliveryReview = async (req: Request, res: Response) => {
     if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid or missing order ID"
+        message: "Invalid or missing order ID",
       });
     }
 
     if (!userId) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized - user not found"
+        message: "Unauthorized - user not found",
       });
     }
 
@@ -840,7 +902,7 @@ export const deleteDeliveryReview = async (req: Request, res: Response) => {
     if (!order) {
       return res.status(404).json({
         success: false,
-        message: "Order not found"
+        message: "Order not found",
       });
     }
 
@@ -848,7 +910,7 @@ export const deleteDeliveryReview = async (req: Request, res: Response) => {
     if (order.user.userId._id.toString() !== userId) {
       return res.status(403).json({
         success: false,
-        message: "You are not authorized to delete this review"
+        message: "You are not authorized to delete this review",
       });
     }
 
@@ -856,7 +918,7 @@ export const deleteDeliveryReview = async (req: Request, res: Response) => {
     if (!order.deliveryReview || !order.deliveryReview.stars) {
       return res.status(404).json({
         success: false,
-        message: "No review found to delete"
+        message: "No review found to delete",
       });
     }
 
@@ -868,7 +930,7 @@ export const deleteDeliveryReview = async (req: Request, res: Response) => {
       orderId: order._id,
       stars: deletedReviewStars,
       courierId: populatedCourier?._id,
-      courierName: populatedCourier?.name
+      courierName: populatedCourier?.name,
     });
 
     // Remove the review from the order
@@ -880,8 +942,11 @@ export const deleteDeliveryReview = async (req: Request, res: Response) => {
     let updatedCourier = null;
     if (populatedCourier && populatedCourier._id) {
       console.log("🔄 Updating courier rating...");
-      updatedCourier = await removeCourierRating(populatedCourier._id.toString(), deletedReviewStars);
-      
+      updatedCourier = await removeCourierRating(
+        populatedCourier._id.toString(),
+        deletedReviewStars
+      );
+
       if (updatedCourier) {
         console.log("✅ Courier rating updated successfully");
       } else {
@@ -901,11 +966,10 @@ export const deleteDeliveryReview = async (req: Request, res: Response) => {
           id: populatedCourier?._id,
           name: populatedCourier?.name,
           updatedRating: updatedCourier?.rating || 0,
-          updatedTotalReviews: updatedCourier?.totalReviews || 0
-        }
-      }
+          updatedTotalReviews: updatedCourier?.totalReviews || 0,
+        },
+      },
     });
-
   } catch (error) {
     console.error("❌ Delete delivery review error:", error);
     res.status(500).json({
@@ -918,12 +982,14 @@ export const deleteDeliveryReview = async (req: Request, res: Response) => {
 
 async function removeCourierRating(courierId: string, removedStars: number) {
   try {
-    console.log(`🔄 Starting removeCourierRating for courier ${courierId}, removing ${removedStars} stars`);
-    
+    console.log(
+      `🔄 Starting removeCourierRating for courier ${courierId}, removing ${removedStars} stars`
+    );
+
     // Instead of manual calculation, recalculate from actual database data
     // This ensures accuracy even if stats were previously wrong
     const updatedCourier = await recalculateCourierStats(courierId);
-    
+
     if (!updatedCourier) {
       console.log(`❌ Failed to recalculate stats for courier ${courierId}`);
       return null;
@@ -931,16 +997,15 @@ async function removeCourierRating(courierId: string, removedStars: number) {
 
     console.log(`✅ AFTER deletion - Courier ${courierId}:`, {
       rating: updatedCourier.rating,
-      totalReviews: updatedCourier.totalReviews
+      totalReviews: updatedCourier.totalReviews,
     });
-    
+
     return {
       id: updatedCourier._id,
       name: updatedCourier.name,
       rating: updatedCourier.rating,
-      totalReviews: updatedCourier.totalReviews
+      totalReviews: updatedCourier.totalReviews,
     };
-
   } catch (error) {
     console.error("❌ Error removing courier rating:", error);
     return null;
@@ -949,11 +1014,11 @@ async function removeCourierRating(courierId: string, removedStars: number) {
 async function recalculateCourierStats(courierId: string) {
   try {
     console.log(`🔄 Recalculating stats for courier ${courierId}`);
-    
+
     // Get all orders with actual reviews for this courier
     const ordersWithReviews = await Order.find({
       courier: courierId,
-      "deliveryReview.stars": { $exists: true, $type: "number" }
+      "deliveryReview.stars": { $exists: true, $type: "number" },
     }).select("deliveryReview.stars");
 
     console.log(`📊 Found ${ordersWithReviews.length} orders with reviews`);
@@ -965,19 +1030,21 @@ async function recalculateCourierStats(courierId: string) {
       const totalStars = ordersWithReviews.reduce((sum, order) => {
         return sum + order.deliveryReview.stars;
       }, 0);
-      
+
       averageRating = totalStars / totalReviews;
       averageRating = Math.round(averageRating * 100) / 100; // Round to 2 decimal places
     }
 
-    console.log(`🔢 Calculated stats: ${averageRating} average from ${totalReviews} reviews`);
+    console.log(
+      `🔢 Calculated stats: ${averageRating} average from ${totalReviews} reviews`
+    );
 
     // Update the courier with correct stats
     const courier = await User.findByIdAndUpdate(
       courierId,
-      { 
+      {
         rating: averageRating,
-        totalReviews: totalReviews
+        totalReviews: totalReviews,
       },
       { new: true }
     ).select("name rating totalReviews");
@@ -985,11 +1052,10 @@ async function recalculateCourierStats(courierId: string) {
     console.log(`✅ Updated courier ${courierId}:`, {
       name: courier?.name,
       rating: courier?.rating,
-      totalReviews: courier?.totalReviews
+      totalReviews: courier?.totalReviews,
     });
 
     return courier;
-
   } catch (error) {
     console.error("❌ Error recalculating courier stats:", error);
     return null;
@@ -1000,7 +1066,7 @@ async function recalculateCourierStats(courierId: string) {
 export const fixCourierStats = async (req: Request, res: Response) => {
   try {
     const { courierId } = req.params;
-    
+
     if (!courierId || !mongoose.Types.ObjectId.isValid(courierId)) {
       return res.status(400).json({ message: "Invalid courier ID" });
     }
@@ -1018,10 +1084,9 @@ export const fixCourierStats = async (req: Request, res: Response) => {
         id: updatedCourier._id,
         name: updatedCourier.name,
         rating: updatedCourier.rating,
-        totalReviews: updatedCourier.totalReviews
-      }
+        totalReviews: updatedCourier.totalReviews,
+      },
     });
-
   } catch (error) {
     console.error("❌ Fix courier stats error:", error);
     res.status(500).json({

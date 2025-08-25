@@ -1,11 +1,11 @@
 import mongoose from "mongoose";
-import Notification, { INotification } from "../models/notification";
+import Notification, { INotification, MultiLangMessage } from "../models/notification";
 import { getSocketIO } from "../socket/socketServer";
 
 export interface NotificationData {
   userId: string;
-  title: string;
-  body: string;
+  title: MultiLangMessage;
+  body: MultiLangMessage;
   type:
     | "order_status"
     | "order_assigned"
@@ -55,7 +55,7 @@ export const createAndEmitNotification = async (
 
       console.log(
         `✅ Notification emitted to user ${notificationData.userId}:`,
-        savedNotification.title
+        savedNotification.title.en
       );
     }
 
@@ -73,8 +73,14 @@ export const createOrderAssignedNotification = async (
 ): Promise<void> => {
   await createAndEmitNotification({
     userId,
-    title: "Order Assigned",
-    body: "Your order has been assigned to a courier. Expect them within 48 hours.",
+    title: {
+      en: "Order Assigned",
+      ar: "تم تعيين الطلب"
+    },
+    body: {
+      en: "Your order has been assigned to a courier. Expect them within 48 hours.",
+      ar: "تم تعيين طلبك إلى المندوب. توقع وصوله خلال 48 ساعة."
+    },
     type: "order_assigned",
     orderId,
   });
@@ -87,8 +93,14 @@ export const createOrderCancelledNotification = async (
 ): Promise<void> => {
   await createAndEmitNotification({
     userId,
-    title: "Order Cancelled",
-    body: `Your order was cancelled. Reason: ${reason}`,
+    title: {
+      en: "Order Cancelled",
+      ar: "تم إلغاء الطلب"
+    },
+    body: {
+      en: `Your order was cancelled. Reason: ${reason}`,
+      ar: `تم إلغاء طلبك. السبب: ${reason}`
+    },
     type: "order_cancelled",
     orderId,
     data: { cancelReason: reason },
@@ -101,8 +113,14 @@ export const createOrderCompletedNotification = async (
 ): Promise<void> => {
   await createAndEmitNotification({
     userId,
-    title: "Order Completed",
-    body: "Your recycling order has been completed successfully. Thank you for contributing to a cleaner environment!",
+    title: {
+      en: "Order Completed",
+      ar: "تم إكمال الطلب"
+    },
+    body: {
+      en: "Your recycling order has been completed successfully. Thank you for contributing to a cleaner environment!",
+      ar: "تم إكمال طلب إعادة التدوير بنجاح. شكرًا لك على المساهمة في بيئة أنظف!"
+    },
     type: "order_completed",
     orderId,
   });
@@ -114,23 +132,45 @@ export const createOrderStatusChangeNotification = async (
   oldStatus: string,
   newStatus: string
 ): Promise<void> => {
-  let title = "Order Status Updated";
-  let body = `Your order status has been updated from ${oldStatus} to ${newStatus}.`;
+  let title: MultiLangMessage;
+  let body: MultiLangMessage;
+
+  // Default title
+  title = {
+    en: "Order Status Updated",
+    ar: "تم تحديث حالة الطلب"
+  };
 
   switch (newStatus) {
     case "pending":
-      body = "Your order is now pending review.";
+      body = {
+        en: "Your order is now pending review.",
+        ar: "طلبك الآن في انتظار المراجعة."
+      };
       break;
     case "assigntocourier":
-      body =
-        "Your order has been assigned to a courier. Expect them within 48 hours.";
+      body = {
+        en: "Your order has been assigned to a courier. Expect them within 48 hours.",
+        ar: "تم تعيين طلبك إلى المندوب. توقع وصوله خلال 48 ساعة."
+      };
       break;
     case "completed":
-      body = "Your recycling order has been completed successfully!";
+      body = {
+        en: "Your recycling order has been completed successfully!",
+        ar: "تم إكمال طلب إعادة التدوير بنجاح!"
+      };
       break;
     case "cancelled":
-      body = "Your order has been cancelled.";
+      body = {
+        en: "Your order has been cancelled.",
+        ar: "تم إلغاء طلبك."
+      };
       break;
+    default:
+      body = {
+        en: `Your order status has been updated from ${oldStatus} to ${newStatus}.`,
+        ar: `تم تحديث حالة طلبك من ${oldStatus} إلى ${newStatus}.`
+      };
   }
 
   await createAndEmitNotification({

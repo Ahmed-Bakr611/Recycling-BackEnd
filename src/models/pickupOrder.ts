@@ -1,5 +1,17 @@
-// models/pickupOrder.ts - Updated with collected status support, quantity management, and delivery reviews
+// models/pickupOrder.ts - Updated with bilingual support and collected status support
 import mongoose, { Document, Model, Types } from "mongoose";
+
+// Interface for bilingual text support
+export interface IBilingualText {
+  en: string;
+  ar: string;
+}
+
+// Schema for bilingual text
+const bilingualTextSchema = new mongoose.Schema<IBilingualText>({
+  en: { type: String, required: true },
+  ar: { type: String, required: true }
+}, { _id: false });
 
 const AddressSchema = new mongoose.Schema({
   city: { type: String, required: true },
@@ -26,7 +38,7 @@ const UserSchema = new mongoose.Schema(
   { _id: false }
 );
 
-// UPDATED: Enhanced ItemSchema with quantity management fields
+// UPDATED: Enhanced ItemSchema with bilingual support and quantity management fields
 const ItemSchema = new mongoose.Schema({
   categoryId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -34,20 +46,20 @@ const ItemSchema = new mongoose.Schema({
     required: true,
   },
   image: { type: String, required: true },
-  itemName: {
-    type: String,
+  name: {
+    type: bilingualTextSchema, // Now bilingual
     required: true,
-    unique: true,
-    lowercase: true,
-    trim: true,
   },
   measurement_unit: { type: Number, enum: [1, 2], required: true },
   points: { type: Number, required: true },
   price: { type: Number, required: true },
   quantity: { type: Number, required: true }, // This becomes the actual/adjusted quantity
-  categoryName: String,
+  categoryName: {
+    type: bilingualTextSchema, // Now bilingual
+    required: false
+  },
   
-  // NEW: Quantity management fields
+  // Quantity management fields
   originalQuantity: { 
     type: Number, 
     default: null 
@@ -62,12 +74,21 @@ const ItemSchema = new mongoose.Schema({
   }, // Unit for quantity measurement (kg, pieces, etc.)
 });
 
-// UPDATED: Add 'collected' to StatusHistorySchema enum
+// Add helper methods to ItemSchema
+ItemSchema.methods.getDisplayName = function(language: 'en' | 'ar' = 'en'): string {
+  return this.name[language] || this.name.en;
+};
+
+ItemSchema.methods.getDisplayCategoryName = function(language: 'en' | 'ar' = 'en'): string {
+  if (!this.categoryName) return '';
+  return this.categoryName[language] || this.categoryName.en;
+};
+
 const StatusHistorySchema = new mongoose.Schema(
   {
     status: {
       type: String,
-      enum: ["pending", "assigntocourier", "collected", "completed", "cancelled"], // Added 'collected'
+      enum: ["pending", "assigntocourier", "collected", "completed", "cancelled"],
       required: true,
     },
     timestamp: { type: Date, default: Date.now },
@@ -102,7 +123,7 @@ const DeliveryProofSchema = new mongoose.Schema(
   { _id: false }
 );
 
-// NEW: Delivery Review Schema
+// Delivery Review Schema
 const DeliveryReviewSchema = new mongoose.Schema(
   {
     stars: {
@@ -113,9 +134,9 @@ const DeliveryReviewSchema = new mongoose.Schema(
     },
     comment: {
       type: String,
-      required: false, // Comments are optional to match your frontend
+      required: false,
       trim: true,
-      maxlength: 1000, // Match your frontend validation (1000 chars)
+      maxlength: 1000,
       default: ""
     },
     reviewedAt: {
@@ -151,7 +172,7 @@ const OrderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["pending", "assigntocourier", "collected", "completed", "cancelled"], // Added 'collected'
+    enum: ["pending", "assigntocourier", "collected", "completed", "cancelled"],
     default: "pending",
   },
   statusHistory: {
@@ -163,13 +184,13 @@ const OrderSchema = new mongoose.Schema({
     default: null,
   },
   
-  // NEW: Delivery Review field
+  // Delivery Review field
   deliveryReview: {
     type: DeliveryReviewSchema,
     default: null,
   },
   
-  // NEW: Collection timestamp (when courier marks as collected)
+  // Collection timestamp (when courier marks as collected)
   collectedAt: {
     type: Date,
     default: null,
@@ -181,19 +202,19 @@ const OrderSchema = new mongoose.Schema({
     default: null,
   },
   
-  // NEW: Estimated weight field (for both customers and buyers)
+  // Estimated weight field (for both customers and buyers)
   estimatedWeight: {
     type: String,
     default: null,
   },
   
-  // NEW: Quantity adjustment notes (for customer orders only)
+  // Quantity adjustment notes (for customer orders only)
   quantityAdjustmentNotes: {
     type: String,
     default: null,
   },
   
-  // NEW: Flag to indicate if any quantities were adjusted
+  // Flag to indicate if any quantities were adjusted
   hasQuantityAdjustments: {
     type: Boolean,
     default: false,
@@ -216,7 +237,18 @@ const OrderSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
-// UPDATED: Enhanced pre-save middleware with quantity adjustment detection
+// Helper methods for bilingual support
+OrderSchema.methods.getItemDisplayName = function(itemIndex: number, language: 'en' | 'ar' = 'en'): string {
+  if (!this.items[itemIndex] || !this.items[itemIndex].name) return '';
+  return this.items[itemIndex].name[language] || this.items[itemIndex].name.en;
+};
+
+OrderSchema.methods.getItemDisplayCategoryName = function(itemIndex: number, language: 'en' | 'ar' = 'en'): string {
+  if (!this.items[itemIndex] || !this.items[itemIndex].categoryName) return '';
+  return this.items[itemIndex].categoryName[language] || this.items[itemIndex].categoryName.en;
+};
+
+// Pre-save middleware with quantity adjustment detection
 OrderSchema.pre("save", function (next) {
   this.updatedAt = new Date();
 
@@ -251,9 +283,9 @@ OrderSchema.index({ courier: 1, status: 1 });
 OrderSchema.index({ "user.userId": 1 });
 OrderSchema.index({ status: 1 });
 OrderSchema.index({ createdAt: -1 });
-OrderSchema.index({ hasQuantityAdjustments: 1 }); // NEW: Index for quantity adjustments
-OrderSchema.index({ collectedAt: -1 }); // NEW: Index for collection time sorting
-OrderSchema.index({ "deliveryReview.reviewedAt": -1 }); // NEW: Index for review queries
+OrderSchema.index({ hasQuantityAdjustments: 1 });
+OrderSchema.index({ collectedAt: -1 });
+OrderSchema.index({ "deliveryReview.reviewedAt": -1 });
 
 // Define TypeScript interfaces
 export interface IAddress {
@@ -267,27 +299,30 @@ export interface IAddress {
   isDefault?: boolean;
 }
 
-// UPDATED: Enhanced IItem interface with quantity management
+// UPDATED: Enhanced IItem interface with bilingual support and quantity management
 export interface IItem {
   _id: Types.ObjectId;
   categoryId: mongoose.Types.ObjectId;
   image: string;
-  itemName: string;
+  name: IBilingualText; // Now bilingual
   measurement_unit: 1 | 2;
   points: number;
   price: number;
   quantity: number; // Actual/adjusted quantity
-  categoryName?: string;
+  categoryName?: IBilingualText; // Now bilingual
   
-  // NEW: Quantity management fields
+  // Quantity management fields
   originalQuantity?: number; // Original quantity before adjustment
   quantityAdjusted?: boolean; // Whether quantity was adjusted
   unit?: string; // Unit of measurement
+  
+  // Helper methods
+  getDisplayName?(language?: 'en' | 'ar'): string;
+  getDisplayCategoryName?(language?: 'en' | 'ar'): string;
 }
 
-// UPDATED: Add 'collected' to IStatusHistory interface
 export interface IStatusHistory {
-  status: "pending" | "assigntocourier" | "collected" | "completed" | "cancelled"; // Added 'collected'
+  status: "pending" | "assigntocourier" | "collected" | "completed" | "cancelled";
   timestamp: Date;
   updatedBy?: string;
   reason?: string;
@@ -302,7 +337,6 @@ export interface IDeliveryProof {
   completedBy: mongoose.Types.ObjectId;
 }
 
-// NEW: Delivery Review interface
 export interface IDeliveryReview {
   stars: number;
   comment: string;
@@ -319,17 +353,17 @@ export interface IOrderUser {
   role?: string;
 }
 
-// UPDATED: Enhanced IOrder interface with delivery review field
+// UPDATED: Enhanced IOrder interface with bilingual support and helper methods
 export interface IOrder extends Document {
   user: IOrderUser;
   address: IAddress;
   items: IItem[];
   courier?: mongoose.Types.ObjectId;
-  status: "pending" | "assigntocourier" | "collected" | "completed" | "cancelled"; // Added 'collected'
+  status: "pending" | "assigntocourier" | "collected" | "completed" | "cancelled";
   statusHistory: IStatusHistory[];
   deliveryProof?: IDeliveryProof;
   
-  // NEW: Delivery Review field
+  // Delivery Review field
   deliveryReview?: IDeliveryReview;
   
   // Timestamp fields
@@ -338,7 +372,7 @@ export interface IOrder extends Document {
   createdAt: Date;
   updatedAt: Date;
   
-  // NEW: Additional fields for enhanced functionality
+  // Additional fields for enhanced functionality
   estimatedWeight?: string; // Estimated weight provided by courier
   quantityAdjustmentNotes?: string; // Notes explaining quantity changes
   hasQuantityAdjustments?: boolean; // Quick flag for orders with quantity changes
@@ -346,6 +380,10 @@ export interface IOrder extends Document {
   paymentMethod?: "cash"| "credit-card"; 
   deliveryFee?: number; 
   totalAmount?: number; 
+  
+  // Helper methods for bilingual support
+  getItemDisplayName?(itemIndex: number, language?: 'en' | 'ar'): string;
+  getItemDisplayCategoryName?(itemIndex: number, language?: 'en' | 'ar'): string;
 }
 
 // Clear the model cache and recreate it to ensure schema changes are applied
