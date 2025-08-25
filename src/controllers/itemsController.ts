@@ -266,3 +266,98 @@ export const deleteItem = async (
   }
 };
 
+// Add this new function to your items controller
+export const getSingleItem = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { categoryName, itemId } = req.params;
+    const language = req.query.language as 'en' | 'ar' || 'en';
+    const role = req.query.role;
+
+    console.log('🔍 getSingleItem Debug Info:');
+    console.log('  categoryName:', categoryName);
+    console.log('  itemId:', itemId);
+
+    // Decode category name
+    let decodedCategoryName = categoryName;
+    try {
+      decodedCategoryName = decodeURIComponent(categoryName);
+    } catch (decodeError) {
+      console.log('  Decode failed, using original:', categoryName);
+    }
+
+    // Find category using multiple strategies
+    let category = null;
+    const searchStrategies = [
+      { name: decodedCategoryName, description: 'decoded name exact match' },
+      { name: categoryName, description: 'original name exact match' },
+    ];
+
+    for (const strategy of searchStrategies) {
+      // Try exact match with English name
+      category = await Category.findOne({ "name.en": strategy.name });
+      if (category) break;
+
+      // Try case-insensitive match with English name
+      category = await Category.findOne({ 
+        "name.en": { $regex: new RegExp(`^${strategy.name}$`, 'i') } 
+      });
+      if (category) break;
+
+      // Try exact match with Arabic name
+      category = await Category.findOne({ "name.ar": strategy.name });
+      if (category) break;
+    }
+
+    if (!category) {
+      console.log('  ❌ Category not found');
+      res.status(404).json({ message: "Category not found" });
+      return;
+    }
+
+    // Find the specific item by ID
+    const item = category.items.id(itemId);
+    if (!item) {
+      console.log('  ❌ Item not found in category');
+      res.status(404).json({ message: "Item not found" });
+      return;
+    }
+
+    // Transform the item
+    const transformedItem = {
+      _id: item._id,
+      name: item.name,
+      points: item.points,
+      price: item.price,
+      measurement_unit: item.measurement_unit,
+      image: item.image,
+      quantity: item.quantity,
+      categoryId: category._id,
+      categoryName: category.name,
+      displayName: item.name?.[language] || item.name?.en || item.name,
+      categoryDisplayName: category.name[language] || category.name.en,
+    };
+
+    // Apply buyer pricing if needed
+    if (role === "buyer") {
+      transformedItem.price = transformedItem.price ? 
+        Math.round(transformedItem.price * 1.5 * 100) / 100 : 
+        transformedItem.price;
+    }
+
+    console.log('  ✅ Successfully found item:', item.name);
+    res.status(200).json({
+      success: true,
+      data: transformedItem
+    });
+
+  } catch (err) {
+    console.error("❌ getSingleItem error:", err);
+    res.status(500).json({ 
+      message: (err as Error).message,
+      success: false
+    });
+  }
+};

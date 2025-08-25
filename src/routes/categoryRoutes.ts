@@ -14,6 +14,7 @@ import {
   deleteItem,
   getAllItems,
   getItems,
+  getSingleItem,
   updateItem,
 } from "../controllers/itemsController";
 import {
@@ -88,4 +89,5 @@ export default (router: express.Router) => {
     authorize(["admin"]),
     deleteItem
   );
-};
+// Add this route to your routes file
+router.get('/categories/:categoryName/item/:itemId', getSingleItem);};
