@@ -17,8 +17,9 @@ export const googleCheckFirstTime = async (req: Request, res: Response) => {
     const ticket = await googleClient.verifyIdToken({
       idToken,
       audience: [
-        process.env.GOOGLE_WEB_CLIENT_ID!,
-        process.env.GOOGLE_MOBILE_CLIENT_ID!,
+        process.env.GOOGLE_WEB_CLIENT_ID!, // NextJS web client ID
+        process.env.GOOGLE_MOBILE_CLIENT_ID!, // Android client ID
+        process.env.GOOGLE_MOBILE_WEB_CLIENT_ID!, // Mobile app's web client ID (NEW)
       ],
     });
 
