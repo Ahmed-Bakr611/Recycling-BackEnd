@@ -49,59 +49,70 @@ const token =
     // Join user to their personal room for targeted notifications
     socket.join(`user_${socket.userId}`);
     
-    // Track subscription state to prevent duplicate emissions
-    let isSubscribedToStock = false;
+    // Track socket types
+    let isStockSocket = false;
+    let isNotificationSocket = false;
     let stockEmissionTimeout: NodeJS.Timeout | null = null;
 
-    // Emit current stock state to newly connected client (only once)
-    const emitStockStateOnce = () => {
-      if (stockEmissionTimeout) {
-        clearTimeout(stockEmissionTimeout);
-      }
+    // ===== NOTIFICATION SOCKET HANDLERS =====
+    socket.on('join-notifications', (data) => {
+      console.log(`📨 User ${socket.userId} joined notifications`);
+      isNotificationSocket = true;
+      socket.join(`notifications:${socket.userId}`);
       
-      stockEmissionTimeout = setTimeout(() => {
+      // Confirm successful join
+      socket.emit('notification:joined', { 
+        success: true, 
+        userId: socket.userId 
+      });
+    });
+
+    // Handle ping for notifications (with proper timestamp handling)
+    socket.on('ping', (data) => {
+      socket.emit('pong', { 
+        timestamp: data?.timestamp || Date.now(), 
+        serverTime: Date.now() 
+      });
+    });
+
+    // ===== STOCK SOCKET HANDLERS =====
+    socket.on('stock:subscribe', () => {
+      if (!isStockSocket) {
+        isStockSocket = true;
+        console.log(`📦 User ${socket.userId} subscribed to stock updates`);
+        socket.join('stock-updates');
+        
+        // Only emit stock state for stock sockets
         emitCurrentStockState(socket.id).catch(error => {
           console.error('❌ Error emitting stock state:', error);
         });
-        stockEmissionTimeout = null;
-      }, 100); // Debounce by 100ms
-    };
-
-    // Emit initial stock state
-    emitStockStateOnce();
-
-    // Handle stock subscription requests with deduplication
-    socket.on('stock:subscribe', () => {
-      if (!isSubscribedToStock) {
-        isSubscribedToStock = true;
-        console.log(`📦 User ${socket.userId} subscribed to stock updates`);
-        socket.join('stock-updates'); // Join stock updates room
-        emitStockStateOnce();
       } else {
         console.log(`📦 User ${socket.userId} already subscribed to stock updates (ignored)`);
       }
     });
 
     socket.on('stock:unsubscribe', () => {
-      if (isSubscribedToStock) {
-        isSubscribedToStock = false;
+      if (isStockSocket) {
+        isStockSocket = false;
         console.log(`📦 User ${socket.userId} unsubscribed from stock updates`);
-        socket.leave('stock-updates'); // Leave stock updates room
+        socket.leave('stock-updates');
       }
     });
     
     // Handle disconnection
     socket.on('disconnect', (reason) => {
       console.log(`❌ User ${socket.userId} disconnected:`, reason);
-      // Clean up any pending timeouts
       if (stockEmissionTimeout) {
         clearTimeout(stockEmissionTimeout);
       }
-    });
-
-    // Optional: Handle ping/pong for connection health
-    socket.on('ping', () => {
-      socket.emit('pong');
+      
+      // Log socket type for debugging
+      if (isNotificationSocket) {
+        console.log(`📨 Notification socket disconnected for user ${socket.userId}`);
+      }
+      if (isStockSocket) {
+        console.log(`📦 Stock socket disconnected for user ${socket.userId}`);
+      }
     });
 
     // Optional: Handle notification acknowledgment
