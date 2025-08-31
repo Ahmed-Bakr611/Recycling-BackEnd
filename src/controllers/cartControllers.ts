@@ -65,7 +65,6 @@ export const getCart = async (req: Request, res: Response) => {
   return res.status(200).json(cart);
 };
 
-
 export const addItemToCart = async (req: Request, res: Response) => {
   console.log("in add to cart");
 
@@ -88,15 +87,21 @@ export const addItemToCart = async (req: Request, res: Response) => {
   }
 
   // Validate that name and categoryName are bilingual objects
-  if (typeof name !== 'object' || !name.en || !name.ar) {
-    return res.status(400).json({ 
-      message: "Item name must be a bilingual object with 'en' and 'ar' properties" 
+  if (typeof name !== "object" || !name.en || !name.ar) {
+    return res.status(400).json({
+      message:
+        "Item name must be a bilingual object with 'en' and 'ar' properties",
     });
   }
 
-  if (typeof categoryName !== 'object' || !categoryName.en || !categoryName.ar) {
-    return res.status(400).json({ 
-      message: "Category name must be a bilingual object with 'en' and 'ar' properties" 
+  if (
+    typeof categoryName !== "object" ||
+    !categoryName.en ||
+    !categoryName.ar
+  ) {
+    return res.status(400).json({
+      message:
+        "Category name must be a bilingual object with 'en' and 'ar' properties",
     });
   }
 
@@ -152,8 +157,8 @@ export const updateCartItem = async (req: Request, res: Response) => {
   try {
     const userId = req.user?.userId;
     const sessionId = req.sessionId;
-    const { 
-      _id, 
+    const {
+      _id,
       quantity,
       // NEW: Accept item details for creating new items
       categoryId,
@@ -162,7 +167,7 @@ export const updateCartItem = async (req: Request, res: Response) => {
       image,
       points,
       price,
-      measurement_unit
+      measurement_unit,
     } = req.body;
 
     if (!_id || typeof quantity !== "number") {
@@ -178,25 +183,32 @@ export const updateCartItem = async (req: Request, res: Response) => {
     }
 
     let item = cart.items.find((i) => i._id === _id);
-    
+
     if (!item) {
       // NEW: Create new item if it doesn't exist (only if we have the required data)
       if (!categoryId || !name || !categoryName) {
-        return res.status(400).json({ 
-          message: "Item not found in cart. To create new item, provide categoryId, name, and categoryName." 
+        return res.status(400).json({
+          message:
+            "Item not found in cart. To create new item, provide categoryId, name, and categoryName.",
         });
       }
 
       // Validate that name and categoryName are bilingual objects for new items
-      if (typeof name !== 'object' || !name.en || !name.ar) {
-        return res.status(400).json({ 
-          message: "Item name must be a bilingual object with 'en' and 'ar' properties" 
+      if (typeof name !== "object" || !name.en || !name.ar) {
+        return res.status(400).json({
+          message:
+            "Item name must be a bilingual object with 'en' and 'ar' properties",
         });
       }
 
-      if (typeof categoryName !== 'object' || !categoryName.en || !categoryName.ar) {
-        return res.status(400).json({ 
-          message: "Category name must be a bilingual object with 'en' and 'ar' properties" 
+      if (
+        typeof categoryName !== "object" ||
+        !categoryName.en ||
+        !categoryName.ar
+      ) {
+        return res.status(400).json({
+          message:
+            "Category name must be a bilingual object with 'en' and 'ar' properties",
         });
       }
 
@@ -206,11 +218,11 @@ export const updateCartItem = async (req: Request, res: Response) => {
         categoryId,
         categoryName,
         name,
-        image: image || '',
+        image: image || "",
         points: points || 0,
         price: price || 0,
         measurement_unit: measurement_unit || 1,
-        quantity: 0 // Will be set below
+        quantity: 0, // Will be set below
       };
 
       cart.items.push(newItem);
@@ -225,7 +237,7 @@ export const updateCartItem = async (req: Request, res: Response) => {
 
     // Update quantity
     item.quantity = quantity;
-    
+
     // If quantity is 0 or less, remove the item from cart
     if (quantity <= 0) {
       cart.items = cart.items.filter((i) => i._id !== _id);
@@ -286,7 +298,7 @@ export const clearCart = async (req: Request, res: Response) => {
 };
 export const saveCart = async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user?.userId || req.body.userId;
     const sessionId = req.sessionId;
     const { items } = req.body;
 
@@ -319,13 +331,17 @@ export const saveCart = async (req: Request, res: Response) => {
       }
 
       // Validate bilingual fields
-      if (typeof item.name !== 'object' || !item.name.en || !item.name.ar) {
+      if (typeof item.name !== "object" || !item.name.en || !item.name.ar) {
         validationErrors.push(
           `Item ${item._id}: name must be bilingual object with 'en' and 'ar' properties`
         );
       }
 
-      if (typeof item.categoryName !== 'object' || !item.categoryName.en || !item.categoryName.ar) {
+      if (
+        typeof item.categoryName !== "object" ||
+        !item.categoryName.en ||
+        !item.categoryName.ar
+      ) {
         validationErrors.push(
           `Item ${item._id}: categoryName must be bilingual object with 'en' and 'ar' properties`
         );
