@@ -26,6 +26,10 @@ export interface SafeUser {
   // Add rating fields to SafeUser interface - only for delivery users
   rating?: number;
   totalReviews?: number;
+  // Voice usage tracking - only for customer and buyer roles
+  voiceUsageCount?: number;
+  voiceUsageLimit?: number;
+  lastVoiceUsageReset?: Date;
 }
 
 // 1. Interface representing a User document
@@ -51,6 +55,11 @@ export interface IUser extends Document {
   // Add rating fields for delivery users only
   rating?: number;
   totalReviews?: number;
+
+  // Voice usage tracking - only for customer and buyer roles
+  voiceUsageCount?: number;
+  lastVoiceUsageReset?: Date;
+  voiceUsageLimit?: number;
 
   comparePassword(candidate: string): Promise<boolean>;
   toSafeObject(): SafeUser;
@@ -143,9 +152,33 @@ const userSchema = new Schema<IUser>(
         message: "TotalReviews field is only allowed for delivery users",
       },
     },
+
+    // Voice usage tracking - only for customer and buyer roles
+    voiceUsageCount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    lastVoiceUsageReset: {
+      type: Date,
+      default: Date.now
+    },
+    voiceUsageLimit: {
+      type: Number,
+      default: 3,
+      min: 1
+    },
   },
   { timestamps: true }
 );
+
+// Add indexes for efficient queries
+userSchema.index({ lastVoiceUsageReset: 1 }, { 
+  sparse: true, // Only index documents that have this field
+  partialFilterExpression: { 
+    role: { $in: ['customer', 'buyer'] } 
+  }
+});
 
 // Pre-save middleware to handle rating fields based on role
 userSchema.pre("save", async function (next) {
@@ -167,6 +200,19 @@ userSchema.pre("save", async function (next) {
       // Remove rating fields for non-delivery users
       user.rating = undefined;
       user.totalReviews = undefined;
+    }
+
+    // Handle voice usage fields based on role
+    if (user.role === "customer" || user.role === "buyer") {
+      // Initialize voice usage fields for customer/buyer users if not set
+      if (user.voiceUsageCount === undefined || user.voiceUsageCount === null) user.voiceUsageCount = 0;
+      if (user.voiceUsageLimit === undefined || user.voiceUsageLimit === null) user.voiceUsageLimit = 3;
+      if (user.lastVoiceUsageReset === undefined || user.lastVoiceUsageReset === null) user.lastVoiceUsageReset = new Date();
+    } else {
+      // Clear voice usage fields for non-customer/buyer users
+      user.voiceUsageCount = undefined;
+      user.voiceUsageLimit = undefined;
+      user.lastVoiceUsageReset = undefined;
     }
   }
 
@@ -195,6 +241,13 @@ userSchema.methods.toSafeObject = function (): SafeUser {
   if (this.role === "delivery") {
     safeUser.rating = this.rating;
     safeUser.totalReviews = this.totalReviews;
+  }
+
+  // Only include voice usage fields for customer and buyer users
+  if (this.role === "customer" || this.role === "buyer") {
+    safeUser.voiceUsageCount = this.voiceUsageCount;
+    safeUser.voiceUsageLimit = this.voiceUsageLimit;
+    safeUser.lastVoiceUsageReset = this.lastVoiceUsageReset;
   }
 
   return safeUser;

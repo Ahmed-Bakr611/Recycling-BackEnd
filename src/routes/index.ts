@@ -13,6 +13,7 @@ import delivery from "./delivery";
 import subscribe from "../routes/subscribe";
 import payment from "./payment";
 import contactus from './contact-us'
+import transcriptionRoutes from './transcriptionRoutes'; // Add this import
 import { createTestRoute } from '../utils/testStockUpdate';
 const router = express.Router();
 
@@ -33,6 +34,7 @@ export default (): express.Router => {
   contactus(router);
   payment(router);
   router.use("/notifications", notificationRoutes);
+  router.use('/transcription', transcriptionRoutes); // Add this route
   
   // Add test route for stock updates
   createTestRoute(router);

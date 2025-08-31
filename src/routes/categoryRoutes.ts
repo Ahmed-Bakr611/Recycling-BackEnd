@@ -66,6 +66,7 @@ import {
   getItemByName,
   getItems,
   getItemsByIds,
+  getSingleItem,
   updateItem,
 } from "../controllers/itemsController";
 import {
@@ -160,6 +161,7 @@ router.get('/category-names', getCategoryNames);
 router.get('/items/by-name/:itemName', getItemByName);
 router.get('/categories/search', paginate(),getCategoriesWithSearch);
 router.get('/categories/search-suggestions', getSearchSuggestions);
-
+// Add this route to your routes file
+router.get('/categories/:categoryName/item/:itemId', getSingleItem);
 // Optional: Search suggestions for autocomplete
 };

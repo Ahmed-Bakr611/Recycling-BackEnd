@@ -42,7 +42,8 @@ export const createAndEmitNotification = async (
     // Emit real-time notification to the user if they are connected
     const io = getSocketIO();
     if (io) {
-      io.to(`user_${notificationData.userId}`).emit("notification:new", {
+      // Send to both notification room and user room for compatibility
+      const notificationPayload = {
         id: savedNotification._id,
         title: savedNotification.title,
         body: savedNotification.body,
@@ -51,6 +52,22 @@ export const createAndEmitNotification = async (
         data: savedNotification.data,
         isRead: savedNotification.isRead,
         createdAt: savedNotification.createdAt,
+      };
+
+      // Emit to notification-specific room (for Expo/mobile apps)
+      io.to(`notifications:${notificationData.userId}`).emit("notification:new", notificationPayload);
+      
+      // Emit to user room (for NextJS/web apps) 
+      io.to(`user_${notificationData.userId}`).emit("notification:new", notificationPayload);
+
+      // Also emit notification count update
+      const unreadCount = await Notification.countDocuments({ 
+        userId: notificationData.userId, 
+        isRead: false 
+      });
+      
+      io.to(`notifications:${notificationData.userId}`).emit("notification-count", {
+        unreadCount
       });
 
       console.log(
@@ -181,4 +198,42 @@ export const createOrderStatusChangeNotification = async (
     orderId,
     data: { oldStatus, newStatus },
   });
+};
+
+// Additional real-time emission functions
+export const emitOrderStatusUpdate = async (
+  userId: string,
+  orderData: {
+    orderId: string;
+    status: string;
+    message: string;
+  }
+): Promise<void> => {
+  const io = getSocketIO();
+  if (io) {
+    // Emit order status update to both rooms
+    io.to(`notifications:${userId}`).emit('order_status', orderData);
+    io.to(`user_${userId}`).emit('order_status', orderData);
+    
+    console.log(`✅ Order status update emitted to user ${userId}:`, orderData.status);
+  }
+};
+
+export const emitSystemNotification = async (
+  userId: string,
+  systemData: {
+    type: string;
+    title: MultiLangMessage;
+    body: MultiLangMessage;
+    data?: any;
+  }
+): Promise<void> => {
+  const io = getSocketIO();
+  if (io) {
+    // Emit system notification to both rooms
+    io.to(`notifications:${userId}`).emit('system', systemData);
+    io.to(`user_${userId}`).emit('system', systemData);
+    
+    console.log(`✅ System notification emitted to user ${userId}:`, systemData.title.en);
+  }
 };
