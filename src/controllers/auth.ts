@@ -96,6 +96,7 @@ export const RegisterNewUser = async (req: Request, res: Response) => {
         audience: [
           process.env.GOOGLE_WEB_CLIENT_ID,
           process.env.GOOGLE_MOBILE_CLIENT_ID,
+          process.env.GOOGLE_MOBILE_WEB_CLIENT_ID,
         ],
       });
 
