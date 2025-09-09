@@ -825,13 +825,13 @@ export const getCategoriesWithSearch = async (
         { 'name.en': { $regex: searchRegex } },
         { 'name.ar': { $regex: searchRegex } },
         
-        // Direct text search in category descriptions
-        { 'description.en': { $regex: searchRegex } },
-        { 'description.ar': { $regex: searchRegex } },
+        // // Direct text search in category descriptions
+        // { 'description.en': { $regex: searchRegex } },
+        // { 'description.ar': { $regex: searchRegex } },
         
-        // Search in items within categories
-        { 'items.name.en': { $regex: searchRegex } },
-        { 'items.name.ar': { $regex: searchRegex } }
+        // // Search in items within categories
+        // { 'items.name.en': { $regex: searchRegex } },
+        // { 'items.name.ar': { $regex: searchRegex } }
       ];
 
       searchQuery = { $or: searchConditions };
