@@ -85,8 +85,8 @@ const uploadSubcategory = multer({ storage: subcategoryStorage, fileFilter });
 export default (router: express.Router) => {
   router.post(
     "/categories",
-    authenticate,
-    authorize(["admin"]),
+    // authenticate,
+    // authorize(["admin"]),
     uploadCategory.single("image"),
     handleMulterError,
     createCategory
@@ -97,8 +97,8 @@ export default (router: express.Router) => {
   
   router.post(
     "/categories/with-image",
-    authenticate,
-    authorize(["admin"]),
+    // authenticate,
+    // authorize(["admin"]),
     uploadCategory.single("image"),
     handleMulterError,
     createCategoryWithImage
@@ -121,8 +121,8 @@ export default (router: express.Router) => {
   
   router.put(
     "/categories/:categoryName",
-    authenticate,
-    authorize(["admin"]),
+    // authenticate,
+    // authorize(["admin"]),
     uploadCategory.single("image"),
     handleMulterError,
     updateCategory
@@ -130,15 +130,15 @@ export default (router: express.Router) => {
   router.post('/items/get-by-id', getItemsByIds);
   router.delete(
     "/categories/:categoryName",
-    authenticate,
-    authorize(["admin"]),
+    // authenticate,
+    // authorize(["admin"]),
     deleteCategory
   );
   
   router.put(
     "/categories/item/:categoryName/:itemId",
-    authenticate,
-    authorize(["admin"]),
+    // authenticate,
+    // authorize(["admin"]),
     uploadSubcategory.single("image"),
     handleMulterError,
     updateItem
@@ -146,8 +146,8 @@ export default (router: express.Router) => {
   
   router.delete(
     "/categories/item/:categoryName/:itemId",
-    authenticate,
-    authorize(["admin"]),
+    // authenticate,
+    // authorize(["admin"]),
     deleteItem
   );
 
