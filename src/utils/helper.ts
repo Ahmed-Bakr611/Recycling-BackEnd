@@ -5,14 +5,6 @@ import dotenv from "dotenv";
 import Otp from "../models/otp";
 dotenv.config();
 
-console.log("kkkkkkkkkkkkkkkkkkkkkkkkk");
-console.log(
-  process.env.MONGO_URI,
-  process.env.JWT_SECRET,
-  process.env.MAIL_USER,
-  process.env.MAIL_PASS
-);
-
 const JWT_SECRET = process.env.JWT_SECRET!;
 
 export const generateToken = (userId: string) => {
