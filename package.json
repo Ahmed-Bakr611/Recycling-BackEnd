@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon --config nodemon.json",
-    "build": "tsc --noEmitOnError false",
+    "build": "tsc --noEmitOnError false && cp -r src/docs dist/",
     "start": "node dist/index.js"
   },
   "repository": {
